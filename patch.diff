@@ -1,0 +1,37 @@
+*** Begin Patch
+*** Update File: content.js
+@@
+-    enterEditMode(rowIndex, colIndex, input) {
++    enterEditMode(rowIndex, colIndex, input, selectAll = false) {
+       const maxRow = Math.max(0, this.rows.length - 1);
+       const maxCol = Math.max(0, this.fields.length - 1);
+       if (maxRow < 0 || maxCol < 0) return;
+       const r = Math.max(0, Math.min(maxRow, rowIndex));
+       const c = Math.max(0, Math.min(maxCol, colIndex));
+       if (this.editingCell && (this.editingCell.rowIndex !== r || this.editingCell.colIndex !== c)) {
+         this.exitEditMode();
+       }
+       this.dragSelecting = false;
+       this.setSelectionSingle(r, c);
+-      this.editingCell = { rowIndex: r, colIndex: c };
++      this.editingCell = { rowIndex: r, colIndex: c, selectAll: !!selectAll };
+       const targetInput = input || this.getInput(r, c);
+       if (targetInput) {
+         targetInput.readOnly = false;
+         targetInput.classList.add('pb-overlay__input--editing');
+         requestAnimationFrame(() => {
+-          targetInput.focus();
+-          targetInput.select();
++          targetInput.focus();
++          if (this.editingCell && this.editingCell.rowIndex === r && this.editingCell.colIndex === c) {
++            if (this.editingCell.selectAll) {
++              targetInput.select();
++            } else {
++              const len = targetInput.value.length;
++              targetInput.setSelectionRange(len, len);
++            }
++          }
+         });
+       }
+     }
+*** End Patch

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>kintone Favorites</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <h1>kintone Favorites</h1>
+    <div class="head-actions">
+      <button id="quickAdd" title="今のkintoneページを登録">＋</button>
+      <button id="openOptions" title="設定">⚙️</button>
+    </div>
+  </header>
+
+  <div id="notice" class="hidden"></div>
+
+  <ul id="favList"></ul>
+
+  <footer>
+    <button id="refreshCounts" title="件数更新">⟳ 件数更新</button>
+  </footer>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

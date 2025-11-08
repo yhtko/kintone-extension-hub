@@ -1,0 +1,83 @@
+﻿<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>kintone Favorites — Side Panel</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body class="sidepanel">
+  <header>
+    <h1>kintone Base</h1>
+    <div class="head-actions">
+      <button id="openOptions" title="設定">⚙️</button>
+    </div>
+  </header>
+  <div class="panel-body">
+    <div class="panel-main">
+      <nav class="tab-bar" aria-label="機能タブ">
+        <button type="button" class="tab-btn active" data-tab="favorites">ウォッチリスト</button>
+        <button type="button" class="tab-btn" data-tab="schedule">直近スケジュール</button>
+        <button type="button" class="tab-btn" data-tab="pins">ピン留め</button>
+      </nav>
+
+      <main class="content">
+        <section id="tab-favorites" class="tab-panel active" aria-label="ウォッチリスト">
+          <div class="panel-head">
+            <div class="panel-row fav-controls">
+              <button id="quickAdd" title="今のkintoneページを登録">＋</button>
+              <div class="search-wrap" id="searchWrap">
+                <div class="filter-box">
+                  <input id="filter" placeholder="検索（ラベル/URL/ホスト）" />
+                </div>
+              </div>
+              <button id="refreshCounts" class="refresh-btn" title="件数更新">⟳</button>
+            </div>
+          </div>
+          <div id="notice" class="hidden"></div>
+          <ul id="favList"></ul>
+        </section>
+
+        <section id="tab-schedule" class="tab-panel" aria-label="直近スケジュール">
+          <div class="panel-head">
+            <div class="panel-row">
+              <h2>直近スケジュール（先1週間）</h2>
+            </div>
+            <div class="panel-row panel-controls">
+              <select id="scheduleEntrySelect" title="表示するスケジュール" class="wide"></select>
+              <select id="scheduleTitleField" title="タイトルに使うフィールド"></select>
+              <button id="detectScheduleFields" title="フィールド検出">🔎</button>
+              <button id="refreshSchedule" title="スケジュール更新">⟳</button>
+            </div>
+          </div>
+          <div id="scheduleNotice" class="muted hidden"></div>
+          <ul id="scheduleList" class="schedule"></ul>
+        </section>
+
+        <section id="tab-pins" class="tab-panel" aria-label="ピン留め">
+          <div class="panel-head">
+            <div class="panel-row">
+              <h2>ピン留めレコード</h2>
+            </div>
+            <div class="panel-row panel-controls">
+              <button id="addPinFromTab" title="今のレコードをピン留め">＋</button>
+              <button id="refreshPins" title="再取得">⟳</button>
+            </div>
+          </div>
+          <div id="pinNotice" class="muted hidden"></div>
+          <ul id="pinList" class="pin-cards"></ul>
+        </section>
+      </main>
+    </div>
+    <aside class="shortcut-rail" id="shortcutRail" role="complementary" aria-label="ショートカット">
+      <button id="shortcutRailToggle" class="shortcut-rail-toggle" type="button" aria-label="ショートカットを隠す"></button>
+      <div class="shortcut-buttons" id="shortcutButtons" role="group" aria-label="ショートカットボタン"></div>
+    </aside>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
+
+
+

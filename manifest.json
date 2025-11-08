@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "kintone Base",
+  "version": "1.5.0",
+  "description": "kintoneのよく使うアプリ/ビューへショートカット。件数表示／編集／並び替え／ピン／バッジ／サイドバー対応。",
+  "action": {
+    "default_title": "kintone Base"
+  },
+  "background": {
+    "service_worker": "service_worker.js",
+    "type": "module"
+  },
+  "options_page": "options.html",
+  "permissions": ["storage", "scripting", "tabs", "alarms", "contextMenus", "sidePanel"],
+  "host_permissions": [],
+  "optional_host_permissions": [
+    "https://*.kintone.com/*",
+    "https://*.cybozu.com/*",
+    "https://*.kintone-dev.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.kintone.com/*",
+        "https://*.cybozu.com/*",
+        "https://*.kintone-dev.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["page-bridge.js", "overlay.css"],
+      "matches": [
+        "https://*.kintone.com/*",
+        "https://*.cybozu.com/*",
+        "https://*.kintone-dev.com/*"
+      ]
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
+}
