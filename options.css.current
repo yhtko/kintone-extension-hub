@@ -314,21 +314,6 @@ ul {
   word-break: break-all;
 }
 
-.meta-row {
-  line-height: 1.4;
-}
-
-.meta-row + .meta-row {
-  margin-top: 2px;
-}
-
-.item-empty {
-  color: #777;
-  font-size: 12px;
-  padding: 12px 0;
-  text-align: center;
-}
-
 .item .title {
   font-weight: 700;
   white-space: nowrap;

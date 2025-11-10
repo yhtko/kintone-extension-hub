@@ -52,12 +52,6 @@ const urlEl = document.getElementById('url');
 const appIdEl = document.getElementById('appId');
 const viewEl = document.getElementById('viewIdOrName');
 const queryEl = document.getElementById('query');
-const hostPermInputEl = document.getElementById('perm_host_input');
-const hostPermRequestBtn = document.getElementById('perm_request');
-const hostPermCheckBtn = document.getElementById('perm_check');
-const hostPermStatusEl = document.getElementById('perm_status');
-const iconEl = document.getElementById('icon');
-const categoryEl = document.getElementById('category');
 const addBtn = document.getElementById('add');
 const listEl = document.getElementById('list');
 const shortcutToggleEl = document.getElementById('shortcut_visible');
@@ -98,8 +92,6 @@ const editUrlEl = document.getElementById('edit_url');
 const editAppIdEl = document.getElementById('edit_appId');
 const editViewEl = document.getElementById('edit_viewIdOrName');
 const editQueryEl = document.getElementById('edit_query');
-const editIconEl = document.getElementById('edit_icon');
-const editCategoryEl = document.getElementById('edit_category');
 const editSaveBtn = document.getElementById('editSave');
 let editingId = null;
 let scheduleEntries = [];
@@ -110,13 +102,6 @@ let shortcutEntries = [];
 let shortcutsVisible = true;
 let shortcutDraggingId = null;
 let excelColumnPrefs = {};
-const ensuredOrigins = new Set();
-const ICON_CHOICES = [
-  'bookmark', 'clipboard', 'file-text', 'package', 'box', 'truck', 'factory', 'wrench',
-  'calendar', 'list-checks', 'search', 'chart-bar', 'receipt', 'users', 'settings', 'star'
-];
-const DEFAULT_ICON = 'bookmark';
-const DEFAULT_CATEGORY = 'その他';
 const MAX_SHORTCUT_INITIAL_LENGTH = 2;
 
 function normalizeShortcutInitialLocal(value) {
@@ -124,116 +109,6 @@ function normalizeShortcutInitialLocal(value) {
   const str = String(value).trim();
   if (!str) return '';
   return Array.from(str).slice(0, MAX_SHORTCUT_INITIAL_LENGTH).join('');
-}
-
-function sanitizeIcon(value) {
-  const name = (value || '').trim();
-  return ICON_CHOICES.includes(name) ? name : DEFAULT_ICON;
-}
-
-function sanitizeCategory(value) {
-  const trimmed = (value || '').trim();
-  return trimmed || DEFAULT_CATEGORY;
-}
-
-function normalizeFavoriteEntryLocal(item, fallbackOrder) {
-  return {
-    ...item,
-    icon: sanitizeIcon(item.icon),
-    category: sanitizeCategory(item.category),
-    order: typeof item.order === 'number' ? item.order : fallbackOrder
-  };
-}
-
-function normalizeOrigin(input) {
-  if (!input) return '';
-  const trimmed = String(input).trim();
-  if (!trimmed) return '';
-  const withoutWildcard = trimmed.endsWith('*') ? trimmed.slice(0, -1) : trimmed;
-  try {
-    const url = new URL(withoutWildcard);
-    return url.origin;
-  } catch (_e) {
-    return '';
-  }
-}
-
-function originPatternFor(input) {
-  const origin = normalizeOrigin(input);
-  if (!origin) return null;
-  return `${origin}/*`;
-}
-
-function rememberGrantedOrigin(input) {
-  const origin = normalizeOrigin(input);
-  if (origin) ensuredOrigins.add(origin);
-}
-
-async function primeExistingPermissionCache() {
-  if (!chrome?.permissions?.getAll) return;
-  try {
-    const perms = await chrome.permissions.getAll();
-    (perms?.origins || []).forEach((pattern) => rememberGrantedOrigin(pattern));
-  } catch (error) {
-    console.debug('permissions cache prime failed', error);
-  }
-}
-
-primeExistingPermissionCache();
-
-function populateIconSelect(selectEl) {
-  if (!selectEl) return;
-  selectEl.innerHTML = '';
-  ICON_CHOICES.forEach((name) => {
-    const option = document.createElement('option');
-    option.value = name;
-    option.textContent = name;
-    selectEl.appendChild(option);
-  });
-  selectEl.value = DEFAULT_ICON;
-}
-
-populateIconSelect(iconEl);
-populateIconSelect(editIconEl);
-
-async function warmHostPermissionStatus(items = []) {
-  const hosts = Array.from(new Set(items.map((item) => item.host).filter(Boolean)));
-  for (const host of hosts) {
-    const origin = normalizeOrigin(host);
-    if (!origin || ensuredOrigins.has(origin)) continue;
-    await hasHostPermission(host);
-  }
-}
-
-async function ensureHostPermissionFor(host) {
-  const origin = normalizeOrigin(host);
-  if (!origin) return true;
-  if (ensuredOrigins.has(origin)) return true;
-  return await requestHostPermission(origin);
-}
-
-const ICON_PATHS = {
-  clipboard: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="9" y="2" width="6" height="4" rx="1" ry="1"/>',
-  'file-text': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M10 13h6"/><path d="M10 17h4"/>',
-  package: '<path d="M21 16V8a2 2 0 0 0-1-1.73L13 3.27a2 2 0 0 0-2 0L4 6.27A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7.5 12 12.5l8.7-5"/><path d="M12 22v-9"/>',
-  box: '<path d="M21 16V8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v9"/>',
-  truck: '<path d="M3 5h12v10H3z"/><path d="M15 8h4l2 3v4h-6"/><circle cx="7.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/>',
-  factory: '<path d="M2 20h20V10l-5 3V8l-5 3V4L2 8z"/><path d="M6 20v-4"/><path d="M10 20v-4"/><path d="M14 20v-4"/>',
-  wrench: '<path d="M21 16.5a5.5 5.5 0 0 1-7.78 0L3.5 6.78a4 4 0 0 1 5.66-5.66l.82.82-3 3 4.24 4.24 3-3 .82.82a4 4 0 0 1 0 5.66z"/>',
-  calendar: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8h18"/><path d="M16 2v4"/><path d="M8 2v4"/>',
-  'list-checks': '<path d="M10 6h11"/><path d="M10 12h11"/><path d="M10 18h11"/><path d="m3 6 1.5 1.5 3-3"/><path d="m3 12 1.5 1.5 3-3"/><path d="m3 18 1.5 1.5 3-3"/>',
-  search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
-  'chart-bar': '<path d="M3 3v18h18"/><rect x="7" y="13" width="3" height="5" rx="0.5"/><rect x="12" y="9" width="3" height="9" rx="0.5"/><rect x="17" y="5" width="3" height="13" rx="0.5"/>',
-  receipt: '<path d="M21 4v16l-3-2-3 2-3-2-3 2-3-2-3 2V4l3 2 3-2 3 2 3-2 3 2z"/><path d="M8 11h8"/><path d="M8 15h5"/>',
-  users: '<path d="M16 21v-1a5 5 0 0 0-3-4.58"/><path d="M7 4a4 4 0 1 1 1 7.87A4 4 0 0 1 7 4z"/><path d="M3 21v-1a7 7 0 0 1 11.9-4.9"/><path d="M20 8a3 3 0 1 1-4 2.82"/>',
-  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 2l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-2 .33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-2 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-2l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 2 .33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 2-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 2V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
-  bookmark: '<path d="M6 3h12v18l-6-4-6 4z"/>',
-  star: '<path d="M12 3.5 14.8 9l6.2.9-4.5 4.3 1 6.3L12 17l-5.5 3.5 1-6.3-4.5-4.3L9.2 9z"/>'
-};
-
-function renderIconSvgLocal(name) {
-  const body = ICON_PATHS[name] || ICON_PATHS[DEFAULT_ICON];
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 }
 
 function clearShortcutDropIndicators() {
@@ -458,7 +333,7 @@ function renderShortcutEntries() {
     ops.className = 'shortcut-ops';
     const url = buildShortcutUrl(entry);
     const openA = document.createElement('a');
-        openA.textContent = '開く';
+    openA.textContent = '開く';
     openA.className = 'btn';
     if (url) {
       openA.href = url;
@@ -474,7 +349,7 @@ function renderShortcutEntries() {
     }
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
-        editBtn.textContent = '編集';
+    editBtn.textContent = '編集';
     editBtn.addEventListener('click', async () => {
       const current = entry.label || '';
       const next = window.prompt('表示名を入力してください', current);
@@ -485,7 +360,7 @@ function renderShortcutEntries() {
     });
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
-        delBtn.textContent = '削除';
+    delBtn.textContent = '削除';
     delBtn.addEventListener('click', async () => {
       shortcutEntries = shortcutEntries.filter((item) => item.id !== entry.id);
       await persistShortcutEntries();
@@ -621,11 +496,11 @@ function renderScheduleEntries() {
     ops.className = 'schedule-ops';
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
-        editBtn.textContent = '編集';
+    editBtn.textContent = '編集';
     editBtn.addEventListener('click', () => fillScheduleForm(entry));
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
-        delBtn.textContent = '削除';
+    delBtn.textContent = '削除';
     delBtn.addEventListener('click', async () => {
       scheduleEntries = scheduleEntries.filter((item) => item.id !== entry.id);
       await saveScheduleEntries();
@@ -651,6 +526,7 @@ function resetScheduleForm() {
   schExtraQueryEl.value = '';
   schLimitEl.value = '';
   setScheduleStatus('');
+  updatePermStatus('');
   if (schSaveBtn) schSaveBtn.textContent = '追加 / 更新';
 }
 
@@ -664,10 +540,7 @@ function fillScheduleForm(entry) {
   schExtraQueryEl.value = entry.extraQuery || '';
   schLimitEl.value = entry.limit ? String(entry.limit) : '';
   if (schSaveBtn) schSaveBtn.textContent = '更新';
-  if (entry.host) {
-    if (hostPermInputEl && !hostPermInputEl.value) hostPermInputEl.value = entry.host;
-    updatePermStatus(entry.host);
-  }
+  updatePermStatus(entry.host);
   setScheduleStatus('編集モードです。変更後「更新」を押してください。');
 }
 
@@ -758,11 +631,11 @@ function renderPinnedEntries() {
     }
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
-        editBtn.textContent = '編集';
+    editBtn.textContent = '編集';
     editBtn.addEventListener('click', () => fillPinnedForm(entry));
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
-        delBtn.textContent = '削除';
+    delBtn.textContent = '削除';
     delBtn.addEventListener('click', async () => {
       pinnedEntries = pinnedEntries.filter((item) => item.id !== entry.id);
       await savePinnedEntries();
@@ -803,11 +676,10 @@ function fillPinnedForm(entry) {
 }
 async function loadFavorites() {
   const { kintoneFavorites = [] } = await chrome.storage.sync.get('kintoneFavorites');
-  return kintoneFavorites.map((item, idx) => normalizeFavoriteEntryLocal(item, idx));
+  return kintoneFavorites;
 }
 async function saveFavorites(items) {
-  const normalized = items.map((item, idx) => normalizeFavoriteEntryLocal(item, idx));
-  await chrome.storage.sync.set({ kintoneFavorites: normalized });
+  await chrome.storage.sync.set({ kintoneFavorites: items });
 }
 
 function sortItems(items) {
@@ -830,10 +702,7 @@ async function render(items) {
 
   listEl.innerHTML = '';
   if (!sorted.length) {
-    const empty = document.createElement('li');
-    empty.className = 'item item-empty';
-    empty.textContent = '登録済みのウォッチリストはまだありません。';
-    listEl.appendChild(empty);
+    listEl.innerHTML = '<li style="color:#888;font-size:12px;">未登録</li>';
     return;
   }
 
@@ -847,36 +716,22 @@ async function render(items) {
 
     const handle = document.createElement('div');
     handle.className = 'drag-handle';
-    handle.textContent = '↕';
+    handle.textContent = '⋮⋮';
 
     const left = document.createElement('div');
     left.className = 'meta';
     const title = document.createElement('div');
     title.className = 'title';
-    const iconPreview = document.createElement('span');
-    iconPreview.className = 'item-icon';
-    iconPreview.innerHTML = renderIconSvgLocal(it.icon || DEFAULT_ICON);
-    const titleText = document.createElement('span');
-    titleText.textContent = it.label || '(no label)';
-    title.appendChild(iconPreview);
-    title.appendChild(titleText);
+    title.textContent = it.label || '(no label)';
     const meta = document.createElement('div');
     meta.className = 'meta';
-    const metaRows = [
-      ['URL', it.url || '-'],
-      ['App', it.appId || '-'],
-      ['View', it.viewIdOrName || '-'],
-      ['Query', it.query || '-'],
-      ['Host', it.host || '-'],
-      ['Icon', it.icon || DEFAULT_ICON],
-      ['カテゴリ', it.category || DEFAULT_CATEGORY]
-    ];
-    metaRows.forEach(([label, value]) => {
-      const row = document.createElement('div');
-      row.className = 'meta-row';
-      row.textContent = `${label}: ${value}`;
-      meta.appendChild(row);
-    });
+    meta.innerHTML = [
+      `URL: ${it.url}`,
+      `App: ${it.appId || '-'}`,
+      `View: ${it.viewIdOrName || '-'}`,
+      `Query: ${it.query || '-'}`,
+      `Host: ${it.host}`
+    ].join('<br/>');
     left.appendChild(title);
     left.appendChild(meta);
 
@@ -889,13 +744,13 @@ async function render(items) {
     radio.name = 'badgeTarget';
     radio.className = 'badge-radio';
     radio.checked = badgeTargetId ? (badgeTargetId === it.id) : (sorted[0]?.id === it.id);
-        radio.title = 'このウォッチリストをバッジ対象にする';
+    radio.title = 'このウォッチリストをバッジ対象にする';
     radio.addEventListener('change', () => setBadgeTarget(it.id));
 
     // ピン切替
     const pinBtn = document.createElement('button');
     pinBtn.className = 'pin';
-        pinBtn.textContent = it.pinned ? '📌 解除' : '📌 固定';
+    pinBtn.textContent = it.pinned ? '📌 解除' : '📌 固定';
     pinBtn.addEventListener('click', async () => {
       const all = await loadFavorites();
       const me = all.find(x => x.id === it.id);
@@ -906,18 +761,18 @@ async function render(items) {
 
     // 開く・削除
     const openA = document.createElement('a');
-        openA.textContent = '開く';
+    openA.textContent = '開く';
     openA.className = 'btn';
     openA.href = it.url;
     openA.target = '_blank';
     openA.rel = 'noopener';
     // 編集ボタン
     const editBtn = document.createElement('button');
-        editBtn.textContent = '編集';
+    editBtn.textContent = '編集';
     editBtn.addEventListener('click', () => openEdit(it));
 
     const delBtn = document.createElement('button');
-        delBtn.textContent = '削除';
+    delBtn.textContent = '削除';
     delBtn.addEventListener('click', async () => {
       const next = (await loadFavorites()).filter(x => x.id !== it.id);
       await saveFavorites(next);
@@ -967,13 +822,6 @@ function openEdit(item) {
   editAppIdEl.value = item.appId || '';
   editViewEl.value = item.viewIdOrName || '';
   editQueryEl.value = item.query || '';
-  if (editIconEl) {
-    editIconEl.value = sanitizeIcon(item.icon);
-  }
-  if (editCategoryEl) {
-    const value = sanitizeCategory(item.category);
-    editCategoryEl.value = value === DEFAULT_CATEGORY ? '' : value;
-  }
   if (typeof editDialog.showModal === 'function') {
     editDialog.showModal();
   } else {
@@ -990,13 +838,7 @@ editSaveBtn.addEventListener('click', async (e) => {
   if (editAppIdEl.value.trim()) appId = editAppIdEl.value.trim();
   if (editViewEl.value.trim()) viewIdOrName = editViewEl.value.trim();
   const newQuery = editQueryEl.value.trim() || '';
-  const newIcon = sanitizeIcon(editIconEl?.value);
-  const newCategory = sanitizeCategory(editCategoryEl?.value);
-  if (!newUrl || !host) { alert('有効な kintone URL を入力してください'); return; }
-  if (!(await ensureHostPermissionFor(host))) {
-    alert('このドメインへのアクセス権限が許可されませんでした');
-    return;
-  }
+  if (!newUrl || !host) { alert('正しい kintone URL を入力してください'); return; }
   const all = await loadFavorites();
   const idx = all.findIndex(x => x.id === editingId);
   if (idx === -1) { editDialog.close(); return; }
@@ -1004,17 +846,7 @@ editSaveBtn.addEventListener('click', async (e) => {
     alert('このURLは既に登録済みです'); return;
   }
   const old = all[idx];
-  all[idx] = {
-    ...old,
-    label: newLabel,
-    url: newUrl,
-    host,
-    appId: appId||'',
-    viewIdOrName: viewIdOrName||'',
-    query: newQuery,
-    icon: newIcon,
-    category: newCategory
-  };
+  all[idx] = { ...old, label: newLabel, url: newUrl, host, appId: appId||'', viewIdOrName: viewIdOrName||'', query: newQuery };
   await saveFavorites(all);
   await render(all);
   editingId = null;
@@ -1029,15 +861,9 @@ addBtn.addEventListener('click', async () => {
   if (appIdEl.value.trim()) appId = appIdEl.value.trim();
   if (viewEl.value.trim()) viewIdOrName = viewEl.value.trim();
   const query = queryEl.value.trim() || '';
-  const icon = sanitizeIcon(iconEl?.value);
-  const category = sanitizeCategory(categoryEl?.value);
 
   if (!url || !host) {
-    alert('有効な kintone URL を入力してください');
-    return;
-  }
-  if (!(await ensureHostPermissionFor(host))) {
-    alert('このドメインへのアクセス権限が許可されませんでした');
+    alert('正しい kintone URL を入力してください');
     return;
   }
 
@@ -1056,8 +882,6 @@ addBtn.addEventListener('click', async () => {
     viewIdOrName: viewIdOrName || '',
     query: query || '',
     initial: '',
-    icon,
-    category,
     order: list.length,
     pinned: false
   };
@@ -1071,14 +895,11 @@ addBtn.addEventListener('click', async () => {
   appIdEl.value = '';
   viewEl.value = '';
   queryEl.value = '';
-  if (iconEl) iconEl.value = DEFAULT_ICON;
-  if (categoryEl) categoryEl.value = '';
 });
 
 // 初期表示
 (async () => {
   const items = await loadFavorites();
-  await warmHostPermissionStatus(items);
   await render(items);
 
   const shortcutStored = await chrome.storage.sync.get(['kfavShortcuts', 'kfavShortcutsVisible']);
@@ -1136,10 +957,7 @@ schUrlEl?.addEventListener('change', async () => {
   const parsed = parseKintoneUrl(raw);
   if (parsed.host && !schAppIdEl.value) schAppIdEl.value = parsed.appId || '';
   const host = parsed.host || hostFromUrl(raw);
-  if (host) {
-    if (hostPermInputEl) hostPermInputEl.value = host;
-    await updatePermStatus(host);
-  }
+  await updatePermStatus(host);
   setScheduleStatus('');
 });
 
@@ -1151,7 +969,6 @@ schSaveBtn?.addEventListener('click', async () => {
   const url = schUrlEl.value.trim();
   const parsed = parseKintoneUrl(url);
   const host = parsed.host || hostFromUrl(url);
-  if (hostPermInputEl && host) hostPermInputEl.value = host;
   const appId = (schAppIdEl.value || parsed.appId || '').toString().trim();
   const dateField = schDateFieldEl.value.trim();
   const titleField = schTitleFieldEl.value.trim();
@@ -1185,15 +1002,10 @@ schSaveBtn?.addEventListener('click', async () => {
 
 // ---- kintoneフィールド検出 ----
 function hostFromUrl(u){
-  if (!u) return '';
   try {
     return new URL(u).origin;
   } catch {
-    try {
-      return new URL(`https://${u}`).origin;
-    } catch {
-      return '';
-    }
+    return '';
   }
 }
 
@@ -1203,7 +1015,7 @@ schDetectBtn?.addEventListener('click', async () => {
   if (!hostHint) { setScheduleStatus('先に kintone URL を入力し、ホストを特定してください。'); return; }
   if (!appId) { alert('App ID を入力してから実行してください'); return; }
   if (!(await hasHostPermission(hostHint))) {
-    setScheduleStatus('このホストの許可が必要です。全般タブの「ホストアクセス許可」で許可してください。');
+    setScheduleStatus('このホストの許可が必要です。「このホストを許可」を押してください。');
     return;
   }
   try {
@@ -1360,74 +1172,30 @@ excelClearBtn?.addEventListener('click', async () => {
 });
 
 // ---- Host permission helpers ----
-async function hasHostPermission(origin) {
-  const pattern = originPatternFor(origin);
-  if (!pattern || !chrome?.permissions?.contains) return false;
-  try {
-    const granted = await chrome.permissions.contains({ origins: [pattern] });
-    if (granted) rememberGrantedOrigin(origin);
-    return granted;
-  } catch (error) {
-    console.warn('host permission check failed', error);
-    return false;
-  }
+function originPatternFor(origin){ if(!origin) return null; return origin.endsWith('/') ? origin+'*' : origin+'/*'; }
+async function hasHostPermission(origin){
+  const pat = originPatternFor(origin); if(!pat) return false;
+  return await chrome.permissions.contains({ origins: [pat] });
 }
-
-async function requestHostPermission(origin) {
-  const pattern = originPatternFor(origin);
-  if (!pattern || !chrome?.permissions?.request) return false;
-  try {
-    const granted = await chrome.permissions.request({ origins: [pattern] });
-    if (granted) rememberGrantedOrigin(origin);
-    return granted;
-  } catch (error) {
-    console.warn('host permission request failed', error);
-    return false;
-  }
+async function requestHostPermission(origin){
+  const pat = originPatternFor(origin); if(!pat) return false;
+  // ここは“クリック直後”で呼ぶこと（ユーザー操作扱い）
+  return await chrome.permissions.request({ origins: [pat] });
 }
-
-async function updatePermStatus(origin, statusEl = hostPermStatusEl) {
-  const el = statusEl;
-  if (!el) return false;
-  const normalized = normalizeOrigin(origin);
-  if (!normalized) {
-    el.textContent = '権限: 未確認';
-    return false;
-  }
-  const granted = await hasHostPermission(normalized);
-  el.textContent = granted ? '権限: 許可済み' : '権限: 未許可';
+async function updatePermStatus(origin){
+  const el = document.getElementById('sch_permStatus'); if(!el) return false;
+  const granted = await hasHostPermission(origin);
+  el.textContent = granted ? '✅ 許可済み' : '❌ 未許可';
   return granted;
 }
-
-hostPermRequestBtn?.addEventListener('click', async () => {
-  const raw = hostPermInputEl?.value?.trim() || '';
-  const host = hostFromUrl(raw);
-  if (!host) {
-    alert('有効な kintone URL またはホストを入力してください');
-    await updatePermStatus('');
-    return;
-  }
-  const ok = await requestHostPermission(host);
+document.getElementById('sch_grantHost')?.addEventListener('click', async () => {
+  const host = hostFromUrl(schUrlEl.value||'');
+  if (!host) { alert('先に kintone URL を入力してください'); return; }
+  const ok = await requestHostPermission(host);   // ← クリック直下で実行
   await updatePermStatus(host);
-  if (!ok) {
-    alert('許可がキャンセルされました');
-    return;
-  }
-  if (hostPermInputEl) hostPermInputEl.value = host;
-  alert('許可が完了しました');
+  if (!ok) { alert('許可がキャンセルされました'); return; }
+  setScheduleStatus('ホストの許可が完了しました。必要に応じてフィールド検出を実行してください。');
 });
-
-hostPermCheckBtn?.addEventListener('click', async () => {
-  const raw = hostPermInputEl?.value?.trim() || '';
-  const host = hostFromUrl(raw);
-  if (!host) {
-    alert('有効な kintone URL またはホストを入力してください');
-    await updatePermStatus('');
-    return;
-  }
-  await updatePermStatus(host);
-});
-
 
 // ---- pinned events ----
 pinResetBtn?.addEventListener('click', () => {
@@ -1471,3 +1239,19 @@ pinUrlEl?.addEventListener('change', () => {
   if (parsed.appId && !pinAppIdEl.value) pinAppIdEl.value = parsed.appId;
   if (parsed.recordId && !pinRecordIdEl.value) pinRecordIdEl.value = parsed.recordId;
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

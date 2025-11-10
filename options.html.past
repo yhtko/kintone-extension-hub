@@ -34,20 +34,6 @@
             <li>ショートカットはよく使う画面を Chrome から直接開くためのリンクです。</li>
           </ul>
         </section>
-
-        <section class="card">
-          <h2>ホストアクセス許可</h2>
-          <p class="hint">kintone の URL（例：https://xxx.cybozu.com/k/）を入力して「このホストを許可」を押すと、件数取得やショートカットが自動的に動作できるようになります。</p>
-          <label>kintone URL またはホスト<br/>
-            <input id="perm_host_input" placeholder="例：https://example.cybozu.com/k/" />
-          </label>
-          <div class="actions" style="gap:8px; flex-wrap: wrap;">
-            <button id="perm_request" type="button">このホストを許可</button>
-            <button id="perm_check" type="button">状態を確認</button>
-            <span id="perm_status" class="hint">権限: 未確認</span>
-          </div>
-          <p class="hint">InPrivate で利用する場合は拡張機能の「InPrivate で許可」をオンにしてから実行してください。</p>
-        </section>
         <section class="card">
           <h2>Excelモードの列カスタマイズ</h2>
           <p class="hint">Excelモードで保存した列順の一覧です。不要な設定は削除したり、まとめてリセットできます。</p>
@@ -68,16 +54,6 @@
           <label>kintone URL（アプリ／ビュー）<br/>
             <input id="url" placeholder="例：https://xxx.cybozu.com/k/45/?view=123"/>
           </label>
-          
-          <div class="grid icon-cat-grid">
-            <label>アイコン<br/>
-              <select id="icon"></select>
-            </label>
-            <label>カテゴリ（任意）<br/>
-              <input id="category" placeholder="例： 営業" />
-            </label>
-          </div>
-          <p class="hint">※ アイコンはショートカット行、カテゴリはサイドパネルのグループ分けに利用されます。</p>
           
           <details>
             <summary>高度な設定（手動指定）</summary>
@@ -111,6 +87,10 @@
           <label>kintone URL（例：アプリ一覧やビューのURL。ホスト検出に使用）<br/>
             <input id="sch_url" placeholder="例：https://xxx.cybozu.com/k/45/?view=123"/>
           </label>
+          <div class="actions">
+            <button id="sch_grantHost" type="button">このホストを許可</button>
+            <span id="sch_permStatus" class="hint">未確認</span>
+          </div>
           <div class="grid">
             <label>App ID<br/><input id="sch_appId" placeholder="45"/></label>
             <label>日付フィールドコード<br/>
@@ -193,15 +173,6 @@
       <label>kintone URL（アプリ／ビュー）<br/>
         <input id="edit_url" placeholder="例：https://xxx.cybozu.com/k/45/?view=123"/>
       </label>
-      <div class="grid icon-cat-grid">
-        <label>アイコン<br/>
-          <select id="edit_icon"></select>
-        </label>
-        <label>カテゴリ（任意）<br/>
-          <input id="edit_category" placeholder="例： 営業" />
-        </label>
-      </div>
-      <p class="hint">※ アイコンとカテゴリはショートカット／サイドパネルでそのまま利用されます。</p>
       <details>
         <summary>高度な設定（手動指定）</summary>
         <div class="grid">
