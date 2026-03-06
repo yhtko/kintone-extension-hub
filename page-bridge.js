@@ -1,6 +1,9 @@
 ﻿// page-bridge.js
 // 繝壹・繧ｸ繧ｳ繝ｳ繝・く繧ｹ繝医〒蜍穂ｽ懶ｼ・ kintone.api 縺檎峩謗･菴ｿ縺医ｋ・・
 (function () {
+  if (window.__kfav_pageBridgeLoaded) return;
+  window.__kfav_pageBridgeLoaded = true;
+
   const ORIGIN = location.origin;
 const viewsCache = new Map(); // appId -> views
 const fieldsCache = new Map(); // appId -> fields metadata cache
@@ -12,12 +15,121 @@ function normalizeChoiceList(prop) {
     .filter((label) => label);
 }
 
+function normalizeLookupMeta(code, prop) {
+  const src = prop && typeof prop === 'object' ? (prop.lookup || null) : null;
+  if (!src || typeof src !== 'object') return undefined;
+  const relatedAppRaw = src.relatedApp;
+  const relatedApp = (typeof relatedAppRaw === 'string' || typeof relatedAppRaw === 'number')
+    ? String(relatedAppRaw)
+    : (relatedAppRaw && typeof relatedAppRaw === 'object'
+      ? String(relatedAppRaw.app || relatedAppRaw.id || '')
+      : '');
+  const keyField = String(
+    src.keyField
+    || src.lookupField
+    || src.relatedKeyField
+    || src.fieldCode
+    || ''
+  ).trim();
+  const out = {};
+  if (keyField) out.keyField = keyField;
+  if (relatedApp) out.relatedApp = relatedApp;
+  return Object.keys(out).length ? out : undefined;
+}
+
+function normalizeSubtableMeta(prop) {
+  const fieldsObj = prop && typeof prop === 'object' && prop.fields && typeof prop.fields === 'object'
+    ? prop.fields
+    : null;
+  if (!fieldsObj) return undefined;
+  const fields = Object.keys(fieldsObj).map((code) => {
+    const child = fieldsObj[code] || {};
+    return {
+      code,
+      label: child.label || '',
+      type: child.type || '',
+      required: Boolean(child.required),
+      choices: normalizeChoiceList(child)
+    };
+  });
+  return { fields };
+}
+
+function normalizeFieldMetaFromProperties(properties) {
+  if (!properties || typeof properties !== 'object') return [];
+  const metas = Object.keys(properties).map((code) => {
+    const prop = properties[code] || {};
+    const meta = {
+      code,
+      label: prop.label || '',
+      type: prop.type || '',
+      required: Boolean(prop.required),
+      choices: normalizeChoiceList(prop)
+    };
+    const lookup = normalizeLookupMeta(code, prop);
+    if (lookup) meta.lookup = lookup;
+    if (meta.type === 'SUBTABLE') {
+      const subtable = normalizeSubtableMeta(prop);
+      if (subtable) meta.subtable = subtable;
+    }
+    return meta;
+  });
+  markLookupAutoFields(properties, metas);
+  return metas;
+}
+
+function collectLookupRelatedCodes(value, knownCodes, out) {
+  if (!value) return;
+  if (typeof value === 'string') {
+    if (knownCodes.has(value)) out.add(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectLookupRelatedCodes(item, knownCodes, out));
+    return;
+  }
+  if (typeof value === 'object') {
+    Object.values(value).forEach((item) => collectLookupRelatedCodes(item, knownCodes, out));
+  }
+}
+
+function markLookupAutoFields(properties, metas) {
+  const knownCodes = new Set(Object.keys(properties || {}));
+  if (!knownCodes.size) return;
+  const metaMap = new Map((metas || []).map((meta) => [meta.code, meta]));
+  Object.keys(properties || {}).forEach((sourceCode) => {
+    const prop = properties[sourceCode] || {};
+    const lookup = prop.lookup;
+    if (!lookup || typeof lookup !== 'object') return;
+    const keyField = String(
+      lookup.keyField
+      || lookup.lookupField
+      || lookup.relatedKeyField
+      || lookup.fieldCode
+      || sourceCode
+      || ''
+    ).trim();
+    const related = new Set();
+    collectLookupRelatedCodes(lookup, knownCodes, related);
+    related.delete(sourceCode);
+    if (keyField) related.delete(keyField);
+    related.forEach((targetCode) => {
+      const target = metaMap.get(targetCode);
+      if (!target) return;
+      target.lookupAuto = true;
+      if (!target.lookup || !target.lookup.keyField) {
+        target.lookup = { ...(target.lookup || {}), keyField };
+      }
+    });
+  });
+}
+
   async function getAppName(appId) {
     if (!appId) return '';
     const sdk = window.kintone;
     if (!sdk?.api) return '';
     try {
-      const resp = await sdk.api(sdk.api.url('/k/v1/app', true), 'GET', { id: String(appId) });
+      const resp = await sdk.api(sdk.api.url('/k/v1/app.json', true), 'GET', { id: String(appId) });
       if (resp?.app?.name) return resp.app.name;
       if (resp?.name) return resp.name;
     } catch (_e) { /* ignore */ }
@@ -72,6 +184,29 @@ function normalizeChoiceList(prop) {
     const fields = await fetchFieldsWithFallback(key);
     fieldsCache.set(key, fields);
     return fields.map((field) => ({ ...field }));
+  }
+
+  async function getFieldsMeta(appId) {
+    const key = String(appId || '');
+    if (!key) return [];
+    const sdk = window.kintone;
+    if (!sdk?.api) return [];
+    try {
+      const resp = await sdk.api(sdk.api.url('/k/v1/app/form/fields', true), 'GET', { app: key });
+      return normalizeFieldMetaFromProperties(resp?.properties || {});
+    } catch (error) {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('[kintone-favorites] getFieldsMeta failed via form API, falling back to getFields', error);
+      }
+      const fallback = await getFields(key);
+      return fallback.map((field) => ({
+        code: field.code,
+        label: field.label || '',
+        type: field.type || '',
+        required: false,
+        choices: Array.isArray(field.choices) ? field.choices : []
+      }));
+    }
   }
 
   async function fetchFieldsWithFallback(appId) {
@@ -153,7 +288,7 @@ function normalizeChoiceList(prop) {
     }
   }
 
-  const EDITABLE_TYPES = new Set(['SINGLE_LINE_TEXT', 'NUMBER', 'DATE', 'RADIO_BUTTON']);
+  const EDITABLE_TYPES = new Set(['SINGLE_LINE_TEXT', 'NUMBER', 'DATE', 'RADIO_BUTTON', 'DROP_DOWN']);
 
   function extractQueryFromViews(viewsObj, viewIdOrName) {
     const entries = Object.entries(viewsObj || {});
@@ -267,6 +402,212 @@ function normalizeChoiceList(prop) {
     return parseInt(resp.totalCount || '0', 10);
   }
 
+  function normalizePermissionState(value, fallback = 'unknown') {
+    if (value === 'allow' || value === 'deny' || value === 'unknown') return value;
+    if (typeof value === 'boolean') return value ? 'allow' : 'deny';
+    if (typeof value === 'number') return value !== 0 ? 'allow' : 'deny';
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (!normalized) return fallback;
+      if (['allow', 'allowed', 'true', '1', 'yes', 'read', 'write', 'grant', 'granted'].includes(normalized)) return 'allow';
+      if (['deny', 'denied', 'false', '0', 'no', 'none', 'forbidden'].includes(normalized)) return 'deny';
+      if (['unknown', 'unresolved'].includes(normalized)) return 'unknown';
+      return fallback;
+    }
+    return fallback;
+  }
+
+  function normalizeRightSet(raw, fallback = { view: 'unknown', add: 'unknown', edit: 'unknown', delete: 'unknown', source: 'unknown' }) {
+    const source = raw && typeof raw === 'object' ? raw : {};
+    const view = normalizePermissionState(
+      source.view ?? source.read ?? source.browse ?? source.canView ?? source.isViewable,
+      fallback.view
+    );
+    const add = normalizePermissionState(
+      source.add ?? source.create ?? source.write ?? source.canAdd ?? source.canCreate,
+      fallback.add
+    );
+    const edit = normalizePermissionState(
+      source.edit ?? source.update ?? source.write ?? source.canEdit ?? source.canUpdate,
+      fallback.edit
+    );
+    const del = normalizePermissionState(
+      source.delete ?? source.remove ?? source.canDelete ?? source.canRemove,
+      fallback.delete
+    );
+    let sourceState = fallback.source || 'unknown';
+    if (source.source === 'api' || source.source === 'fallback' || source.source === 'unknown') {
+      sourceState = source.source;
+    } else if (view !== 'unknown' || add !== 'unknown' || edit !== 'unknown' || del !== 'unknown') {
+      sourceState = 'api';
+    }
+    return {
+      view,
+      add,
+      edit,
+      delete: del,
+      source: sourceState
+    };
+  }
+
+  function emptyRecordPermissionMap(ids) {
+    const out = {};
+    (ids || []).forEach((id) => {
+      const key = String(id || '').trim();
+      if (!key) return;
+      out[key] = { view: 'unknown', edit: 'unknown', delete: 'unknown', source: 'unknown' };
+    });
+    return out;
+  }
+
+  function pickAppPermissionCandidate(resp) {
+    if (!resp || typeof resp !== 'object') return null;
+    const candidates = [
+      resp.permissions,
+      resp.permission,
+      resp.rights,
+      resp.acl,
+      resp.appPermissions,
+      resp.result
+    ];
+    for (const candidate of candidates) {
+      if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  function pickRecordPermissionEntries(resp) {
+    if (!resp || typeof resp !== 'object') return [];
+    const candidates = [
+      resp.records,
+      resp.permissions,
+      resp.results,
+      resp.items
+    ];
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate)) return candidate;
+      if (candidate && typeof candidate === 'object') {
+        if (Array.isArray(candidate.records)) return candidate.records;
+        if (Array.isArray(candidate.items)) return candidate.items;
+        if (Array.isArray(candidate.results)) return candidate.results;
+      }
+    }
+    return [];
+  }
+
+  async function fetchAppPermissions(appId) {
+    const fallback = { view: 'unknown', add: 'unknown', edit: 'unknown', delete: 'unknown', source: 'unknown' };
+    const sdk = window.kintone;
+    if (!sdk?.api) return fallback;
+    const app = String(appId || '').trim();
+    if (!app) return fallback;
+
+    const attempts = [
+      { path: '/k/v1/app/acl/evaluate', method: 'POST', payload: { app } },
+      { path: '/k/v1/app/permissions', method: 'GET', payload: { app } },
+      { path: '/k/v1/app/acl', method: 'GET', payload: { app } }
+    ];
+
+    for (const attempt of attempts) {
+      try {
+        const resp = await sdk.api(sdk.api.url(attempt.path, true), attempt.method, attempt.payload);
+        console.debug('[excel-permission-api]', {
+          appId: app,
+          type: 'app',
+          path: attempt.path,
+          result: resp
+        });
+        const candidate = pickAppPermissionCandidate(resp) || resp;
+        return normalizeRightSet(candidate, { view: 'unknown', add: 'unknown', edit: 'unknown', delete: 'unknown', source: 'api' });
+      } catch (_err) {
+        // try next
+      }
+    }
+    console.debug('[excel-permission-api]', {
+      appId: app,
+      type: 'app',
+      result: 'fallback_unknown'
+    });
+    return fallback;
+  }
+
+  async function fetchRecordPermissions(appId, ids) {
+    const idList = (ids || []).map((id) => String(id || '').trim()).filter(Boolean);
+    const fallback = emptyRecordPermissionMap(idList);
+    const sdk = window.kintone;
+    if (!sdk?.api) return fallback;
+    const app = String(appId || '').trim();
+    if (!app || !idList.length) return fallback;
+
+    const attempts = [
+      { path: '/k/v1/records/acl/evaluate', method: 'POST', payload: { app, ids: idList } },
+      { path: '/k/v1/records/permissions', method: 'GET', payload: { app, ids: idList } }
+    ];
+
+    for (const attempt of attempts) {
+      try {
+        const resp = await sdk.api(sdk.api.url(attempt.path, true), attempt.method, attempt.payload);
+        console.debug('[excel-permission-api]', {
+          appId: app,
+          type: 'record',
+          path: attempt.path,
+          ids: idList,
+          result: resp
+        });
+        const entries = pickRecordPermissionEntries(resp);
+        if (!entries.length) continue;
+        const out = { ...fallback };
+        entries.forEach((entry) => {
+          const id = String(entry?.id ?? entry?.recordId ?? entry?.record ?? '').trim();
+          if (!id) return;
+          const raw = entry?.permissions || entry?.permission || entry?.rights || entry;
+          const normalized = normalizeRightSet(raw, { view: 'unknown', add: 'unknown', edit: 'unknown', delete: 'unknown', source: 'api' });
+          out[id] = {
+            view: normalized.view,
+            edit: normalized.edit,
+            delete: normalized.delete,
+            source: normalized.source || 'api'
+          };
+        });
+        return out;
+      } catch (_err) {
+        // try next
+      }
+    }
+    console.debug('[excel-permission-api]', {
+      appId: app,
+      type: 'record',
+      ids: idList,
+      result: 'fallback_unknown'
+    });
+    return fallback;
+  }
+
+  async function fetchEvaluatedRecordAcl(appId, ids) {
+    const idList = (ids || []).map((id) => String(id || '').trim()).filter(Boolean);
+    if (!idList.length) return [];
+    const sdk = window.kintone;
+    if (!sdk?.api) return [];
+    const app = String(appId || '').trim();
+    if (!app) return [];
+    const resp = await sdk.api(
+      sdk.api.url('/k/v1/records/acl/evaluate.json', true),
+      'GET',
+      { app, ids: idList }
+    );
+    console.debug('[excel-permission-api]', {
+      appId: app,
+      type: 'record_acl_evaluate',
+      ids: idList,
+      result: resp
+    });
+    if (Array.isArray(resp?.rights)) return resp.rights;
+    if (Array.isArray(resp?.records)) return resp.records;
+    return [];
+  }
+
   function tzOffsetStr(d) {
     // "+09:00" 縺ｮ繧医≧縺ｪ陦ｨ險倥ｒ霑斐☆
     const offMin = -d.getTimezoneOffset(); // JS縺ｯ縲袈TC縺九ｉ縺ｮ蟾ｮ縲阪ｒ騾・ｬｦ蜿ｷ縺ｧ霑斐☆
@@ -337,6 +678,14 @@ function normalizeChoiceList(prop) {
         const fields = await getFields(appId);
         const editable = fields.filter(f => EDITABLE_TYPES.has(f.type));
         window.postMessage({ __kfav__: true, replyTo: id, ok: true, fields: editable }, ORIGIN);
+        return;
+      }
+
+      if (type === 'EXCEL_GET_FIELDS_META') {
+        const appId = payload?.appId;
+        if (!appId) throw new Error('appId is required');
+        const fieldsMeta = await getFieldsMeta(appId);
+        window.postMessage({ __kfav__: true, replyTo: id, ok: true, fieldsMeta }, ORIGIN);
         return;
       }
 
@@ -448,6 +797,39 @@ function normalizeChoiceList(prop) {
         return;
       }
 
+      if (type === 'EXCEL_POST_RECORDS') {
+        const appId = payload?.appId;
+        const records = Array.isArray(payload?.records) ? payload.records : null;
+        if (!appId || !records) throw new Error('appId and records are required');
+        const req = { app: String(appId), records };
+        const resp = await window.kintone.api(window.kintone.api.url('/k/v1/records', true), 'POST', req);
+        window.postMessage({ __kfav__: true, replyTo: id, ok: true, result: resp }, ORIGIN);
+        return;
+      }
+
+      if (type === 'EXCEL_DELETE_RECORDS') {
+        const appId = payload?.appId;
+        const ids = Array.isArray(payload?.ids) ? payload.ids.map((v) => String(v || '').trim()).filter(Boolean) : [];
+        if (!appId) throw new Error('appId is required');
+        if (!ids.length) {
+          window.postMessage({ __kfav__: true, replyTo: id, ok: true, result: { ids: [] } }, ORIGIN);
+          return;
+        }
+        const req = { app: String(appId), ids };
+        const resp = await window.kintone.api(window.kintone.api.url('/k/v1/records', true), 'DELETE', req);
+        window.postMessage({ __kfav__: true, replyTo: id, ok: true, result: resp || { ids } }, ORIGIN);
+        return;
+      }
+
+      if (type === 'EXCEL_EVALUATE_RECORD_ACL') {
+        const appId = payload?.appId;
+        const ids = Array.isArray(payload?.ids) ? payload.ids : [];
+        if (!appId) throw new Error('appId is required');
+        const rights = await fetchEvaluatedRecordAcl(appId, ids);
+        window.postMessage({ __kfav__: true, replyTo: id, ok: true, rights }, ORIGIN);
+        return;
+      }
+
       if (type === 'COUNT_VIEW') {
         const { appId, viewIdOrName } = payload;
         const views = await getViews(appId);
@@ -461,6 +843,23 @@ function normalizeChoiceList(prop) {
         const { appId, query } = payload;
         const count = await countRecords(appId, query || '');
         window.postMessage({ __kfav__: true, replyTo: id, ok: true, count }, ORIGIN);
+        return;
+      }
+
+      if (type === 'GET_APP_NAME') {
+        const appId = payload?.appId;
+        if (!appId) throw new Error('appId is required');
+        const resp = await window.kintone.api(
+          window.kintone.api.url('/k/v1/app.json', true),
+          'GET',
+          { id: String(appId) }
+        );
+        window.postMessage({
+          __kfav__: true,
+          replyTo: id,
+          ok: true,
+          name: String(resp?.name || '')
+        }, ORIGIN);
         return;
       }
 

@@ -80,6 +80,10 @@
           const res = await postToPage('PIN_FETCH', msg.payload);
           sendResponse(res); return;
         }
+        if (msg?.type === 'GET_APP_NAME') {
+          const res = await postToPage('GET_APP_NAME', msg.payload);
+          sendResponse(res); return;
+        }
         if (msg?.type === 'CHECK_KINTONE_READY') {
           const res = await postToPage('CHECK_KINTONE_READY', msg.payload);
           sendResponse(res); return;
@@ -92,6 +96,76 @@
     return true;
   });
 
+  const RECENT_TRACK_INTERVAL_MS = 500;
+  const RECENT_UPSERT_COOLDOWN_MS = 2000;
+  let lastObservedHref = '';
+  let lastRecentId = '';
+  let lastRecentAt = 0;
+
+  function isKintoneHostName(hostname) {
+    return /\.kintone(?:-dev)?\.com$/.test(hostname) || /\.cybozu\.com$/.test(hostname);
+  }
+
+  function parseRecentRecordFromUrl(rawUrl) {
+    try {
+      const url = new URL(rawUrl);
+      if (!isKintoneHostName(url.hostname)) return null;
+      const appMatch = url.pathname.match(/\/k\/(\d+)\/show(?:\/|$)/);
+      if (!appMatch) return null;
+      const appId = appMatch[1];
+      const hash = String(url.hash || '');
+      const hashMatch = hash.match(/(?:^#|[?&])record=(\d+)/);
+      const searchMatch = String(url.search || '').match(/[?&]record=(\d+)/);
+      const recordId = (hashMatch && hashMatch[1]) || (searchMatch && searchMatch[1]) || '';
+      if (!recordId) return null;
+      const host = url.origin.replace(/\/$/, '');
+      const normalizedUrl = `${host}/k/${encodeURIComponent(appId)}/show#record=${encodeURIComponent(recordId)}`;
+      let appName = '';
+      try {
+        if (typeof window.kintone?.app?.getName === 'function') {
+          appName = String(window.kintone.app.getName() || '').trim();
+        }
+      } catch (_err) {
+        appName = '';
+      }
+      const now = Date.now();
+      return {
+        id: `${host}|${appId}|${recordId}`,
+        host,
+        appId,
+        recordId,
+        appName,
+        url: normalizedUrl,
+        visitedAt: now
+      };
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  function tryUpsertRecentRecord() {
+    const record = parseRecentRecordFromUrl(location.href);
+    if (!record) return;
+    const now = Date.now();
+    if (record.id === lastRecentId && (now - lastRecentAt) < RECENT_UPSERT_COOLDOWN_MS) return;
+    lastRecentId = record.id;
+    lastRecentAt = now;
+    chrome.runtime.sendMessage({ type: 'RECENT_UPSERT', payload: record }).catch(() => {});
+  }
+
+  function startRecentRecordWatcher() {
+    lastObservedHref = location.href;
+    tryUpsertRecentRecord();
+    setInterval(() => {
+      const currentHref = location.href;
+      if (currentHref === lastObservedHref) return;
+      lastObservedHref = currentHref;
+      tryUpsertRecentRecord();
+    }, RECENT_TRACK_INTERVAL_MS);
+  }
+
+  startRecentRecordWatcher();
+
   const overlayTexts = {
     ja: {
       title: "Excelモード",
@@ -99,22 +173,58 @@
       loadFailed: "データの取得に失敗しました",
       noEditableFields: "編集可能なフィールドがありません",
       btnSave: "保存",
+      btnSaving: "保存中...",
+      btnUndo: "↶ Undo",
+      btnRedo: "↷ Redo",
+      titleUndo: "元に戻す (Ctrl+Z)",
+      titleRedo: "やり直し (Ctrl+Y)",
+      btnAddRow: "＋ 行追加",
+      btnPrev: "◀ Prev",
+      btnNext: "Next ▶",
       btnClose: "閉じる",
+      modeViewOnly: "閲覧のみ",
       toastNoChanges: "変更はありません",
       toastInvalidCells: "エラーを解消してから保存してください",
+      toastRequiredMissing: "必須項目を入力してください",
+      toastViewOnlyBlocked: "閲覧のみモードのため編集できません",
+      lookupAutoReadonly: "LOOKUPにより自動入力されるため編集できません",
       toastSaveSuccess: "保存しました",
       toastSaveFailed: "保存に失敗しました",
       confirmClose: "未保存の変更があります。閉じますか？",
+      confirmPageMoveUnsaved: "未保存の変更があります。ページを移動しますか？",
       reloading: "一覧を更新しています…",
       conflictRetry: "最新のデータを反映して再保存します…",
       conflictNoChanges: "最新のデータと一致しました",
       conflictFailed: "他の変更と競合し保存できませんでした",
+      btnSubtableEdit: "編集",
+      subtableTitle: "サブテーブル編集",
+      subtableAddRow: "＋ 行追加",
+      subtableRemoveRow: "削除",
+      subtableSave: "保存",
+      subtableCancel: "キャンセル",
+      permNoAdd: "追加権限がありません",
+      permNoEdit: "編集権限がありません",
+      permNoFieldEdit: "このフィールドは編集できません",
+      permNoDelete: "削除権限がありません",
+      permUnknown: "権限未判定",
+      permWarningUnknown: "権限を確認できないため、一部編集を無効化しています",
+      permViewOnly: "閲覧のみ",
+      permEditable: "編集可",
+      permDeletable: "削除可",
+      rowDeletePending: "削除予定",
+      rowDeleteToggle: "削除予定にする",
+      rowDeleteUndo: "削除予定を解除",
+      rowDeleteNewUndo: "新規行を取消",
       toastCopySuccess: "コピーしました",
       toastCopyFailed: "コピーに失敗しました",
       dirtyLabel: (n) => `未保存: ${n}`,
       statusSum: "合計",
       statusAvg: "平均",
       statusCount: "件数",
+      statusSelectedCells: "選択セル",
+      statusFilteredRows: "フィルタ後",
+      statusPendingDeletes: "削除予定",
+      statusNewRows: "新規行",
       btnColumns: "列順",
       columnsTitle: "列の並び替え",
       columnsHint: "ヘッダーをドラッグして並び順を変え、幅はドラッグまたは自動調整ボタンで変更できます。",
@@ -134,22 +244,58 @@
       loadFailed: "Failed to load data",
       noEditableFields: "No editable fields found",
       btnSave: "Save",
+      btnSaving: "Saving...",
+      btnUndo: "↶ Undo",
+      btnRedo: "↷ Redo",
+      titleUndo: "Undo (Ctrl+Z)",
+      titleRedo: "Redo (Ctrl+Y)",
+      btnAddRow: "+ Add row",
+      btnPrev: "◀ Prev",
+      btnNext: "Next ▶",
       btnClose: "Close",
+      modeViewOnly: "View only",
       toastNoChanges: "No changes",
       toastInvalidCells: "Fix errors before saving",
+      toastRequiredMissing: "Please fill required fields",
+      toastViewOnlyBlocked: "Editing is disabled in view-only mode",
+      lookupAutoReadonly: "This field is auto-populated by LOOKUP and cannot be edited",
       toastSaveSuccess: "Changes saved",
       toastSaveFailed: "Failed to save changes",
       confirmClose: "You have unsaved changes. Close anyway?",
+      confirmPageMoveUnsaved: "You have unsaved changes. Move to another page?",
       reloading: "Refreshing list…",
       conflictRetry: "Data updated, retrying save…",
       conflictNoChanges: "Your edits now match the latest data",
       conflictFailed: "Conflicted with other changes; save aborted",
+      btnSubtableEdit: "Edit",
+      subtableTitle: "Edit subtable",
+      subtableAddRow: "+ Add row",
+      subtableRemoveRow: "Delete",
+      subtableSave: "Save",
+      subtableCancel: "Cancel",
+      permNoAdd: "No add permission",
+      permNoEdit: "No edit permission",
+      permNoFieldEdit: "This field cannot be edited",
+      permNoDelete: "No delete permission",
+      permUnknown: "Permission unknown",
+      permWarningUnknown: "Permissions could not be verified, so some editing is disabled",
+      permViewOnly: "View only",
+      permEditable: "Editable",
+      permDeletable: "Deletable",
+      rowDeletePending: "Pending delete",
+      rowDeleteToggle: "Mark row for delete",
+      rowDeleteUndo: "Unmark delete",
+      rowDeleteNewUndo: "Discard new row",
       toastCopySuccess: "Copied",
       toastCopyFailed: "Copy failed",
       dirtyLabel: (n) => `Unsaved: ${n}`,
       statusSum: "Sum",
       statusAvg: "Avg",
       statusCount: "Count",
+      statusSelectedCells: "Selected",
+      statusFilteredRows: "Filtered",
+      statusPendingDeletes: "Pending delete",
+      statusNewRows: "New rows",
       btnColumns: "Columns",
       columnsTitle: "Reorder columns",
       columnsHint: "Drag the header chips below to reorder columns, then save the layout for future sessions.",
@@ -167,10 +313,13 @@
 
   const overlayConfig = {
     limit: 100,
-    allowedTypes: new Set(['SINGLE_LINE_TEXT', 'NUMBER', 'DATE', 'RADIO_BUTTON'])
+    allowedTypes: new Set(['SINGLE_LINE_TEXT', 'NUMBER', 'DATE', 'RADIO_BUTTON', 'DROP_DOWN', 'SUBTABLE', 'LOOKUP'])
   };
 
   const COLUMN_PREF_STORAGE_KEY = 'kfavExcelColumns';
+  const EXCEL_OVERLAY_MODE_KEY = 'kfavExcelOverlayMode';
+  const DEFAULT_EXCEL_OVERLAY_MODE = 'edit';
+  const EXCEL_OVERLAY_MODE_VALUES = new Set(['off', 'view', 'edit']);
   const MAX_COLUMN_PREF_ENTRIES = 80;
   const DEFAULT_COLUMN_WIDTH = 160;
   const MIN_COLUMN_WIDTH = 96;
@@ -185,6 +334,10 @@
     if (typeof value === 'string') return value;
     const fallback = overlayTexts.en[key];
     return typeof fallback === 'function' ? fallback(...args) : (fallback || '');
+  }
+
+  function normalizeExcelOverlayMode(value) {
+    return EXCEL_OVERLAY_MODE_VALUES.has(value) ? value : DEFAULT_EXCEL_OVERLAY_MODE;
   }
 
   function columnLabel(index) {
@@ -209,22 +362,69 @@
       this.rowHeaderScroll = null;
       this.toastHost = null;
       this.loadingEl = null;
+      this.permissionWarningEl = null;
       this.dirtyBadge = null;
       this.saveButton = null;
+      this.saveButtonSpinner = null;
+      this.saveButtonLabel = null;
+      this.undoButton = null;
+      this.redoButton = null;
       this.closeButton = null;
+      this.addRowButton = null;
       this.titleElement = null;
+      this.prevPageButton = null;
+      this.nextPageButton = null;
+      this.pageLabelElement = null;
       this.appName = '';
-      this.statsElements = { sum: null, avg: null, count: null };
+      this.statsElements = {
+        sum: null,
+        avg: null,
+        count: null,
+        selected: null,
+        filtered: null,
+        pendingDelete: null,
+        newRows: null
+      };
       this.language = 'ja';
       this.appName = '';
+      this.overlayMode = DEFAULT_EXCEL_OVERLAY_MODE;
+      this.modeBadge = null;
+      this.viewOnlyNoticeShown = false;
       this.appId = null;
+      this.baseQuery = '';
       this.query = '';
+      this.pageSize = 100;
+      this.pageOffset = 0;
+      this.totalCount = 0;
+      this.paging = false;
       this.fields = [];
+      this.fieldsMeta = [];
       this.fieldMap = new Map();
+      this.fieldsMetaMap = new Map();
       this.fieldIndexMap = new Map();
       this.rows = [];
       this.rowMap = new Map();
       this.rowIndexMap = new Map();
+      this.appPermissions = {
+        view: 'unknown',
+        add: 'unknown',
+        edit: 'unknown',
+        delete: 'unknown',
+        source: 'unknown'
+      };
+      this.recordPermissions = new Map();
+      this.recordAcl = new Map();
+      this.aclStatus = { loaded: false, failed: false };
+      this.pendingDeletes = new Set();
+      this.filters = new Map();
+      this.filteredRowIds = null;
+      this.filterPanel = null;
+      this.needsFilterReapply = false;
+      this.sortState = { fieldCode: '', direction: '' };
+      this.undoStack = [];
+      this.redoStack = [];
+      this.isReplayingHistory = false;
+      this.maxHistory = 100;
       this.diff = new Map();
       this.invalidCells = new Set();
       this.revisionMap = new Map();
@@ -245,8 +445,11 @@
       this.tableContainer = null;
       this.inputsByRow = new Map();
       this.pendingFocus = null;
+      this.pendingEdit = null;
       this.invalidValueCache = new Map();
       this.selection = null;
+      this.armedCell = null;
+      this.navigating = false;
       this.dragSelecting = false;
       this.editingCell = null;
       this.handleMouseUp = this.endSelection.bind(this);
@@ -262,6 +465,9 @@
       this.draggingColumnCode = null;
       this.columnWidthsDraft = new Map();
       this.radioPicker = null;
+      this.newRowSeq = 1;
+      this.subtableEditor = null;
+      this.pasteFlashTimer = null;
       this.boundRadioPickerScrollHandler = () => { this.repositionRadioPicker(); };
       this.boundRadioPickerResizeHandler = () => { this.repositionRadioPicker(); };
       this.boundRadioPickerOutsideClick = (event) => {
@@ -272,16 +478,28 @@
         if (panel.contains(event.target) || input === event.target) return;
         this.closeRadioPicker();
       };
+      this.boundFilterPanelOutsideClick = (event) => {
+        if (!this.filterPanel) return;
+        const panel = this.filterPanel.panel;
+        const button = this.filterPanel.button;
+        if (!panel) return;
+        if (panel.contains(event.target)) return;
+        if (button && (button === event.target || button.contains(event.target))) return;
+        this.closeFilterPanel();
+      };
     }
 
     async open() {
       if (this.isOpen) return;
+      await this.loadOverlayMode();
+      if (this.overlayMode === 'off') return;
       this.isOpen = true;
       try {
         this.previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         this.bodyOverflowBackup = document.body.style.overflow || '';
         document.body.style.overflow = 'hidden';
         this.requireReload = false;
+        this.viewOnlyNoticeShown = false;
         await this.ensureStyles();
         await this.loadLanguage();
         this.mountShell();
@@ -326,17 +544,22 @@
       this.surface = surface;
 
       const toolbar = this.buildToolbar();
+      const permissionWarning = document.createElement('div');
+      permissionWarning.className = 'pb-overlay__perm-warning pb-overlay__perm-warning--hidden';
+      permissionWarning.textContent = resolveText(this.language, 'permWarningUnknown');
+      this.permissionWarningEl = permissionWarning;
       const grid = this.buildGridShell();
       const status = this.buildStatusBar();
       const toastHost = document.createElement('div');
-      toastHost.className = 'pb-overlay__toast-host';
+      toastHost.className = 'pb-overlay__toast-host toast-container';
       this.toastHost = toastHost;
 
       surface.appendChild(toolbar);
+      surface.appendChild(permissionWarning);
       surface.appendChild(grid);
       surface.appendChild(status);
-      surface.appendChild(toastHost);
       this.root.appendChild(surface);
+      this.root.appendChild(toastHost);
       document.body.appendChild(this.root);
     }
 
@@ -351,9 +574,36 @@
       title.textContent = this.appName || resolveText(this.language, 'title');
       this.titleElement = title;
       titleWrap.appendChild(title);
+      if (this.isOverlayViewOnly()) {
+        const badge = document.createElement('span');
+        badge.className = 'pb-overlay__mode-badge';
+        badge.textContent = resolveText(this.language, 'modeViewOnly');
+        this.modeBadge = badge;
+        titleWrap.appendChild(badge);
+      }
 
       const actions = document.createElement('div');
       actions.className = 'pb-overlay__toolbar-actions';
+
+      const pager = document.createElement('div');
+      pager.className = 'pb-overlay__pager';
+      const prevBtn = document.createElement('button');
+      prevBtn.type = 'button';
+      prevBtn.className = 'pb-overlay__btn pb-overlay__btn--pager';
+      prevBtn.textContent = resolveText(this.language, 'btnPrev');
+      this.prevPageButton = prevBtn;
+      const pageLabel = document.createElement('span');
+      pageLabel.className = 'pb-overlay__pager-label';
+      pageLabel.textContent = '0-0 / 0';
+      this.pageLabelElement = pageLabel;
+      const nextBtn = document.createElement('button');
+      nextBtn.type = 'button';
+      nextBtn.className = 'pb-overlay__btn pb-overlay__btn--pager';
+      nextBtn.textContent = resolveText(this.language, 'btnNext');
+      this.nextPageButton = nextBtn;
+      pager.appendChild(prevBtn);
+      pager.appendChild(pageLabel);
+      pager.appendChild(nextBtn);
 
       const columnsBtn = document.createElement('button');
       columnsBtn.type = 'button';
@@ -371,8 +621,39 @@
       const saveBtn = document.createElement('button');
       saveBtn.type = 'button';
       saveBtn.className = 'pb-overlay__btn pb-overlay__btn--primary';
-      saveBtn.textContent = resolveText(this.language, 'btnSave');
+      const saveSpinner = document.createElement('span');
+      saveSpinner.className = 'pb-overlay__spinner pb-overlay__spinner--hidden';
+      saveSpinner.setAttribute('aria-hidden', 'true');
+      const saveLabel = document.createElement('span');
+      saveLabel.className = 'pb-overlay__save-label';
+      saveLabel.textContent = resolveText(this.language, 'btnSave');
+      saveBtn.appendChild(saveSpinner);
+      saveBtn.appendChild(saveLabel);
       this.saveButton = saveBtn;
+      this.saveButtonSpinner = saveSpinner;
+      this.saveButtonLabel = saveLabel;
+
+      const addRowBtn = document.createElement('button');
+      addRowBtn.type = 'button';
+      addRowBtn.className = 'pb-overlay__btn';
+      addRowBtn.textContent = resolveText(this.language, 'btnAddRow');
+      this.addRowButton = addRowBtn;
+
+      const undoBtn = document.createElement('button');
+      undoBtn.type = 'button';
+      undoBtn.className = 'pb-overlay__btn';
+      undoBtn.textContent = resolveText(this.language, 'btnUndo');
+      undoBtn.title = resolveText(this.language, 'titleUndo');
+      undoBtn.disabled = true;
+      this.undoButton = undoBtn;
+
+      const redoBtn = document.createElement('button');
+      redoBtn.type = 'button';
+      redoBtn.className = 'pb-overlay__btn';
+      redoBtn.textContent = resolveText(this.language, 'btnRedo');
+      redoBtn.title = resolveText(this.language, 'titleRedo');
+      redoBtn.disabled = true;
+      this.redoButton = redoBtn;
 
       const closeBtn = document.createElement('button');
       closeBtn.type = 'button';
@@ -380,8 +661,12 @@
       closeBtn.textContent = resolveText(this.language, 'btnClose');
       this.closeButton = closeBtn;
 
+      actions.appendChild(pager);
       actions.appendChild(columnsBtn);
       actions.appendChild(dirty);
+      actions.appendChild(addRowBtn);
+      actions.appendChild(undoBtn);
+      actions.appendChild(redoBtn);
       actions.appendChild(saveBtn);
       actions.appendChild(closeBtn);
 
@@ -441,6 +726,22 @@
       const status = document.createElement('div');
       status.className = 'pb-overlay__status';
 
+      const selected = document.createElement('span');
+      selected.className = 'pb-overlay__status-item';
+      this.statsElements.selected = selected;
+
+      const filtered = document.createElement('span');
+      filtered.className = 'pb-overlay__status-item';
+      this.statsElements.filtered = filtered;
+
+      const pendingDelete = document.createElement('span');
+      pendingDelete.className = 'pb-overlay__status-item';
+      this.statsElements.pendingDelete = pendingDelete;
+
+      const newRows = document.createElement('span');
+      newRows.className = 'pb-overlay__status-item';
+      this.statsElements.newRows = newRows;
+
       const sum = document.createElement('span');
       sum.className = 'pb-overlay__status-item';
       this.statsElements.sum = sum;
@@ -453,6 +754,10 @@
       count.className = 'pb-overlay__status-item';
       this.statsElements.count = count;
 
+      status.appendChild(selected);
+      status.appendChild(filtered);
+      status.appendChild(pendingDelete);
+      status.appendChild(newRows);
       status.appendChild(sum);
       status.appendChild(avg);
       status.appendChild(count);
@@ -464,6 +769,11 @@
       if (!this.root) return;
       this.bodyScroll.addEventListener('scroll', this.handleScroll, { passive: true });
       this.saveButton.addEventListener('click', () => { this.save(); });
+      this.addRowButton?.addEventListener('click', () => { this.addNewRow(); });
+      this.undoButton?.addEventListener('click', () => { this.undo(); });
+      this.redoButton?.addEventListener('click', () => { this.redo(); });
+      this.prevPageButton?.addEventListener('click', () => { this.prevPage(); });
+      this.nextPageButton?.addEventListener('click', () => { this.nextPage(); });
       this.closeButton.addEventListener('click', () => { this.tryClose(); });
       this.root.addEventListener('keydown', this.handleKeyOnOverlay, true);
       document.addEventListener('mouseup', this.handleMouseUp, true);
@@ -510,6 +820,40 @@
       }
     }
 
+    async loadOverlayMode() {
+      try {
+        const stored = await chrome.storage.sync.get(EXCEL_OVERLAY_MODE_KEY);
+        this.overlayMode = normalizeExcelOverlayMode(stored?.[EXCEL_OVERLAY_MODE_KEY]);
+      } catch (_error) {
+        this.overlayMode = DEFAULT_EXCEL_OVERLAY_MODE;
+      }
+    }
+
+    isOverlayEditable() {
+      return this.overlayMode === 'edit';
+    }
+
+    isOverlayViewOnly() {
+      return this.overlayMode === 'view';
+    }
+
+    canMutateOverlay(showNotice = false) {
+      const allowed = this.isOverlayEditable();
+      if (!allowed && showNotice) {
+        this.notifyViewOnlyBlocked();
+      }
+      return allowed;
+    }
+
+    notifyViewOnlyBlocked() {
+      if (this.viewOnlyNoticeShown) return;
+      this.viewOnlyNoticeShown = true;
+      this.notify(resolveText(this.language, 'toastViewOnlyBlocked'));
+      setTimeout(() => {
+        this.viewOnlyNoticeShown = false;
+      }, 1200);
+    }
+
     async fetchData() {
       const contextRes = await this.postFn('EXCEL_GET_APP_CONTEXT');
       if (!contextRes?.ok || !contextRes.appId) {
@@ -551,13 +895,46 @@
         // ignore and fall back to currentQuery
       }
       this.viewKey = this.computeViewKey(this.viewId, this.viewName, viewId);
-      this.query = this.applyLimit(resolvedQuery, overlayConfig.limit);
+      this.baseQuery = String(resolvedQuery || '').trim();
+      this.query = this.baseQuery;
+      this.pageOffset = 0;
+      this.totalCount = 0;
 
-      const fieldsRes = await this.postFn('EXCEL_GET_FIELDS', { appId: this.appId });
-      if (!fieldsRes?.ok) throw new Error('Failed to get fields');
-      const rawFields = Array.isArray(fieldsRes.fields)
-        ? fieldsRes.fields.filter((f) => overlayConfig.allowedTypes.has(f.type))
-        : [];
+      const fieldsMetaRes = await this.postFn('EXCEL_GET_FIELDS_META', { appId: this.appId });
+      let rawFields = [];
+      if (fieldsMetaRes?.ok && Array.isArray(fieldsMetaRes.fieldsMeta)) {
+        rawFields = fieldsMetaRes.fieldsMeta
+          .filter((f) => this.shouldIncludeField(f))
+          .map((f) => ({
+            code: f.code,
+            label: f.label || '',
+            type: f.type || '',
+            required: Boolean(f.required),
+            choices: Array.isArray(f.choices) ? f.choices : [],
+            lookupAuto: Boolean(f.lookupAuto),
+            lookup: f.lookup ? { ...f.lookup } : undefined,
+            subtable: f.subtable && Array.isArray(f.subtable.fields)
+              ? {
+                fields: f.subtable.fields.map((child) => ({
+                  ...child,
+                  required: Boolean(child?.required),
+                  choices: Array.isArray(child.choices) ? child.choices : []
+                }))
+              }
+              : undefined
+          }));
+      } else {
+        const fieldsRes = await this.postFn('EXCEL_GET_FIELDS', { appId: this.appId });
+        if (!fieldsRes?.ok) throw new Error('Failed to get fields');
+        rawFields = Array.isArray(fieldsRes.fields)
+          ? fieldsRes.fields.filter((f) => overlayConfig.allowedTypes.has(f.type))
+          : [];
+      }
+      this.fieldsMeta = rawFields.map((field) => ({ ...field }));
+      this.fieldsMetaMap.clear();
+      this.fieldsMeta.forEach((field) => {
+        if (field?.code) this.fieldsMetaMap.set(field.code, field);
+      });
 
       const sorted = rawFields.slice().sort((a, b) => {
         const aIdx = viewFieldOrder.indexOf(a.code);
@@ -593,36 +970,14 @@
       }
       this.fields = sorted.map((field) => ({
         ...field,
+        required: Boolean(field.required),
         choices: Array.isArray(field.choices) ? field.choices.map((choice) => String(choice)) : [],
+        editable: this.isFieldEditable(field),
         width: widthMap.get(field.code) || DEFAULT_COLUMN_WIDTH
       }));
       this.rebuildFieldMaps();
-
-      const fieldCodes = this.fields.map((f) => f.code);
-      const recordsRes = await this.postFn('EXCEL_GET_RECORDS', {
-        appId: this.appId,
-        fields: fieldCodes,
-        query: this.query
-      });
-
-      if (!recordsRes?.ok) {
-        const errorCode = recordsRes?.errorCode || '';
-        if (errorCode === 'GAIA_IL02' || /GAIA_IL02/.test(recordsRes?.error || '')) {
-          throw new Error(resolveText(this.language, 'errorUnsupportedFilter'));
-        }
-        throw new Error(recordsRes?.error || 'Failed to get records');
-      }
-
-      const records = Array.isArray(recordsRes.records) ? recordsRes.records : [];
-      this.rows = records.map((record) => this.transformRecord(record));
-      this.rowMap.clear();
-      this.rowIndexMap.clear();
-      this.revisionMap.clear();
-      this.rows.forEach((row, index) => {
-        this.rowMap.set(row.id, row);
-        this.rowIndexMap.set(row.id, index);
-        this.revisionMap.set(row.id, row.revision);
-      });
+      await this.loadPermissions();
+      await this.loadCurrentPageRecords();
       if (this.columnButton) {
         this.columnButton.disabled = !this.fields.length;
       }
@@ -635,6 +990,594 @@
       return 'default';
     }
 
+    normalizeOverlayQuery(baseQuery, pageSize, pageOffset) {
+      let raw = String(baseQuery || '').trim();
+      raw = raw.replace(/(^|\s+)limit\s+\d+\b/ig, ' ');
+      raw = raw.replace(/(^|\s+)offset\s+\d+\b/ig, ' ');
+      raw = raw.replace(/\s+/g, ' ').trim();
+      const paging = `limit ${pageSize} offset ${pageOffset}`;
+      return raw ? `${raw} ${paging}` : paging;
+    }
+
+    buildPagedQuery() {
+      return this.normalizeOverlayQuery(this.baseQuery || this.query || '', this.pageSize, this.pageOffset);
+    }
+
+    seedRecordPermissionsFromRows() {
+      this.recordPermissions.clear();
+      this.rows.forEach((row) => {
+        const id = String(row?.id || '').trim();
+        if (!id) return;
+        this.recordPermissions.set(id, { view: 'allow', edit: 'allow', delete: 'allow', source: 'local' });
+      });
+    }
+
+    getVisibleRows() {
+      let visible;
+      if (!Array.isArray(this.filteredRowIds)) {
+        visible = this.rows.slice();
+      } else {
+        visible = [];
+        this.filteredRowIds.forEach((id) => {
+          const row = this.rowMap.get(String(id || '').trim());
+          if (row) visible.push(row);
+        });
+      }
+      return this.sortVisibleRows(visible);
+    }
+
+    getVisibleRowCount() {
+      return this.getVisibleRows().length;
+    }
+
+    getVisibleRowAt(index) {
+      const rows = this.getVisibleRows();
+      return rows[index] || null;
+    }
+
+    getVisibleRowIndexById(recordId) {
+      const key = String(recordId || '').trim();
+      if (!key) return -1;
+      const rows = this.getVisibleRows();
+      for (let i = 0; i < rows.length; i += 1) {
+        if (String(rows[i]?.id || '').trim() === key) return i;
+      }
+      return -1;
+    }
+
+    isSortActive() {
+      return Boolean(this.sortState?.fieldCode && this.sortState?.direction);
+    }
+
+    getSortDirectionForField(fieldCode) {
+      const code = String(fieldCode || '').trim();
+      if (!code) return '';
+      if (this.sortState.fieldCode !== code) return '';
+      if (this.sortState.direction === 'asc' || this.sortState.direction === 'desc') {
+        return this.sortState.direction;
+      }
+      return '';
+    }
+
+    toggleSortForField(fieldCode) {
+      const code = String(fieldCode || '').trim();
+      if (!code) return;
+      const current = this.getSortDirectionForField(code);
+      if (!current) {
+        this.sortState = { fieldCode: code, direction: 'asc' };
+      } else if (current === 'asc') {
+        this.sortState = { fieldCode: code, direction: 'desc' };
+      } else {
+        this.sortState = { fieldCode: '', direction: '' };
+      }
+      this.resetViewAfterSort();
+    }
+
+    resetViewAfterSort() {
+      this.closeFilterPanel();
+      this.closeRadioPicker();
+      this.selection = null;
+      this.armedCell = null;
+      this.editingCell = null;
+      this.pendingFocus = null;
+      this.pendingEdit = null;
+      if (this.bodyScroll) this.bodyScroll.scrollTop = 0;
+      this.virtualStart = 0;
+      this.virtualEnd = 0;
+      this.renderGrid();
+      this.updateVirtualRows(true);
+      this.updateStats();
+      this.updateDirtyBadge();
+    }
+
+    isEmptySortValue(value) {
+      if (value == null) return true;
+      if (Array.isArray(value)) return value.length === 0;
+      return String(value).trim() === '';
+    }
+
+    parseSortNumber(value) {
+      const str = String(value ?? '').trim();
+      if (!str) return null;
+      const num = Number(str);
+      return Number.isNaN(num) ? null : num;
+    }
+
+    parseSortDate(value) {
+      const str = String(value ?? '').trim();
+      if (!str) return null;
+      const time = Date.parse(str);
+      return Number.isNaN(time) ? null : time;
+    }
+
+    compareSortValues(aValue, bValue, field) {
+      const aEmpty = this.isEmptySortValue(aValue);
+      const bEmpty = this.isEmptySortValue(bValue);
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty && !bEmpty) return 1;
+      if (!aEmpty && bEmpty) return -1;
+
+      const type = String(field?.type || '');
+      if (type === 'NUMBER') {
+        const aNum = this.parseSortNumber(aValue);
+        const bNum = this.parseSortNumber(bValue);
+        if (aNum != null && bNum != null) {
+          if (aNum < bNum) return -1;
+          if (aNum > bNum) return 1;
+          return 0;
+        }
+      } else if (type === 'DATE') {
+        const aDate = this.parseSortDate(aValue);
+        const bDate = this.parseSortDate(bValue);
+        if (aDate != null && bDate != null) {
+          if (aDate < bDate) return -1;
+          if (aDate > bDate) return 1;
+          return 0;
+        }
+      }
+
+      const aStr = String(aValue ?? '').toLowerCase();
+      const bStr = String(bValue ?? '').toLowerCase();
+      return aStr.localeCompare(bStr, undefined, { numeric: true, sensitivity: 'base' });
+    }
+
+    sortVisibleRows(rows) {
+      if (!Array.isArray(rows) || rows.length <= 1) return Array.isArray(rows) ? rows : [];
+      if (!this.isSortActive()) return rows;
+      const fieldCode = String(this.sortState.fieldCode || '').trim();
+      const direction = this.sortState.direction === 'desc' ? 'desc' : 'asc';
+      const field = this.fieldMap.get(fieldCode);
+      if (!field) return rows;
+      const factor = direction === 'desc' ? -1 : 1;
+      const sorted = rows.slice();
+      sorted.sort((a, b) => {
+        const aValue = a?.values?.[fieldCode];
+        const bValue = b?.values?.[fieldCode];
+        const base = this.compareSortValues(aValue, bValue, field);
+        return base * factor;
+      });
+      return sorted;
+    }
+
+    getFilterTypeForField(field) {
+      if (!field) return 'text';
+      if (field.type === 'NUMBER') return 'number';
+      if (field.type === 'DATE') return 'date';
+      if (field.type === 'RADIO_BUTTON' || field.type === 'DROP_DOWN') return 'choice';
+      return 'text';
+    }
+
+    createDefaultFilter(field) {
+      const type = this.getFilterTypeForField(field);
+      if (type === 'number' || type === 'date') {
+        return { type, mode: 'range', from: '', to: '', value: '', values: [] };
+      }
+      if (type === 'choice') {
+        return { type, mode: 'in', values: [], value: '', from: '', to: '' };
+      }
+      return { type, mode: 'contains', value: '', from: '', to: '', values: [] };
+    }
+
+    isFilterActive(filter) {
+      if (!filter || typeof filter !== 'object') return false;
+      if (filter.type === 'number' || filter.type === 'date') {
+        return String(filter.from || '').trim().length > 0 || String(filter.to || '').trim().length > 0;
+      }
+      if (filter.type === 'choice') {
+        return Array.isArray(filter.values) && filter.values.length > 0;
+      }
+      return String(filter.value || '').trim().length > 0;
+    }
+
+    hasActiveFilters() {
+      for (const [, filter] of this.filters.entries()) {
+        if (this.isFilterActive(filter)) return true;
+      }
+      return false;
+    }
+
+    getActiveFilterCount() {
+      let count = 0;
+      this.filters.forEach((filter) => {
+        if (this.isFilterActive(filter)) count += 1;
+      });
+      return count;
+    }
+
+    parseFilterNumber(value) {
+      const str = String(value ?? '').trim();
+      if (!str) return null;
+      const num = Number(str);
+      return Number.isNaN(num) ? null : num;
+    }
+
+    parseFilterDate(value) {
+      const str = String(value ?? '').trim();
+      if (!str) return null;
+      const time = Date.parse(str);
+      return Number.isNaN(time) ? null : time;
+    }
+
+    matchesFilter(value, filter) {
+      if (!this.isFilterActive(filter)) return true;
+      if (filter.type === 'number') {
+        const current = this.parseFilterNumber(value);
+        if (current == null) return false;
+        const from = this.parseFilterNumber(filter.from);
+        const to = this.parseFilterNumber(filter.to);
+        if (from != null && current < from) return false;
+        if (to != null && current > to) return false;
+        return true;
+      }
+      if (filter.type === 'date') {
+        const current = this.parseFilterDate(value);
+        if (current == null) return false;
+        const from = this.parseFilterDate(filter.from);
+        const to = this.parseFilterDate(filter.to);
+        if (from != null && current < from) return false;
+        if (to != null && current > to) return false;
+        return true;
+      }
+      if (filter.type === 'choice') {
+        const selected = Array.isArray(filter.values) ? filter.values.map((item) => String(item ?? '')) : [];
+        if (!selected.length) return true;
+        return selected.includes(String(value ?? ''));
+      }
+      const needle = String(filter.value || '').trim().toLowerCase();
+      const hay = String(value ?? '').toLowerCase();
+      const mode = String(filter.mode || 'contains');
+      if (mode === 'equals') return hay === needle;
+      if (mode === 'startsWith') return hay.startsWith(needle);
+      return hay.includes(needle);
+    }
+
+    recomputeFilteredRowIds() {
+      const active = Array.from(this.filters.entries()).filter(([, filter]) => this.isFilterActive(filter));
+      if (!active.length) {
+        this.filteredRowIds = null;
+        return;
+      }
+      const visible = this.rows.filter((row) => {
+        return active.every(([fieldCode, filter]) => {
+          const value = row?.values?.[fieldCode] ?? '';
+          return this.matchesFilter(value, filter);
+        });
+      });
+      this.filteredRowIds = visible.map((row) => String(row.id || '').trim()).filter(Boolean);
+    }
+
+    applyFilters() {
+      this.needsFilterReapply = false;
+      this.recomputeFilteredRowIds();
+      this.resetViewAfterFilter();
+    }
+
+    resetViewAfterFilter() {
+      this.closeFilterPanel();
+      this.closeRadioPicker();
+      this.selection = null;
+      this.armedCell = null;
+      this.editingCell = null;
+      this.pendingFocus = null;
+      this.pendingEdit = null;
+      if (this.bodyScroll) this.bodyScroll.scrollTop = 0;
+      this.virtualStart = 0;
+      this.virtualEnd = 0;
+      this.renderGrid();
+      this.updateVirtualRows(true);
+      this.updateStats();
+      this.updateDirtyBadge();
+    }
+
+    clearFieldFilter(fieldCode) {
+      const code = String(fieldCode || '').trim();
+      if (!code) return;
+      this.filters.delete(code);
+      this.applyFilters();
+    }
+
+    isFieldFilterActive(fieldCode) {
+      const filter = this.filters.get(String(fieldCode || '').trim());
+      return this.isFilterActive(filter);
+    }
+
+    openFilterPanel(field, anchorButton) {
+      if (!this.root || !field || !anchorButton) return;
+      const fieldCode = String(field.code || '').trim();
+      if (!fieldCode) return;
+      this.closeFilterPanel();
+
+      const existing = this.filters.get(fieldCode);
+      const working = existing
+        ? { ...existing, values: Array.isArray(existing.values) ? existing.values.slice() : [] }
+        : this.createDefaultFilter(field);
+
+      const panel = document.createElement('div');
+      panel.className = 'pb-overlay__filter-panel';
+      panel.setAttribute('role', 'dialog');
+      panel.addEventListener('click', (event) => event.stopPropagation());
+
+      const title = document.createElement('div');
+      title.className = 'pb-overlay__filter-title';
+      title.textContent = `Filter: ${field.label || field.code}`;
+      panel.appendChild(title);
+
+      const body = document.createElement('div');
+      body.className = 'pb-overlay__filter-body';
+      panel.appendChild(body);
+
+      let modeSelect = null;
+      let valueInput = null;
+      let fromInput = null;
+      let toInput = null;
+      const choiceInputs = [];
+
+      if (working.type === 'text') {
+        modeSelect = document.createElement('select');
+        modeSelect.className = 'pb-overlay__filter-select';
+        [
+          ['contains', 'contains'],
+          ['equals', 'equals'],
+          ['startsWith', 'startsWith']
+        ].forEach(([value, label]) => {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = label;
+          if (working.mode === value) option.selected = true;
+          modeSelect.appendChild(option);
+        });
+        valueInput = document.createElement('input');
+        valueInput.type = 'text';
+        valueInput.className = 'pb-overlay__filter-input';
+        valueInput.value = String(working.value || '');
+        body.appendChild(modeSelect);
+        body.appendChild(valueInput);
+      } else if (working.type === 'number') {
+        fromInput = document.createElement('input');
+        fromInput.type = 'text';
+        fromInput.inputMode = 'decimal';
+        fromInput.className = 'pb-overlay__filter-input';
+        fromInput.placeholder = 'from';
+        fromInput.value = String(working.from || '');
+        toInput = document.createElement('input');
+        toInput.type = 'text';
+        toInput.inputMode = 'decimal';
+        toInput.className = 'pb-overlay__filter-input';
+        toInput.placeholder = 'to';
+        toInput.value = String(working.to || '');
+        body.appendChild(fromInput);
+        body.appendChild(toInput);
+      } else if (working.type === 'date') {
+        fromInput = document.createElement('input');
+        fromInput.type = 'date';
+        fromInput.className = 'pb-overlay__filter-input';
+        fromInput.value = String(working.from || '');
+        toInput = document.createElement('input');
+        toInput.type = 'date';
+        toInput.className = 'pb-overlay__filter-input';
+        toInput.value = String(working.to || '');
+        body.appendChild(fromInput);
+        body.appendChild(toInput);
+      } else if (working.type === 'choice') {
+        const list = document.createElement('div');
+        list.className = 'pb-overlay__filter-choices';
+        const selected = new Set(Array.isArray(working.values) ? working.values.map((item) => String(item)) : []);
+        const choices = Array.isArray(field.choices) ? field.choices : [];
+        choices.forEach((choice) => {
+          const label = document.createElement('label');
+          label.className = 'pb-overlay__filter-choice';
+          const check = document.createElement('input');
+          check.type = 'checkbox';
+          check.value = String(choice);
+          check.checked = selected.has(String(choice));
+          choiceInputs.push(check);
+          const text = document.createElement('span');
+          text.textContent = String(choice);
+          label.appendChild(check);
+          label.appendChild(text);
+          list.appendChild(label);
+        });
+        body.appendChild(list);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'pb-overlay__filter-actions';
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'pb-overlay__btn';
+      clearBtn.textContent = 'Clear';
+      const applyBtn = document.createElement('button');
+      applyBtn.type = 'button';
+      applyBtn.className = 'pb-overlay__btn pb-overlay__btn--primary';
+      applyBtn.textContent = 'Apply';
+      actions.appendChild(clearBtn);
+      actions.appendChild(applyBtn);
+      panel.appendChild(actions);
+
+      clearBtn.addEventListener('click', () => {
+        this.clearFieldFilter(fieldCode);
+      });
+      applyBtn.addEventListener('click', () => {
+        const next = this.createDefaultFilter(field);
+        if (working.type === 'text') {
+          next.mode = modeSelect ? modeSelect.value : 'contains';
+          next.value = valueInput ? String(valueInput.value || '').trim() : '';
+        } else if (working.type === 'number' || working.type === 'date') {
+          next.from = fromInput ? String(fromInput.value || '').trim() : '';
+          next.to = toInput ? String(toInput.value || '').trim() : '';
+        } else if (working.type === 'choice') {
+          next.values = choiceInputs.filter((input) => input.checked).map((input) => String(input.value || ''));
+        }
+        if (this.isFilterActive(next)) {
+          this.filters.set(fieldCode, next);
+        } else {
+          this.filters.delete(fieldCode);
+        }
+        this.applyFilters();
+      });
+
+      this.root.appendChild(panel);
+      const rootRect = this.root.getBoundingClientRect();
+      const anchorRect = anchorButton.getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      const margin = 12;
+      let left = anchorRect.left - rootRect.left - panelRect.width + anchorRect.width;
+      if (left < margin) left = margin;
+      const maxLeft = Math.max(margin, rootRect.width - panelRect.width - margin);
+      if (left > maxLeft) left = maxLeft;
+      let top = anchorRect.bottom - rootRect.top + 6;
+      const maxTop = Math.max(margin, rootRect.height - panelRect.height - margin);
+      if (top > maxTop) {
+        top = anchorRect.top - rootRect.top - panelRect.height - 6;
+      }
+      if (top < margin) top = margin;
+      panel.style.left = `${left}px`;
+      panel.style.top = `${top}px`;
+
+      this.filterPanel = { panel, fieldCode, button: anchorButton };
+      document.addEventListener('mousedown', this.boundFilterPanelOutsideClick, true);
+      requestAnimationFrame(() => {
+        const focusable = panel.querySelector('input,select,button');
+        if (focusable instanceof HTMLElement) focusable.focus();
+      });
+    }
+
+    closeFilterPanel() {
+      if (!this.filterPanel) return;
+      const { panel } = this.filterPanel;
+      if (panel?.parentElement) panel.remove();
+      this.filterPanel = null;
+      document.removeEventListener('mousedown', this.boundFilterPanelOutsideClick, true);
+    }
+
+    updatePagerUi() {
+      if (this.pageLabelElement) {
+        const total = Math.max(0, Number(this.totalCount || 0));
+        if (!total) {
+          this.pageLabelElement.textContent = '0-0 / 0';
+        } else {
+          const start = this.pageOffset + 1;
+          const visible = this.rows.length || this.pageSize;
+          const end = Math.min(this.pageOffset + visible, total);
+          this.pageLabelElement.textContent = `${start}-${end} / ${total}`;
+        }
+      }
+      if (this.prevPageButton) {
+        this.prevPageButton.disabled = this.saving || this.paging || this.pageOffset <= 0;
+      }
+      if (this.nextPageButton) {
+        const total = Math.max(0, Number(this.totalCount || 0));
+        this.nextPageButton.disabled = this.saving || this.paging || total <= 0 || (this.pageOffset + this.pageSize >= total);
+      }
+    }
+
+    async loadCurrentPageRecords() {
+      const fieldCodes = this.fields.map((f) => f.code);
+      const pagedQuery = this.buildPagedQuery();
+      console.debug('[excel-query]', {
+        baseQuery: this.baseQuery || this.query || '',
+        pagedQuery
+      });
+      const recordsRes = await this.postFn('EXCEL_GET_RECORDS', {
+        appId: this.appId,
+        fields: fieldCodes,
+        query: pagedQuery
+      });
+      if (!recordsRes?.ok) {
+        const errorCode = recordsRes?.errorCode || '';
+        if (errorCode === 'GAIA_IL02' || /GAIA_IL02/.test(recordsRes?.error || '')) {
+          throw new Error(resolveText(this.language, 'errorUnsupportedFilter'));
+        }
+        throw new Error(recordsRes?.error || 'Failed to get records');
+      }
+      this.totalCount = Number(recordsRes.totalCount || 0);
+      const records = Array.isArray(recordsRes.records) ? recordsRes.records : [];
+      this.rows = records.map((record) => this.transformRecord(record));
+      this.rebuildRowMaps();
+      this.seedRecordPermissionsFromRows();
+      this.recomputeFilteredRowIds();
+      await this.loadEffectiveRecordAcl();
+      this.updatePermissionUiState();
+      this.updatePagerUi();
+    }
+
+    discardUnsavedChangesForPaging() {
+      this.exitEditMode();
+      this.closeRadioPicker();
+      this.diff.clear();
+      this.invalidCells.clear();
+      this.invalidValueCache.clear();
+      this.pendingDeletes.clear();
+      this.updateDirtyBadge();
+      this.updateStats();
+    }
+
+    confirmPageMoveIfNeeded() {
+      if (!this.hasUnsavedChanges()) return true;
+      const ok = window.confirm(resolveText(this.language, 'confirmPageMoveUnsaved'));
+      if (!ok) return false;
+      this.discardUnsavedChangesForPaging();
+      return true;
+    }
+
+    async reloadPage() {
+      if (this.paging || !this.isOpen) return;
+      this.paging = true;
+      this.updatePagerUi();
+      try {
+        this.showLoading(resolveText(this.language, 'loading'));
+        await this.loadCurrentPageRecords();
+        if (this.bodyScroll) this.bodyScroll.scrollTop = 0;
+        this.renderGrid();
+        this.updateDirtyBadge();
+        this.updateStats();
+        this.focusFirstCell();
+      } catch (error) {
+        this.notify(resolveText(this.language, 'loadFailed'));
+        console.error('[kintone-excel-overlay] failed to reload page', error);
+      } finally {
+        this.hideLoading();
+        this.paging = false;
+        this.updatePermissionUiState();
+        this.updatePagerUi();
+      }
+    }
+
+    async prevPage() {
+      if (this.pageOffset <= 0 || this.paging) return;
+      if (!this.confirmPageMoveIfNeeded()) return;
+      this.pageOffset = Math.max(0, this.pageOffset - this.pageSize);
+      await this.reloadPage();
+    }
+
+    async nextPage() {
+      if (this.paging) return;
+      if (this.pageOffset + this.pageSize >= this.totalCount) return;
+      if (!this.confirmPageMoveIfNeeded()) return;
+      this.pageOffset += this.pageSize;
+      await this.reloadPage();
+    }
+
     rebuildFieldMaps() {
       this.fieldMap.clear();
       this.fieldIndexMap.clear();
@@ -642,6 +1585,480 @@
         this.fieldMap.set(field.code, field);
         this.fieldIndexMap.set(field.code, index);
       });
+    }
+
+    rebuildRowMaps() {
+      this.rowMap.clear();
+      this.rowIndexMap.clear();
+      this.revisionMap.clear();
+      this.rows.forEach((row, index) => {
+        const id = String(row?.id || '').trim();
+        if (!id) return;
+        this.rowMap.set(id, row);
+        this.rowIndexMap.set(id, index);
+        if (row?.revision !== undefined) {
+          this.revisionMap.set(id, row.revision);
+        }
+      });
+    }
+
+    isChoiceField(field) {
+      const type = field?.type || '';
+      return type === 'RADIO_BUTTON' || type === 'DROP_DOWN';
+    }
+
+    isSubtableField(field) {
+      return (field?.type || '') === 'SUBTABLE';
+    }
+
+    isLookupAutoField(field) {
+      if (!field) return false;
+      if (field.lookupAuto) return true;
+      const type = String(field.type || '').trim();
+      if (type !== 'LOOKUP') return false;
+      const code = String(field.code || '').trim();
+      const key = String(field.lookup?.keyField || '').trim();
+      if (!code || !key) return false;
+      return key !== code;
+    }
+
+    isLookupKeyField(field) {
+      if (!field) return false;
+      const type = String(field.type || '').trim();
+      if (type === 'SINGLE_LINE_TEXT' && field.lookup) return true;
+      if (type !== 'LOOKUP') return false;
+      const code = String(field.code || '').trim();
+      const key = String(field.lookup?.keyField || '').trim();
+      if (!code || !key) return false;
+      return key === code;
+    }
+
+    shouldIncludeField(field) {
+      if (!field || !field.code || !field.type) return false;
+      return overlayConfig.allowedTypes.has(field.type);
+    }
+
+    isFieldEditable(field) {
+      if (!field || !field.type) return false;
+      if (this.isSubtableField(field)) return false;
+      if (this.isLookupAutoField(field)) return false;
+      const type = String(field.type || '').trim();
+      const editableScalar = type === 'SINGLE_LINE_TEXT'
+        || type === 'NUMBER'
+        || type === 'DATE'
+        || type === 'RADIO_BUTTON'
+        || type === 'DROP_DOWN';
+
+      if (type === 'LOOKUP') {
+        const key = String(field.lookup?.keyField || '').trim();
+        if (!key) {
+          console.warn('[kintone-excel-overlay] LOOKUP key 未特定:', field.code);
+          return false;
+        }
+        return key === String(field.code || '').trim();
+      }
+      if (field.lookup) {
+        const key = String(field.lookup?.keyField || '').trim();
+        if (!key) {
+          console.warn('[kintone-excel-overlay] LOOKUP metadata is incomplete:', field.code);
+          return false;
+        }
+        return editableScalar;
+      }
+      return editableScalar;
+    }
+
+    normalizePermissionState(value, fallback = 'unknown') {
+      if (value === 'allow' || value === 'deny' || value === 'unknown') return value;
+      if (value === true) return 'allow';
+      if (value === false) return 'deny';
+      if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (normalized === 'allow' || normalized === 'allowed' || normalized === 'true') return 'allow';
+        if (normalized === 'deny' || normalized === 'denied' || normalized === 'false') return 'deny';
+        if (normalized === 'unknown' || normalized === 'unresolved') return 'unknown';
+      }
+      return fallback;
+    }
+
+    normalizeAppPermissions(value) {
+      const source = value && typeof value === 'object' ? value : {};
+      const next = {
+        view: this.normalizePermissionState(source.view),
+        add: this.normalizePermissionState(source.add),
+        edit: this.normalizePermissionState(source.edit),
+        delete: this.normalizePermissionState(source.delete),
+        source: 'unknown'
+      };
+      if (source.source === 'api' || source.source === 'fallback' || source.source === 'unknown') {
+        next.source = source.source;
+      } else if (next.view === 'unknown' || next.add === 'unknown' || next.edit === 'unknown' || next.delete === 'unknown') {
+        next.source = 'unknown';
+      } else {
+        next.source = 'api';
+      }
+      return next;
+    }
+
+    normalizeRecordPermission(value) {
+      const source = value && typeof value === 'object' ? value : {};
+      const next = {
+        view: this.normalizePermissionState(source.view),
+        edit: this.normalizePermissionState(source.edit),
+        delete: this.normalizePermissionState(source.delete),
+        source: 'unknown'
+      };
+      if (source.source === 'api' || source.source === 'unknown') {
+        next.source = source.source;
+      } else if (next.view === 'unknown' || next.edit === 'unknown' || next.delete === 'unknown') {
+        next.source = 'unknown';
+      } else {
+        next.source = 'api';
+      }
+      return next;
+    }
+
+    getUnknownRecordPermission() {
+      return { view: 'unknown', edit: 'unknown', delete: 'unknown', source: 'unknown' };
+    }
+
+    getRecordPermission(recordId) {
+      const key = String(recordId || '').trim();
+      if (!key) return this.getUnknownRecordPermission();
+      return this.recordPermissions.get(key) || this.getUnknownRecordPermission();
+    }
+
+    normalizeAclBool(value) {
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'number') return value !== 0;
+      if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['true', '1', 'yes', 'allow', 'allowed'].includes(normalized)) return true;
+        if (['false', '0', 'no', 'deny', 'denied'].includes(normalized)) return false;
+      }
+      return null;
+    }
+
+    normalizeRecordAclEntry(raw) {
+      if (!raw || typeof raw !== 'object') return null;
+      const id = String(raw.id ?? raw.recordId ?? raw.record?.id ?? raw.record?.recordId ?? '').trim();
+      if (!id) return null;
+      const record = raw.record && typeof raw.record === 'object' ? raw.record : raw;
+      const viewable = this.normalizeAclBool(record.viewable ?? record.view);
+      const editable = this.normalizeAclBool(record.editable ?? record.edit);
+      const deletable = this.normalizeAclBool(record.deletable ?? record.delete);
+      const fieldsRaw = raw.fields && typeof raw.fields === 'object' ? raw.fields : {};
+      const fields = {};
+      if (Array.isArray(fieldsRaw)) {
+        fieldsRaw.forEach((item) => {
+          if (!item || typeof item !== 'object') return;
+          const code = String(item.code ?? item.fieldCode ?? '').trim();
+          if (!code) return;
+          const fieldEditable = this.normalizeAclBool(item.editable ?? item.edit);
+          if (fieldEditable === null) return;
+          fields[code] = { editable: fieldEditable };
+        });
+      } else {
+        Object.keys(fieldsRaw).forEach((code) => {
+          const fieldCode = String(code || '').trim();
+          if (!fieldCode) return;
+          const value = fieldsRaw[code];
+          const fieldEditable = this.normalizeAclBool(value?.editable ?? value?.edit ?? value);
+          if (fieldEditable === null) return;
+          fields[fieldCode] = { editable: fieldEditable };
+        });
+      }
+      return {
+        id,
+        viewable,
+        editable,
+        deletable,
+        fields
+      };
+    }
+
+    getRecordAcl(recordId) {
+      const key = String(recordId || '').trim();
+      if (!key) return null;
+      return this.recordAcl.get(key) || null;
+    }
+
+    isFieldDeniedByAcl(recordId, fieldCode) {
+      const acl = this.getRecordAcl(recordId);
+      if (!acl || !fieldCode) return false;
+      const field = acl.fields && acl.fields[fieldCode] ? acl.fields[fieldCode] : null;
+      return Boolean(field && field.editable === false);
+    }
+
+    async loadEffectiveRecordAcl() {
+      this.recordAcl.clear();
+      this.aclStatus = { loaded: false, failed: false };
+      const appId = String(this.appId || '').trim();
+      if (!appId) return;
+      const ids = this.rows
+        .map((row) => String(row?.id || '').trim())
+        .filter((id) => id && !this.isNewRowId(id));
+      if (!ids.length) return;
+
+      const chunkSize = 100;
+      let succeeded = false;
+      let failed = false;
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize);
+        try {
+          const res = await this.postFn('EXCEL_EVALUATE_RECORD_ACL', { appId, ids: chunk });
+          if (!res?.ok) {
+            failed = true;
+            console.warn('[kintone-excel-overlay] failed to evaluate record acl', {
+              appId,
+              ids: chunk,
+              error: res?.error || 'unknown error'
+            });
+            continue;
+          }
+          succeeded = true;
+          const rights = Array.isArray(res.rights)
+            ? res.rights
+            : Array.isArray(res.records)
+              ? res.records
+              : [];
+          rights.forEach((item) => {
+            const normalized = this.normalizeRecordAclEntry(item);
+            if (!normalized) return;
+            this.recordAcl.set(normalized.id, normalized);
+          });
+        } catch (error) {
+          failed = true;
+          console.warn('[kintone-excel-overlay] record acl evaluation request failed', {
+            appId,
+            ids: chunk,
+            error: String(error?.message || error)
+          });
+        }
+      }
+      this.aclStatus = {
+        loaded: succeeded,
+        failed: !succeeded && failed
+      };
+      console.debug('[excel-acl-status]', this.aclStatus);
+    }
+
+    debugPermissionCheck(reason, detail = {}) {
+      try {
+        console.debug('[excel-editability]', {
+          reason,
+          appPermissions: this.appPermissions,
+          ...detail
+        });
+      } catch (_err) {
+        // ignore
+      }
+    }
+
+    canAddRows() {
+      if (!this.isOverlayEditable()) return false;
+      const allowed = this.appPermissions?.add === 'allow';
+      if (!allowed) {
+        this.debugPermissionCheck('add_blocked', {
+          appAdd: this.appPermissions?.add,
+          source: this.appPermissions?.source
+        });
+      }
+      return allowed;
+    }
+
+    canEditRecord(recordId, fieldCode = '') {
+      if (!this.isOverlayEditable()) return false;
+      const key = String(recordId || '').trim();
+      if (!key) return false;
+      if (this.isNewRowId(key)) return this.canAddRows();
+      const acl = this.getRecordAcl(key);
+      if (acl) {
+        if (acl.editable === false) {
+          this.debugPermissionCheck('edit_blocked_acl_record', {
+            recordId: key,
+            fieldCode,
+            acl
+          });
+          return false;
+        }
+        if (fieldCode) {
+          const fieldAcl = acl.fields && acl.fields[fieldCode] ? acl.fields[fieldCode] : null;
+          if (fieldAcl && fieldAcl.editable === false) {
+            this.debugPermissionCheck('edit_blocked_acl_field', {
+              recordId: key,
+              fieldCode,
+              acl,
+              fieldAcl
+            });
+            return false;
+          }
+        }
+        if (this.pendingDeletes.has(key)) {
+          this.debugPermissionCheck('edit_blocked_pending_delete', {
+            recordId: key,
+            fieldCode,
+            acl
+          });
+          return false;
+        }
+        if (acl.editable === true) return true;
+      }
+      const perm = this.getRecordPermission(key);
+      if (this.appPermissions?.edit !== 'allow') {
+        this.debugPermissionCheck('edit_blocked_app', {
+          recordId: key,
+          appEdit: this.appPermissions?.edit,
+          appSource: this.appPermissions?.source,
+          recordEdit: perm?.edit,
+          fieldCode,
+          recordPermission: perm
+        });
+        return false;
+      }
+      if (this.pendingDeletes.has(key)) {
+        this.debugPermissionCheck('edit_blocked_pending_delete', {
+          recordId: key,
+          appEdit: this.appPermissions?.edit,
+          appSource: this.appPermissions?.source,
+          recordEdit: perm?.edit,
+          fieldCode,
+          recordPermission: perm
+        });
+        return false;
+      }
+      if (!perm || perm.edit !== 'allow') {
+        this.debugPermissionCheck('edit_blocked_record', {
+          recordId: key,
+          appEdit: this.appPermissions?.edit,
+          appSource: this.appPermissions?.source,
+          recordEdit: perm?.edit,
+          recordPermission: perm,
+          fieldCode
+        });
+        return false;
+      }
+      return true;
+    }
+
+    canDeleteRecord(recordId) {
+      if (!this.isOverlayEditable()) return false;
+      const key = String(recordId || '').trim();
+      if (!key) return false;
+      if (this.isNewRowId(key)) return true;
+      const acl = this.getRecordAcl(key);
+      if (acl) {
+        if (acl.deletable === false) {
+          this.debugPermissionCheck('delete_blocked_acl_record', {
+            recordId: key,
+            acl
+          });
+          return false;
+        }
+        if (acl.deletable === true) return true;
+      }
+      const perm = this.getRecordPermission(key);
+      if (this.appPermissions?.delete !== 'allow') {
+        this.debugPermissionCheck('delete_blocked_app', {
+          recordId: key,
+          appDelete: this.appPermissions?.delete,
+          appSource: this.appPermissions?.source,
+          recordDelete: perm?.delete,
+          recordPermission: perm
+        });
+        return false;
+      }
+      if (!perm || perm.delete !== 'allow') {
+        this.debugPermissionCheck('delete_blocked_record', {
+          recordId: key,
+          appDelete: this.appPermissions?.delete,
+          appSource: this.appPermissions?.source,
+          recordDelete: perm?.delete,
+          recordPermission: perm
+        });
+        return false;
+      }
+      return true;
+    }
+
+    isCellEditable(field, recordId) {
+      if (!this.isFieldEditable(field)) return false;
+      return this.canEditRecord(recordId, String(field?.code || '').trim());
+    }
+
+    getRowPermissionStatusText(recordId) {
+      const acl = this.getRecordAcl(recordId);
+      if (acl) {
+        const parts = [];
+        if (acl.editable === true) parts.push(resolveText(this.language, 'permEditable'));
+        else parts.push(resolveText(this.language, 'permViewOnly'));
+        if (acl.deletable === true) parts.push(resolveText(this.language, 'permDeletable'));
+        return parts.join(' / ');
+      }
+      const perm = this.getRecordPermission(recordId);
+      const parts = [];
+      if (perm.edit === 'allow' && this.appPermissions.edit === 'allow') parts.push(resolveText(this.language, 'permEditable'));
+      else if (perm.edit === 'unknown' || this.appPermissions.edit === 'unknown') parts.push(resolveText(this.language, 'permUnknown'));
+      else parts.push(resolveText(this.language, 'permViewOnly'));
+      if (perm.delete === 'allow' && this.appPermissions.delete === 'allow') parts.push(resolveText(this.language, 'permDeletable'));
+      return parts.join(' / ');
+    }
+
+    async loadPermissions() {
+      // Keep default behavior: do not call app-level ACL APIs in normal flow.
+      // Effective per-record restrictions are evaluated via EXCEL_EVALUATE_RECORD_ACL.
+      this.appPermissions = { view: 'allow', add: 'allow', edit: 'allow', delete: 'allow', source: 'local' };
+      this.recordPermissions.clear();
+      console.debug('[excel-permission-state]', {
+        appPermissions: this.appPermissions,
+        recordPermissionsSize: this.recordPermissions.size
+      });
+    }
+
+    updatePermissionUiState() {
+      if (this.addRowButton) {
+        const allowed = this.canAddRows();
+        this.addRowButton.disabled = this.saving || !allowed;
+        this.addRowButton.title = allowed
+          ? ''
+          : (this.isOverlayEditable() ? resolveText(this.language, 'permNoAdd') : resolveText(this.language, 'toastViewOnlyBlocked'));
+      }
+      if (this.saveButton && !this.saving) {
+        let dirtyCount = 0;
+        this.diff.forEach((entry) => {
+          dirtyCount += Object.keys(entry).length;
+        });
+        dirtyCount += this.pendingDeletes.size;
+        this.saveButton.disabled = !this.isOverlayEditable() || dirtyCount === 0;
+        this.saveButton.title = this.isOverlayEditable() ? '' : resolveText(this.language, 'toastViewOnlyBlocked');
+      }
+      if (this.permissionWarningEl) {
+        const showWarning = this.aclStatus.failed === true && this.aclStatus.loaded === false;
+        this.permissionWarningEl.classList.toggle('pb-overlay__perm-warning--hidden', !showWarning);
+      }
+      this.updateHistoryButtons();
+      this.updatePagerUi();
+    }
+
+    cloneFieldValue(field, value) {
+      if (this.isSubtableField(field)) {
+        if (Array.isArray(value)) {
+          return value.map((row) => ({
+            id: row?.id || '',
+            value: row && typeof row.value === 'object' ? JSON.parse(JSON.stringify(row.value)) : {}
+          }));
+        }
+        return [];
+      }
+      return value === undefined || value === null ? '' : String(value);
+    }
+
+    formatCellDisplayValue(field, value) {
+      if (this.isSubtableField(field)) {
+        const count = Array.isArray(value) ? value.length : 0;
+        return count ? `${count} rows` : '';
+      }
+      return value === undefined || value === null ? '' : String(value);
     }
 
     async loadColumnPrefMap(force = false) {
@@ -745,8 +2162,10 @@
       this.fields = next;
       this.rebuildFieldMaps();
       this.selection = null;
+      this.armedCell = null;
       this.editingCell = null;
       this.pendingFocus = null;
+      this.pendingEdit = null;
       this.renderGrid();
       this.updateVirtualRows(true);
       this.syncTableWidth();
@@ -1106,11 +2525,11 @@
       const original = {};
       this.fields.forEach((field) => {
         const raw = record?.[field.code]?.value;
-        const baseValue = raw === undefined || raw === null ? '' : String(raw);
+        const baseValue = this.cloneFieldValue(field, raw);
         values[field.code] = baseValue;
-        original[field.code] = baseValue;
+        original[field.code] = this.cloneFieldValue(field, baseValue);
       });
-      return { id, revision, values, original };
+      return { id, revision, values, original, isNew: false };
     }
 
     renderNoFields() {
@@ -1130,8 +2549,12 @@
 
     renderGrid() {
       if (!this.surface) return;
+      this.closeFilterPanel();
       this.closeRadioPicker();
       this.inputsByRow.clear();
+      if (this.columnHeaderScroll) {
+        this.columnHeaderScroll.style.transform = 'translateX(0px)';
+      }
       const headRow = this.columnHeaderScroll.querySelector('.pb-overlay__col-row');
       headRow.textContent = '';
       const rowWrap = this.rowHeaderScroll.querySelector('.pb-overlay__row-wrap');
@@ -1139,7 +2562,8 @@
       rowWrap.textContent = '';
       table.textContent = '';
 
-      const totalHeight = Math.max(0, this.rows.length * this.rowHeight);
+      const visibleRows = this.getVisibleRows();
+      const totalHeight = Math.max(0, visibleRows.length * this.rowHeight);
       rowWrap.style.height = `${totalHeight}px`;
       table.style.height = `${totalHeight}px`;
 
@@ -1148,14 +2572,45 @@
         headerCell.className = 'pb-overlay__col-header';
         headerCell.style.width = `${field.width || DEFAULT_COLUMN_WIDTH}px`;
         headerCell.style.minWidth = `${field.width || DEFAULT_COLUMN_WIDTH}px`;
+        const headerMain = document.createElement('div');
+        headerMain.className = 'pb-overlay__col-header-main';
+        headerMain.style.cursor = 'pointer';
         const codeSpan = document.createElement('span');
         codeSpan.className = 'pb-overlay__col-code';
         codeSpan.textContent = columnLabel(index);
+        const labelWrap = document.createElement('span');
+        labelWrap.className = 'pb-overlay__col-label-wrap';
         const labelSpan = document.createElement('span');
         labelSpan.className = 'pb-overlay__col-label';
         labelSpan.textContent = field.label || field.code;
-        headerCell.appendChild(codeSpan);
-        headerCell.appendChild(labelSpan);
+        const sortIndicator = document.createElement('span');
+        sortIndicator.className = 'pb-overlay__col-sort-indicator';
+        const sortDirection = this.getSortDirectionForField(field.code);
+        sortIndicator.textContent = sortDirection === 'asc' ? '▲' : (sortDirection === 'desc' ? '▼' : '');
+        labelWrap.appendChild(labelSpan);
+        labelWrap.appendChild(sortIndicator);
+        headerMain.appendChild(codeSpan);
+        headerMain.appendChild(labelWrap);
+        const filterBtn = document.createElement('button');
+        filterBtn.type = 'button';
+        filterBtn.className = 'pb-overlay__filter-btn';
+        filterBtn.textContent = '▼';
+        filterBtn.title = 'Filter';
+        filterBtn.setAttribute('aria-label', `Filter ${field.label || field.code}`);
+        if (this.isFieldFilterActive(field.code)) {
+          filterBtn.classList.add('pb-overlay__filter-btn--active');
+        }
+        filterBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.openFilterPanel(field, filterBtn);
+        });
+        headerMain.addEventListener('click', (event) => {
+          event.preventDefault();
+          this.toggleSortForField(field.code);
+        });
+        headerCell.appendChild(headerMain);
+        headerCell.appendChild(filterBtn);
         headRow.appendChild(headerCell);
       });
 
@@ -1186,7 +2641,8 @@
 
     updateVirtualRows(force = false) {
       if (!this.bodyScroll || !this.tableContainer || !this.rowHeaderContainer) return;
-      const totalRows = this.rows.length;
+      const visibleRows = this.getVisibleRows();
+      const totalRows = visibleRows.length;
       const viewportHeight = this.bodyScroll.clientHeight || (10 * this.rowHeight);
       const scrollTop = this.bodyScroll.scrollTop;
       const buffer = 6;
@@ -1200,7 +2656,7 @@
       this.virtualEnd = end;
       this.inputsByRow.clear();
       this.rowHeaderContainer.textContent = '';
-      this.rowHeaderContainer.style.transform = `translateY(${-scrollTop}px)`;
+      this.rowHeaderContainer.style.height = `${totalRows * this.rowHeight}px`;
       this.tableContainer.textContent = '';
       const totalWidth = this.fields.length * 160;
       this.tableContainer.style.width = `${totalWidth}px`;
@@ -1209,8 +2665,15 @@
       const tableFrag = document.createDocumentFragment();
 
       for (let rowIndex = start; rowIndex < end; rowIndex += 1) {
-        const row = this.rows[rowIndex];
+        const row = visibleRows[rowIndex];
         if (!row) continue;
+        const recordId = String(row.id || '').trim();
+        const acl = this.getRecordAcl(recordId);
+        const rowViewable = !acl || acl.viewable !== false;
+        const pendingDelete = this.pendingDeletes.has(recordId);
+        const rowEditable = this.canEditRecord(recordId);
+        const rowEditableVisual = this.isOverlayViewOnly() ? true : rowEditable;
+        const rowDeletable = this.canDeleteRecord(recordId);
         const top = rowIndex * this.rowHeight;
 
         const header = document.createElement('div');
@@ -1218,7 +2681,62 @@
         header.style.position = 'absolute';
         header.style.top = `${top}px`;
         header.style.left = '0';
-        header.textContent = String(rowIndex + 1);
+        if (!rowEditableVisual) header.classList.add('pb-overlay__row-header--readonly');
+        if (!rowViewable) header.classList.add('pb-overlay__row-header--no-view');
+        if (pendingDelete) header.classList.add('pb-overlay__row-header--pending-delete');
+        if (pendingDelete) {
+          header.title = '削除予定（保存時に削除）';
+        } else if (!rowEditableVisual) {
+          header.title = resolveText(this.language, 'permNoEdit');
+        } else {
+          header.removeAttribute('title');
+        }
+
+        const indexEl = document.createElement('span');
+        indexEl.className = 'pb-overlay__row-index';
+        indexEl.textContent = String(rowIndex + 1);
+        header.appendChild(indexEl);
+
+        const sepEl = document.createElement('span');
+        sepEl.className = 'pb-overlay__row-sep';
+        sepEl.setAttribute('aria-hidden', 'true');
+        header.appendChild(sepEl);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'pb-overlay__row-delete pb-overlay__delete-btn';
+        deleteBtn.textContent = '🗑';
+        if (pendingDelete) {
+          deleteBtn.classList.add('is-pending');
+        }
+        const isNew = this.isNewRowId(recordId);
+        if (isNew) {
+          deleteBtn.title = resolveText(this.language, 'rowDeleteNewUndo');
+          deleteBtn.setAttribute('aria-label', resolveText(this.language, 'rowDeleteNewUndo'));
+        } else if (pendingDelete) {
+          deleteBtn.title = '削除予定（保存時に削除）';
+          deleteBtn.setAttribute('aria-label', '削除予定（保存時に削除）');
+        } else {
+          deleteBtn.title = rowDeletable
+            ? resolveText(this.language, 'rowDeleteToggle')
+            : resolveText(this.language, 'permNoDelete');
+          deleteBtn.setAttribute('aria-label', deleteBtn.title);
+        }
+        if (!isNew && !rowDeletable) {
+          deleteBtn.disabled = true;
+        }
+        deleteBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.togglePendingDelete(recordId);
+        });
+        header.appendChild(deleteBtn);
+
+        const permEl = document.createElement('span');
+        permEl.className = 'pb-overlay__row-perm';
+        permEl.textContent = rowEditableVisual ? '✎' : '👁';
+        permEl.title = this.getRowPermissionStatusText(recordId);
+        header.appendChild(permEl);
         headerFrag.appendChild(header);
 
         const rowLine = document.createElement('div');
@@ -1227,6 +2745,9 @@
         rowLine.style.top = `${top}px`;
         rowLine.style.left = '0';
         rowLine.style.width = 'max-content';
+        if (!rowEditableVisual) rowLine.classList.add('pb-overlay__row--readonly');
+        if (!rowViewable) rowLine.classList.add('pb-overlay__row--no-view');
+        if (pendingDelete) rowLine.classList.add('pb-overlay__row--pending-delete');
 
         const inputsRow = [];
 
@@ -1261,8 +2782,11 @@
       if (field.type === 'NUMBER') input.inputMode = 'decimal';
       if (field.type === 'DATE') input.type = 'date';
       else input.type = 'text';
-      if (field.type === 'RADIO_BUTTON') {
+      if (this.isChoiceField(field)) {
         input.placeholder = field.choices?.[0] || '';
+      }
+      if (this.isSubtableField(field)) {
+        input.placeholder = resolveText(this.language, 'btnSubtableEdit');
       }
       input.readOnly = true;
       input.addEventListener('input', () => { this.onInputChanged(input); });
@@ -1276,7 +2800,7 @@
         this.handleInputBlur(event, input);
       });
       input.addEventListener('click', () => {
-        this.handleRadioInputClick(input);
+        this.handleChoiceInputClick(input);
       });
       return input;
     }
@@ -1286,20 +2810,45 @@
       input.dataset.fieldCode = field.code;
       input.dataset.rowIndex = String(rowIndex);
       input.dataset.colIndex = String(colIndex);
-      input.dataset.originalValue = row.original[field.code];
+      input.dataset.originalValue = this.formatCellDisplayValue(field, row.original[field.code]);
+      input.dataset.editable = this.isCellEditable(field, row.id) ? 'true' : 'false';
       input.disabled = false;
-      const editing = this.isEditingCell(rowIndex, colIndex);
-      input.readOnly = !editing;
-      if (editing) {
-        input.classList.add('pb-overlay__input--editing');
-      } else {
-        input.classList.remove('pb-overlay__input--editing');
+      const editable = this.isCellEditable(field, row.id);
+      const editableVisual = this.isOverlayViewOnly() ? true : editable;
+      const isPending = Boolean(
+        this.pendingEdit
+        && this.pendingEdit.rowIndex === rowIndex
+        && this.pendingEdit.colIndex === colIndex
+      );
+      const editing = (this.isEditingCell(rowIndex, colIndex) || isPending) && editable;
+      const lookupAuto = this.isLookupAutoField(field);
+      const isDropdown = field?.type === 'DROP_DOWN';
+      const isRadio = field?.type === 'RADIO_BUTTON';
+      const isLookupKey = this.isLookupKeyField(field) && !lookupAuto;
+      const fieldDeniedByAcl = this.isFieldDeniedByAcl(row.id, field.code);
+      this.setInputEditingVisual(input, editing);
+      input.classList.toggle('pb-overlay__input--readonly', !editableVisual);
+      input.classList.toggle('pb-overlay__input--subtable', this.isSubtableField(field));
+      if (lookupAuto) {
+        input.title = resolveText(this.language, 'lookupAutoReadonly');
+      } else if (!this.isSubtableField(field) && !editableVisual) {
+        input.title = resolveText(this.language, fieldDeniedByAcl ? 'permNoFieldEdit' : 'permNoEdit');
+      } else if (!this.isSubtableField(field)) {
+        input.removeAttribute('title');
+      }
+      if (input.parentElement) {
+        input.parentElement.classList.toggle('pb-overlay__cell--lookup-auto', lookupAuto);
+        input.parentElement.classList.toggle('pb-overlay__cell--readonly', !editableVisual);
+        input.parentElement.classList.toggle('pb-overlay__cell--dropdown', isDropdown);
+        input.parentElement.classList.toggle('pb-overlay__cell--radio', isRadio);
+        input.parentElement.classList.toggle('pb-overlay__cell--lookup', isLookupKey);
       }
     }
 
     applyCellVisualState(input, row, fieldCode) {
+      const field = this.fieldMap.get(fieldCode);
       const value = row?.values ? row.values[fieldCode] ?? '' : '';
-      input.value = value;
+      input.value = this.formatCellDisplayValue(field, value);
       const cell = input.parentElement;
       if (!cell) return;
       const diffEntry = this.diff.get(row.id);
@@ -1316,6 +2865,9 @@
         }
       } else {
         cell.classList.remove('pb-overlay__cell--error');
+        if (cell.dataset.errorReason) {
+          delete cell.dataset.errorReason;
+        }
       }
       const rowIndex = Number(input.dataset.rowIndex || '-1');
       const colIndex = Number(input.dataset.colIndex || '-1');
@@ -1324,13 +2876,45 @@
       } else {
         cell.classList.remove('pb-overlay__cell--selected');
       }
-      const editing = this.isEditingCell(rowIndex, colIndex);
-      input.readOnly = !editing;
-      if (editing) {
-        input.classList.add('pb-overlay__input--editing');
+      if (this.isCellArmed(rowIndex, colIndex)) {
+        cell.classList.add('pb-overlay__cell--armed');
       } else {
-        input.classList.remove('pb-overlay__input--editing');
+        cell.classList.remove('pb-overlay__cell--armed');
       }
+      if (this.isCellActive(rowIndex, colIndex)) {
+        cell.classList.add('pb-overlay__cell--active');
+      } else {
+        cell.classList.remove('pb-overlay__cell--active');
+      }
+      const editable = this.isCellEditable(field, row.id);
+      const editableVisual = this.isOverlayViewOnly() ? true : editable;
+      const isPending = Boolean(
+        this.pendingEdit
+        && this.pendingEdit.rowIndex === rowIndex
+        && this.pendingEdit.colIndex === colIndex
+      );
+      const editing = (this.isEditingCell(rowIndex, colIndex) || isPending) && editable;
+      const lookupAuto = this.isLookupAutoField(field);
+      const isDropdown = field?.type === 'DROP_DOWN';
+      const isRadio = field?.type === 'RADIO_BUTTON';
+      const isLookupKey = this.isLookupKeyField(field) && !lookupAuto;
+      const fieldDeniedByAcl = this.isFieldDeniedByAcl(row.id, fieldCode);
+      this.setInputEditingVisual(input, editing);
+      input.classList.toggle('pb-overlay__input--readonly', !editableVisual);
+      input.classList.toggle('pb-overlay__input--subtable', this.isSubtableField(field));
+      if (lookupAuto) {
+        input.title = resolveText(this.language, 'lookupAutoReadonly');
+      } else if (!this.isSubtableField(field) && !editableVisual) {
+        input.title = resolveText(this.language, fieldDeniedByAcl ? 'permNoFieldEdit' : 'permNoEdit');
+      } else if (!this.isSubtableField(field)) {
+        input.removeAttribute('title');
+      }
+      cell.classList.toggle('pb-overlay__cell--readonly', !editableVisual);
+      cell.classList.toggle('pb-overlay__cell--lookup-auto', lookupAuto);
+      cell.classList.toggle('pb-overlay__cell--dropdown', isDropdown);
+      cell.classList.toggle('pb-overlay__cell--radio', isRadio);
+      cell.classList.toggle('pb-overlay__cell--lookup', isLookupKey);
+      cell.classList.toggle('pb-overlay__cell--editing', editing);
     }
 
     getInput(rowIndex, colIndex) {
@@ -1340,7 +2924,7 @@
     }
 
     focusCell(rowIndex, colIndex) {
-      const maxRow = Math.max(0, this.rows.length - 1);
+      const maxRow = Math.max(0, this.getVisibleRowCount() - 1);
       const maxCol = Math.max(0, this.fields.length - 1);
       if (maxRow < 0 || maxCol < 0) return;
       const r = Math.max(0, Math.min(maxRow, rowIndex));
@@ -1364,10 +2948,49 @@
       this.pendingFocus = null;
       requestAnimationFrame(() => {
         input.focus();
-        const editing = this.editingCell && this.editingCell.rowIndex === rowIndex && this.editingCell.colIndex === colIndex;
-        const shouldSelectAll = editing && this.editingCell.selectAll;
+        const shouldForceEdit = Boolean(
+          this.pendingEdit
+          && this.pendingEdit.rowIndex === rowIndex
+          && this.pendingEdit.colIndex === colIndex
+        );
+        if (shouldForceEdit) {
+          this.forceApplyEditState(input, rowIndex, colIndex);
+          this.pendingEdit = null;
+        }
+        const editing = this.isEditingCell(rowIndex, colIndex);
+        const rowInputs = this.inputsByRow.get(rowIndex) || [];
+        rowInputs.forEach((candidate) => {
+          if (candidate && candidate !== input && candidate.classList?.contains('pb-overlay__input--editing')) {
+            this.setInputEditingVisual(candidate, false);
+          }
+        });
+        this.setInputEditingVisual(input, editing);
+        const shouldSelectAll = editing && this.editingCell && this.editingCell.selectAll;
         this.applyCaretPlacement(input, shouldSelectAll);
       });
+    }
+
+    setInputEditingVisual(input, isEditing) {
+      if (!input) return;
+      const editable = input.dataset?.editable !== 'false';
+      const nextEditing = Boolean(isEditing) && editable && !input.disabled;
+      input.readOnly = !nextEditing;
+      input.classList.toggle('pb-overlay__input--editing', nextEditing);
+      if (input.parentElement) {
+        input.parentElement.classList.toggle('pb-overlay__cell--editing', nextEditing);
+      }
+    }
+
+    forceApplyEditState(input, rowIndex, colIndex) {
+      const isSame = this.editingCell
+        && this.editingCell.rowIndex === rowIndex
+        && this.editingCell.colIndex === colIndex;
+      this.editingCell = isSame
+        ? { ...this.editingCell, selectAll: false }
+        : this.createEditingState(rowIndex, colIndex, false);
+      this.setInputEditingVisual(input, true);
+      const cell = input.parentElement;
+      if (cell) cell.classList.add('pb-overlay__cell--selected');
     }
 
     canSelectTextInput(input) {
@@ -1377,6 +3000,7 @@
     }
 
     handleInputBlur(event, input) {
+      if (this.navigating) return;
       if (!this.editingCell) return;
       if (this.radioPicker && this.radioPicker.input === input) {
         const next = event.relatedTarget;
@@ -1385,6 +3009,10 @@
         }
       }
       this.exitEditMode();
+      if (this.needsFilterReapply && this.hasActiveFilters()) {
+        this.needsFilterReapply = false;
+        this.applyFilters();
+      }
     }
 
     applyCaretPlacement(input, selectAll) {
@@ -1404,7 +3032,7 @@
     openRadioPicker(rowIndex, colIndex, input) {
       if (!this.root || !input) return;
       const field = this.fields[colIndex];
-      if (!field || field.type !== 'RADIO_BUTTON') return;
+      if (!field || !this.isChoiceField(field)) return;
       const rawChoices = Array.isArray(field.choices) ? field.choices : [];
       const choices = Array.from(new Set(rawChoices.map((choice) => String(choice || '')).filter((choice) => choice)));
       if (!choices.length) return;
@@ -1413,7 +3041,7 @@
       const panel = document.createElement('div');
       panel.className = 'pb-overlay__choice-panel';
       panel.setAttribute('role', 'listbox');
-      panel.setAttribute('aria-label', field.label || field.code || 'radio choices');
+      panel.setAttribute('aria-label', field.label || field.code || 'choices');
       const list = document.createElement('div');
       list.className = 'pb-overlay__choice-list';
       const currentValue = input.value || '';
@@ -1539,12 +3167,267 @@
       this.closeRadioPicker(true);
     }
 
+    createSubtableDefaultValue(type) {
+      if (type === 'NUMBER') return '';
+      if (type === 'DATE') return '';
+      return '';
+    }
+
+    openSubtableEditor(rowIndex, colIndex, anchorInput = null) {
+      if (this.saving) return;
+      if (!this.root) return;
+      const row = this.getVisibleRowAt(rowIndex);
+      const field = this.fields[colIndex];
+      if (!row || !field || !this.isSubtableField(field)) return;
+      const readOnlyMode = !this.isOverlayEditable() || !this.canEditRecord(row.id);
+      this.closeSubtableEditor(false);
+      this.exitEditMode();
+
+      const childFields = Array.isArray(field.subtable?.fields)
+        ? field.subtable.fields.filter((child) => (
+          child
+          && child.code
+          && ['SINGLE_LINE_TEXT', 'NUMBER', 'DATE', 'RADIO_BUTTON', 'DROP_DOWN'].includes(child.type)
+        ))
+        : [];
+      const sourceRows = Array.isArray(row.values[field.code]) ? row.values[field.code] : [];
+      const editorRows = sourceRows.map((item, idx) => ({
+        localId: `row:${idx}:${Date.now()}`,
+        id: item?.id ? String(item.id) : '',
+        value: item && typeof item.value === 'object' ? JSON.parse(JSON.stringify(item.value)) : {}
+      }));
+
+      const layer = document.createElement('div');
+      layer.className = 'pb-overlay__subtable-layer';
+      const panel = document.createElement('div');
+      panel.className = 'pb-overlay__subtable-panel';
+      panel.addEventListener('click', (event) => event.stopPropagation());
+
+      const head = document.createElement('div');
+      head.className = 'pb-overlay__subtable-head';
+      const title = document.createElement('div');
+      title.className = 'pb-overlay__subtable-title';
+      title.textContent = `${resolveText(this.language, 'subtableTitle')}: ${field.label || field.code}`;
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'pb-overlay__subtable-close';
+      closeBtn.textContent = '×';
+      closeBtn.addEventListener('click', () => this.closeSubtableEditor(true));
+      head.appendChild(title);
+      head.appendChild(closeBtn);
+
+      const body = document.createElement('div');
+      body.className = 'pb-overlay__subtable-body';
+
+      const tableWrap = document.createElement('div');
+      tableWrap.className = 'pb-subtable-wrap';
+      const table = document.createElement('table');
+      table.className = 'pb-subtable';
+      const thead = document.createElement('thead');
+      const theadRow = document.createElement('tr');
+      childFields.forEach((child) => {
+        const th = document.createElement('th');
+        th.className = 'pb-subtable__head';
+        th.textContent = child.label || child.code;
+        theadRow.appendChild(th);
+      });
+      const opTh = document.createElement('th');
+      opTh.className = 'pb-subtable__head pb-subtable__op';
+      opTh.setAttribute('aria-label', 'actions');
+      theadRow.appendChild(opTh);
+      thead.appendChild(theadRow);
+      const tbody = document.createElement('tbody');
+      tbody.className = 'pb-subtable__body';
+      table.appendChild(thead);
+      table.appendChild(tbody);
+      tableWrap.appendChild(table);
+
+      const footer = document.createElement('div');
+      footer.className = 'pb-overlay__subtable-foot';
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'pb-overlay__btn';
+      addBtn.textContent = resolveText(this.language, 'subtableAddRow');
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'pb-overlay__btn';
+      cancelBtn.textContent = resolveText(this.language, 'subtableCancel');
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.className = 'pb-overlay__btn pb-overlay__btn--primary';
+      saveBtn.textContent = resolveText(this.language, 'subtableSave');
+      footer.appendChild(addBtn);
+      footer.appendChild(cancelBtn);
+      footer.appendChild(saveBtn);
+
+      const renderRows = () => {
+        tbody.textContent = '';
+        if (!editorRows.length) {
+          const emptyRow = document.createElement('tr');
+          emptyRow.className = 'pb-subtable__empty-row';
+          const emptyCell = document.createElement('td');
+          emptyCell.className = 'pb-subtable__empty';
+          emptyCell.colSpan = Math.max(1, childFields.length + 1);
+          emptyCell.textContent = '-';
+          emptyRow.appendChild(emptyCell);
+          tbody.appendChild(emptyRow);
+          return;
+        }
+        editorRows.forEach((item) => {
+          const rowEl = document.createElement('tr');
+          rowEl.className = 'pb-subtable__row';
+
+          childFields.forEach((child) => {
+            const cell = document.createElement('td');
+            cell.className = 'pb-subtable__cell';
+            const input = document.createElement('input');
+            input.className = 'pb-overlay__subtable-input';
+            input.type = child.type === 'DATE' ? 'date' : 'text';
+            if (child.type === 'NUMBER') input.inputMode = 'decimal';
+            if (child.type === 'RADIO_BUTTON' || child.type === 'DROP_DOWN') {
+              input.placeholder = Array.isArray(child.choices) ? (child.choices[0] || '') : '';
+            }
+            const rawCell = item.value?.[child.code]?.value;
+            input.value = rawCell === undefined || rawCell === null ? '' : String(rawCell);
+            input.disabled = readOnlyMode;
+            input.addEventListener('input', () => {
+              if (readOnlyMode) return;
+              if (!item.value || typeof item.value !== 'object') item.value = {};
+              item.value[child.code] = { value: input.value };
+            });
+            cell.appendChild(input);
+            rowEl.appendChild(cell);
+          });
+
+          const opCell = document.createElement('td');
+          opCell.className = 'pb-subtable__cell pb-subtable__op';
+          const removeBtn = document.createElement('button');
+          removeBtn.type = 'button';
+          removeBtn.className = 'pb-overlay__btn pb-subtable__remove';
+          removeBtn.textContent = '×';
+          removeBtn.title = resolveText(this.language, 'subtableRemoveRow');
+          removeBtn.setAttribute('aria-label', resolveText(this.language, 'subtableRemoveRow'));
+          removeBtn.disabled = readOnlyMode;
+          removeBtn.addEventListener('click', () => {
+            if (readOnlyMode) return;
+            const idx = editorRows.indexOf(item);
+            if (idx >= 0) {
+              editorRows.splice(idx, 1);
+              renderRows();
+            }
+          });
+          opCell.appendChild(removeBtn);
+          rowEl.appendChild(opCell);
+          tbody.appendChild(rowEl);
+        });
+      };
+
+      addBtn.addEventListener('click', () => {
+        if (readOnlyMode) return;
+        const value = {};
+        childFields.forEach((child) => {
+          value[child.code] = { value: this.createSubtableDefaultValue(child.type) };
+        });
+        editorRows.push({
+          localId: `row:new:${Date.now()}:${Math.random().toString(16).slice(2)}`,
+          id: '',
+          value
+        });
+        renderRows();
+      });
+
+      cancelBtn.addEventListener('click', () => this.closeSubtableEditor(true));
+      saveBtn.addEventListener('click', () => {
+        if (readOnlyMode) {
+          this.notifyViewOnlyBlocked();
+          return;
+        }
+        const beforeValueSnapshot = this.deepClone(row.values[field.code]);
+        for (const item of editorRows) {
+          for (const child of childFields) {
+            const raw = item?.value?.[child.code]?.value ?? '';
+            const validation = this.validate(raw, child);
+            if (!validation.ok) {
+              this.notify(resolveText(this.language, 'toastInvalidCells'));
+              return;
+            }
+            if (!item.value || typeof item.value !== 'object') item.value = {};
+            item.value[child.code] = { value: validation.value };
+          }
+        }
+        const nextValue = editorRows.map((item) => {
+          const out = { value: item.value && typeof item.value === 'object' ? JSON.parse(JSON.stringify(item.value)) : {} };
+          if (item.id) out.id = item.id;
+          return out;
+        });
+        const currentRow = this.rowMap.get(row.id);
+        if (!currentRow) {
+          this.closeSubtableEditor(true);
+          return;
+        }
+        currentRow.values[field.code] = nextValue;
+        const originalValue = currentRow.original[field.code];
+        const changed = JSON.stringify(nextValue) !== JSON.stringify(originalValue);
+        if (changed) {
+          this.addDiff(currentRow.id, field.code, nextValue, 'SUBTABLE');
+          this.pushHistory({
+            type: 'subtable-edit',
+            payload: {
+              recordId: currentRow.id,
+              fieldCode: field.code,
+              before: beforeValueSnapshot,
+              after: this.deepClone(nextValue)
+            }
+          });
+        } else {
+          this.removeDiff(currentRow.id, field.code);
+        }
+        const input = this.findInput(currentRow.id, field.code);
+        if (input) {
+          this.applyCellVisualState(input, currentRow, field.code);
+        }
+        this.updateDirtyBadge();
+        this.updateStats();
+        this.closeSubtableEditor(true);
+      });
+      addBtn.disabled = readOnlyMode;
+      saveBtn.disabled = readOnlyMode;
+
+      layer.addEventListener('click', () => this.closeSubtableEditor(true));
+      layer.appendChild(panel);
+      body.appendChild(tableWrap);
+      panel.appendChild(head);
+      panel.appendChild(body);
+      panel.appendChild(footer);
+      this.root.appendChild(layer);
+      renderRows();
+      this.subtableEditor = {
+        layer,
+        panel,
+        rowIndex,
+        colIndex,
+        anchorInput: anchorInput || this.getInput(rowIndex, colIndex)
+      };
+    }
+
+    closeSubtableEditor(focusInput = false) {
+      if (!this.subtableEditor) return;
+      const { layer, anchorInput } = this.subtableEditor;
+      if (layer?.parentElement) layer.remove();
+      this.subtableEditor = null;
+      if (focusInput && anchorInput) {
+        try {
+          anchorInput.focus();
+        } catch (_e) { /* noop */ }
+      }
+    }
+
     handleCellMouseDown(event, input) {
+      if (this.saving) return;
       if (event.button !== 0) return;
       const rowIndex = Number(input.dataset.rowIndex || '0');
       const colIndex = Number(input.dataset.colIndex || '0');
       const editing = this.isEditingCell(rowIndex, colIndex);
-      const isDouble = event.detail >= 2;
 
       if (editing) {
         event.stopPropagation();
@@ -1557,8 +3440,14 @@
 
       event.preventDefault();
       event.stopPropagation();
-      this.startSelection(rowIndex, colIndex, event.shiftKey);
-      if (isDouble) {
+      if (event.shiftKey) {
+        this.startSelection(rowIndex, colIndex, true);
+        this.armedCell = { rowIndex, colIndex };
+        return;
+      }
+      this.startSelection(rowIndex, colIndex, false);
+      this.armedCell = { rowIndex, colIndex };
+      if (event.detail >= 2) {
         this.enterEditMode(rowIndex, colIndex, input, true);
       }
     }
@@ -1570,26 +3459,36 @@
       this.updateSelectionRange(rowIndex, colIndex);
     }
 
-    handleRadioInputClick(input) {
+    handleChoiceInputClick(input) {
+      if (this.saving) return;
       if (!input) return;
       const fieldCode = input.dataset.fieldCode;
+      const recordId = input.dataset.recordId || '';
       if (!fieldCode) return;
       const field = this.fieldMap.get(fieldCode);
-      if (!field || field.type !== 'RADIO_BUTTON') return;
       const rowIndex = Number(input.dataset.rowIndex || '0');
       const colIndex = Number(input.dataset.colIndex || '0');
+      if (!field) return;
+      if (this.isSubtableField(field)) {
+        this.openSubtableEditor(rowIndex, colIndex, input);
+        return;
+      }
+      if (!this.isChoiceField(field)) return;
+      if (!this.isCellEditable(field, recordId)) return;
       if (!this.isEditingCell(rowIndex, colIndex)) return;
       if (this.radioPicker && this.radioPicker.input === input) return;
       this.openRadioPicker(rowIndex, colIndex, input);
     }
 
     onInputChanged(input) {
+      if (!this.canMutateOverlay(false)) return;
       const recordId = input.dataset.recordId;
       const fieldCode = input.dataset.fieldCode;
       if (!recordId || !fieldCode) return;
       const key = `${recordId}:${fieldCode}`;
       const field = this.fieldMap.get(fieldCode);
       if (!field) return;
+      if (!this.isCellEditable(field, recordId)) return;
       const cell = input.parentElement;
       if (!cell) return;
 
@@ -1613,9 +3512,8 @@
       }
 
       const normalized = validation.value;
-      const originalValue = input.dataset.originalValue;
-
       const row = this.rowMap.get(recordId);
+      const originalValue = row ? row.original[fieldCode] : input.dataset.originalValue;
       if (row) {
         row.values[fieldCode] = normalized;
       }
@@ -1628,32 +3526,89 @@
         this.addDiff(recordId, fieldCode, normalized, field.type);
       }
       this.updateDirtyBadge();
+      if (this.hasActiveFilters()) {
+        const rowIndex = Number(input.dataset.rowIndex || '-1');
+        const colIndex = Number(input.dataset.colIndex || '-1');
+        const editingNow = this.isEditingCell(rowIndex, colIndex) && !input.readOnly;
+        if (editingNow) {
+          this.needsFilterReapply = true;
+        } else {
+          this.applyFilters();
+          return;
+        }
+      }
       this.updateStats();
     }
 
     handlePaste(event, input) {
+      if (!this.canMutateOverlay(true)) return;
       if (!event.clipboardData) return;
       const text = event.clipboardData.getData('text');
       if (!text) return;
-      const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      if (!normalized.includes('\n') && !normalized.includes('\t')) {
-        return;
-      }
       event.preventDefault();
-      this.applyPastedMatrix(normalized, input);
+      const { matrix, rowCount, colCount } = this.parseClipboardMatrix(text);
+      if (!rowCount || !colCount) return;
+      const startRow = Number(input?.dataset?.rowIndex || '0');
+      const startCol = Number(input?.dataset?.colIndex || '0');
+      this.applyPastedMatrixAt(matrix, startRow, startCol);
     }
 
-    applyPastedMatrix(text, startInput) {
-      const lines = text.split('\n');
+    parseClipboardMatrix(text) {
+      const normalized = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const lines = normalized.split('\n');
       if (lines.length && lines[lines.length - 1] === '') {
         lines.pop();
       }
-      if (!lines.length) return;
+      if (!lines.length) return { matrix: [], rowCount: 0, colCount: 0 };
       const matrix = lines.map((line) => line.split('\t'));
-      const startRow = Number(startInput.dataset.rowIndex || '0');
-      const startCol = Number(startInput.dataset.colIndex || '0');
-      const rowCount = this.rows.length;
+      const rowCount = matrix.length;
+      const colCount = matrix.reduce((max, row) => Math.max(max, row.length), 0);
+      return { matrix, rowCount, colCount };
+    }
+
+    getPasteStartCell() {
+      if (this.selection) {
+        return {
+          rowIndex: this.selection.startRow,
+          colIndex: this.selection.startCol
+        };
+      }
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement) {
+        return {
+          rowIndex: Number(active.dataset.rowIndex || '0'),
+          colIndex: Number(active.dataset.colIndex || '0')
+        };
+      }
+      return { rowIndex: 0, colIndex: 0 };
+    }
+
+    async pasteClipboard() {
+      if (!this.canMutateOverlay(true)) return;
+      if (this.saving) return;
+      let text = '';
+      try {
+        if (!navigator?.clipboard?.readText) return;
+        text = await navigator.clipboard.readText();
+      } catch (error) {
+        console.warn('[kintone-excel-overlay] clipboard read failed', error);
+        return;
+      }
+      const { matrix, rowCount, colCount } = this.parseClipboardMatrix(text);
+      if (!rowCount || !colCount) return;
+      const start = this.getPasteStartCell();
+      this.exitEditMode();
+      this.applyPastedMatrixAt(matrix, start.rowIndex, start.colIndex);
+    }
+
+    applyPastedMatrixAt(matrix, startRow, startCol) {
+      if (!this.canMutateOverlay(true)) return;
+      if (!Array.isArray(matrix) || !matrix.length) return;
+      const rowCount = this.getVisibleRowCount();
       const colCount = this.fields.length;
+      let appliedRows = 0;
+      let appliedCols = 0;
+      const pasteChanges = [];
       for (let r = 0; r < matrix.length; r += 1) {
         const targetRowIndex = startRow + r;
         if (targetRowIndex >= rowCount) break;
@@ -1661,20 +3616,78 @@
         for (let c = 0; c < rowValues.length; c += 1) {
           const targetColIndex = startCol + c;
           if (targetColIndex >= colCount) break;
-          this.applyPastedValue(targetRowIndex, targetColIndex, rowValues[c]);
+          const change = this.applyPastedValue(targetRowIndex, targetColIndex, rowValues[c]);
+          if (change) pasteChanges.push(change);
+          appliedCols = Math.max(appliedCols, c + 1);
         }
+        appliedRows = r + 1;
+      }
+      if (!appliedRows || !appliedCols) return;
+      if (pasteChanges.length) {
+        this.pushHistory({
+          type: 'paste',
+          payload: { changes: pasteChanges }
+        });
+      }
+      const endRow = Math.min(rowCount - 1, startRow + appliedRows - 1);
+      const endCol = Math.min(colCount - 1, startCol + appliedCols - 1);
+      this.selection = {
+        startRow,
+        endRow,
+        startCol,
+        endCol,
+        anchorRow: startRow,
+        anchorCol: startCol
+      };
+      this.repaintSelection();
+      this.updateStats();
+      this.flashPastedRange(startRow, endRow, startCol, endCol);
+      if (this.hasActiveFilters()) {
+        this.needsFilterReapply = false;
+        this.applyFilters();
       }
     }
 
+    flashPastedRange(startRow, endRow, startCol, endCol) {
+      const flashedCells = [];
+      for (let r = startRow; r <= endRow; r += 1) {
+        for (let c = startCol; c <= endCol; c += 1) {
+          const input = this.getInput(r, c);
+          const cell = input?.parentElement;
+          if (!cell) continue;
+          cell.classList.add('pb-overlay__cell--paste-flash');
+          flashedCells.push(cell);
+        }
+      }
+      if (this.pasteFlashTimer) {
+        clearTimeout(this.pasteFlashTimer);
+      }
+      this.pasteFlashTimer = setTimeout(() => {
+        flashedCells.forEach((cell) => cell.classList.remove('pb-overlay__cell--paste-flash'));
+        this.pasteFlashTimer = null;
+      }, 220);
+    }
+
     applyPastedValue(rowIndex, colIndex, rawValue) {
-      const row = this.rows[rowIndex];
+      const row = this.getVisibleRowAt(rowIndex);
       const field = this.fields[colIndex];
-      if (!row || !field) return;
+      if (!row || !field) return null;
+      if (this.isSubtableField(field)) return null;
+      if (this.isLookupAutoField(field)) return null;
+      if (!this.isCellEditable(field, row.id)) return null;
+      const beforeValue = this.deepClone(row.values[field.code]);
       const input = this.getInput(rowIndex, colIndex);
       if (input) {
         input.value = rawValue;
         this.onInputChanged(input);
-        return;
+        const afterValue = this.deepClone(row.values[field.code]);
+        if (this.valuesEqual(beforeValue, afterValue)) return null;
+        return {
+          recordId: row.id,
+          fieldCode: field.code,
+          before: beforeValue,
+          after: afterValue
+        };
       }
       const recordId = row.id;
       const fieldCode = field.code;
@@ -1686,7 +3699,7 @@
         this.markDirtyState(recordId, fieldCode, row.original[fieldCode], null);
         this.updateDirtyBadge();
         this.updateStats();
-        return;
+        return null;
       }
       this.invalidCells.delete(key);
       this.invalidValueCache.delete(key);
@@ -1699,13 +3712,22 @@
       }
       this.updateDirtyBadge();
       this.updateStats();
+      const afterValue = this.deepClone(row.values[fieldCode]);
+      if (this.valuesEqual(beforeValue, afterValue)) return null;
+      return {
+        recordId,
+        fieldCode,
+        before: beforeValue,
+        after: afterValue
+      };
     }
 
     setSelectionSingle(rowIndex, colIndex) {
-      const maxRow = Math.max(0, this.rows.length - 1);
+      const maxRow = Math.max(0, this.getVisibleRowCount() - 1);
       const maxCol = Math.max(0, this.fields.length - 1);
       if (maxRow < 0 || maxCol < 0) {
         this.selection = null;
+        this.armedCell = null;
         this.repaintSelection();
         this.updateStats();
         return;
@@ -1720,6 +3742,7 @@
         startCol: c,
         endCol: c
       };
+      this.armedCell = { rowIndex: r, colIndex: c };
       this.dragSelecting = false;
       this.repaintSelection();
       this.updateStats();
@@ -1727,7 +3750,7 @@
 
     startSelection(rowIndex, colIndex, extend = false) {
       this.exitEditMode();
-      const maxRow = Math.max(0, this.rows.length - 1);
+      const maxRow = Math.max(0, this.getVisibleRowCount() - 1);
       const maxCol = Math.max(0, this.fields.length - 1);
       if (maxRow < 0 || maxCol < 0) return;
       const r = Math.max(0, Math.min(maxRow, rowIndex));
@@ -1751,6 +3774,7 @@
         this.selection.startCol = Math.min(this.selection.anchorCol, c);
         this.selection.endCol = Math.max(this.selection.anchorCol, c);
       }
+      this.armedCell = { rowIndex: r, colIndex: c };
       this.dragSelecting = true;
       this.repaintSelection();
       this.updateStats();
@@ -1758,7 +3782,7 @@
     }
 
     updateSelectionRange(rowIndex, colIndex, focus = false) {
-      const maxRow = Math.max(0, this.rows.length - 1);
+      const maxRow = Math.max(0, this.getVisibleRowCount() - 1);
       const maxCol = Math.max(0, this.fields.length - 1);
       if (maxRow < 0 || maxCol < 0) return;
       const r = Math.max(0, Math.min(maxRow, rowIndex));
@@ -1799,6 +3823,18 @@
         && colIndex >= s.startCol && colIndex <= s.endCol;
     }
 
+    isCellArmed(rowIndex, colIndex) {
+      if (!this.armedCell) return false;
+      if (this.editingCell) return false;
+      return this.armedCell.rowIndex === rowIndex && this.armedCell.colIndex === colIndex;
+    }
+
+    isCellActive(rowIndex, colIndex) {
+      if (this.isEditingCell(rowIndex, colIndex)) return true;
+      if (!this.armedCell) return false;
+      return this.armedCell.rowIndex === rowIndex && this.armedCell.colIndex === colIndex;
+    }
+
     repaintSelection() {
       this.inputsByRow.forEach((rowInputs, rowIndex) => {
         if (!Array.isArray(rowInputs)) return;
@@ -1806,10 +3842,27 @@
           if (!input) return;
           const cell = input.parentElement;
           if (!cell) return;
+          const r = Number(rowIndex);
+          const c = Number(colIndex);
           if (this.isCellSelected(Number(rowIndex), Number(colIndex))) {
             cell.classList.add('pb-overlay__cell--selected');
           } else {
             cell.classList.remove('pb-overlay__cell--selected');
+          }
+          if (this.isCellArmed(r, c)) {
+            cell.classList.add('pb-overlay__cell--armed');
+          } else {
+            cell.classList.remove('pb-overlay__cell--armed');
+          }
+          if (this.isCellActive(r, c)) {
+            cell.classList.add('pb-overlay__cell--active');
+          } else {
+            cell.classList.remove('pb-overlay__cell--active');
+          }
+          if (this.isEditingCell(r, c) && input.classList.contains('pb-overlay__input--editing')) {
+            cell.classList.add('pb-overlay__cell--editing');
+          } else {
+            cell.classList.remove('pb-overlay__cell--editing');
           }
         });
       });
@@ -1821,28 +3874,40 @@
     }
 
     enterEditMode(rowIndex, colIndex, input, selectAll = false) {
-      const maxRow = Math.max(0, this.rows.length - 1);
+      if (this.saving) return;
+      const maxRow = Math.max(0, this.getVisibleRowCount() - 1);
       const maxCol = Math.max(0, this.fields.length - 1);
       if (maxRow < 0 || maxCol < 0) return;
       const r = Math.max(0, Math.min(maxRow, rowIndex));
       const c = Math.max(0, Math.min(maxCol, colIndex));
       const field = this.fields[c];
+      const targetRow = this.getVisibleRowAt(r);
+      const targetRecordId = String(targetRow?.id || '').trim();
+      if (!this.isCellEditable(field, targetRecordId)) {
+        if (this.isSubtableField(field)) {
+          if (targetRecordId) {
+            this.openSubtableEditor(r, c, input || this.getInput(r, c));
+          }
+        }
+        return;
+      }
       if (this.editingCell && (this.editingCell.rowIndex !== r || this.editingCell.colIndex !== c)) {
         this.exitEditMode();
       }
       this.dragSelecting = false;
       this.setSelectionSingle(r, c);
-      this.editingCell = { rowIndex: r, colIndex: c, selectAll: !!selectAll };
+      this.armedCell = null;
+      this.pendingEdit = null;
+      this.editingCell = this.createEditingState(r, c, !!selectAll);
       const targetInput = input || this.getInput(r, c);
       if (targetInput) {
-        targetInput.readOnly = false;
-        targetInput.classList.add('pb-overlay__input--editing');
+        this.setInputEditingVisual(targetInput, true);
         requestAnimationFrame(() => {
           targetInput.focus();
           if (this.editingCell && this.editingCell.rowIndex === r && this.editingCell.colIndex === c) {
             this.applyCaretPlacement(targetInput, !!this.editingCell.selectAll);
           }
-          if (field?.type === 'RADIO_BUTTON') {
+          if (this.isChoiceField(field)) {
             this.openRadioPicker(r, c, targetInput);
           }
         });
@@ -1851,15 +3916,54 @@
 
     exitEditMode() {
       if (!this.editingCell) return;
-      const { rowIndex, colIndex } = this.editingCell;
+      const previousEditingCell = this.editingCell;
+      const { rowIndex, colIndex } = previousEditingCell;
       this.closeRadioPicker();
       const input = this.getInput(rowIndex, colIndex);
       if (input) {
-        input.readOnly = true;
-        input.classList.remove('pb-overlay__input--editing');
+        this.setInputEditingVisual(input, false);
       }
+      this.commitCellEditHistory(previousEditingCell);
       this.editingCell = null;
+      this.pendingEdit = null;
       this.setSelectionSingle(rowIndex, colIndex);
+    }
+
+    createEditingState(rowIndex, colIndex, selectAll = false) {
+      const row = this.getVisibleRowAt(rowIndex);
+      const field = this.fields[colIndex];
+      const recordId = String(row?.id || '').trim();
+      const fieldCode = String(field?.code || '').trim();
+      const beforeValue = row && fieldCode ? this.deepClone(row.values[fieldCode]) : '';
+      return {
+        rowIndex,
+        colIndex,
+        selectAll: Boolean(selectAll),
+        recordId,
+        fieldCode,
+        beforeValue
+      };
+    }
+
+    commitCellEditHistory(editState) {
+      if (!editState || this.isReplayingHistory) return;
+      const recordId = String(editState.recordId || '').trim();
+      const fieldCode = String(editState.fieldCode || '').trim();
+      if (!recordId || !fieldCode) return;
+      const row = this.rowMap.get(recordId);
+      if (!row) return;
+      const before = this.deepClone(editState.beforeValue);
+      const after = this.deepClone(row.values[fieldCode]);
+      if (this.valuesEqual(before, after)) return;
+      this.pushHistory({
+        type: 'cell-edit',
+        payload: {
+          recordId,
+          fieldCode,
+          before,
+          after
+        }
+      });
     }
 
     async copySelectionToClipboard() {
@@ -1883,7 +3987,7 @@
       const rowsOut = [];
       for (let r = sel.startRow; r <= sel.endRow; r += 1) {
         const rowVals = [];
-        const rowData = this.rows[r];
+        const rowData = this.getVisibleRowAt(r);
         for (let c = sel.startCol; c <= sel.endCol; c += 1) {
           const field = this.fields[c];
           const value = rowData && field ? rowData.values[field.code] : '';
@@ -1943,8 +4047,8 @@
     }
 
     findInput(recordId, fieldCode) {
-      const rowIndex = this.rowIndexMap.get(recordId);
-      if (rowIndex === undefined) return null;
+      const rowIndex = this.getVisibleRowIndexById(recordId);
+      if (rowIndex < 0) return null;
       const colIndex = this.fieldIndexMap.get(fieldCode);
       if (colIndex === undefined) return null;
       return this.getInput(rowIndex, colIndex);
@@ -1956,19 +4060,29 @@
       this.diff.forEach((entry) => {
         count += Object.keys(entry).length;
       });
+      count += this.pendingDeletes.size;
       this.dirtyBadge.textContent = resolveText(this.language, 'dirtyLabel', count);
       if (count > 0) {
         this.dirtyBadge.classList.add('pb-overlay__dirty--active');
       } else {
         this.dirtyBadge.classList.remove('pb-overlay__dirty--active');
       }
+      if (this.saveButton && !this.saving) {
+        this.saveButton.disabled = !this.isOverlayEditable() || count === 0;
+        this.saveButton.title = this.isOverlayEditable() ? '' : resolveText(this.language, 'toastViewOnlyBlocked');
+      }
     }
 
     updateStats() {
       const numbers = [];
+      const visibleRows = this.getVisibleRows();
+      let selectedCells = 0;
       if (this.selection) {
+        const selectedRows = Math.max(0, this.selection.endRow - this.selection.startRow + 1);
+        const selectedCols = Math.max(0, this.selection.endCol - this.selection.startCol + 1);
+        selectedCells = selectedRows * selectedCols;
         for (let r = this.selection.startRow; r <= this.selection.endRow; r += 1) {
-          const row = this.rows[r];
+          const row = visibleRows[r];
           if (!row) continue;
           for (let c = this.selection.startCol; c <= this.selection.endCol; c += 1) {
             const field = this.fields[c];
@@ -1996,7 +4110,22 @@
       const sumDisplay = count ? sum : '-';
       const avgDisplay = count ? avg.toFixed(2) : '-';
       const countDisplay = count || '-';
+      const filteredRowsCount = visibleRows.length;
+      const pendingDeleteCount = this.pendingDeletes.size;
+      const newRowsCount = this.rows.reduce((acc, row) => acc + (this.isNewRowId(row?.id) ? 1 : 0), 0);
 
+      if (this.statsElements.selected) {
+        this.statsElements.selected.textContent = `${resolveText(this.language, 'statusSelectedCells')}: ${selectedCells}`;
+      }
+      if (this.statsElements.filtered) {
+        this.statsElements.filtered.textContent = `${resolveText(this.language, 'statusFilteredRows')}: ${filteredRowsCount}`;
+      }
+      if (this.statsElements.pendingDelete) {
+        this.statsElements.pendingDelete.textContent = `${resolveText(this.language, 'statusPendingDeletes')}: ${pendingDeleteCount}`;
+      }
+      if (this.statsElements.newRows) {
+        this.statsElements.newRows.textContent = `${resolveText(this.language, 'statusNewRows')}: ${newRowsCount}`;
+      }
       if (this.statsElements.sum) {
         this.statsElements.sum.textContent = `${resolveText(this.language, 'statusSum')}: ${sumDisplay}`;
       }
@@ -2023,7 +4152,7 @@
         if (!re.test(trimmed)) return { ok: false, error: 'Invalid date' };
         return { ok: true, value: trimmed };
       }
-      if (type === 'RADIO_BUTTON') {
+      if (type === 'RADIO_BUTTON' || type === 'DROP_DOWN') {
         if (!trimmed) return { ok: true, value: '' };
         const choices = Array.isArray(field?.choices) ? field.choices : [];
         if (choices.length && !choices.includes(trimmed)) {
@@ -2035,36 +4164,389 @@
     }
 
     applyLimit(baseQuery, limit) {
-      const trimmed = String(baseQuery || '').trim();
-      if (!limit || limit <= 0) return trimmed;
-      const regex = /\blimit\s+\d+/i;
-      if (regex.test(trimmed)) return trimmed;
-      const clause = `limit ${limit}`;
-      if (!trimmed) return clause;
-      return `${trimmed} ${clause}`;
+      const size = Number(limit);
+      if (!Number.isFinite(size) || size <= 0) return String(baseQuery || '').trim();
+      return this.normalizeOverlayQuery(baseQuery, Math.floor(size), 0);
+    }
+
+    deepClone(value) {
+      if (value === undefined) return undefined;
+      if (typeof structuredClone === 'function') {
+        try {
+          return structuredClone(value);
+        } catch (_err) {
+          // fallback below
+        }
+      }
+      return JSON.parse(JSON.stringify(value));
+    }
+
+    valuesEqual(a, b) {
+      return JSON.stringify(a) === JSON.stringify(b);
+    }
+
+    pushHistory(entry) {
+      if (!entry || this.isReplayingHistory) return;
+      this.undoStack.push({
+        ...entry,
+        timestamp: Date.now()
+      });
+      if (this.undoStack.length > this.maxHistory) {
+        this.undoStack.shift();
+      }
+      this.redoStack = [];
+      this.updateHistoryButtons();
+    }
+
+    clearHistory() {
+      this.undoStack = [];
+      this.redoStack = [];
+      this.updateHistoryButtons();
+    }
+
+    updateHistoryButtons() {
+      if (this.undoButton) {
+        this.undoButton.disabled = this.saving || !this.isOverlayEditable() || this.undoStack.length === 0;
+      }
+      if (this.redoButton) {
+        this.redoButton.disabled = this.saving || !this.isOverlayEditable() || this.redoStack.length === 0;
+      }
+    }
+
+    setRowFieldValueFromHistory(recordId, fieldCode, nextValue) {
+      const key = String(recordId || '').trim();
+      const code = String(fieldCode || '').trim();
+      if (!key || !code) return;
+      const row = this.rowMap.get(key);
+      const field = this.fieldMap.get(code);
+      if (!row || !field) return;
+      const value = this.deepClone(nextValue);
+      row.values[code] = value;
+      const original = row.original[code];
+      if (this.valuesEqual(value, original)) {
+        this.removeDiff(key, code);
+      } else {
+        this.addDiff(key, code, value, field.type);
+      }
+      const invalidKey = `${key}:${code}`;
+      this.invalidCells.delete(invalidKey);
+      this.invalidValueCache.delete(invalidKey);
+      const input = this.findInput(key, code);
+      if (input) {
+        input.value = this.formatCellDisplayValue(field, row.values[code]);
+        this.applyCellVisualState(input, row, code);
+      }
+    }
+
+    applyDeleteToggleState(recordId, nextState) {
+      const key = String(recordId || '').trim();
+      if (!key || this.isNewRowId(key)) return;
+      const shouldSet = Boolean(nextState);
+      if (shouldSet) this.pendingDeletes.add(key);
+      else this.pendingDeletes.delete(key);
+      const editingRowId = this.editingCell ? this.getVisibleRowAt(this.editingCell.rowIndex)?.id : '';
+      if (editingRowId && String(editingRowId) === key) {
+        this.exitEditMode();
+      }
+      this.updateVirtualRows(true);
+      this.updateDirtyBadge();
+      this.updateStats();
+    }
+
+    restoreHistoryAddRow(rowSnapshot, index) {
+      const row = this.deepClone(rowSnapshot);
+      const id = String(row?.id || '').trim();
+      if (!id) return;
+      if (this.rowMap.has(id)) return;
+      const insertAt = Math.max(0, Math.min(Number(index) || 0, this.rows.length));
+      this.rows.splice(insertAt, 0, row);
+      this.rebuildRowMaps();
+      this.recomputeFilteredRowIds();
+      this.recordPermissions.set(id, { view: 'allow', edit: 'allow', delete: 'allow', source: 'local' });
+      this.recordAcl.set(id, {
+        id,
+        viewable: true,
+        editable: true,
+        deletable: true,
+        fields: {}
+      });
+      this.updateVirtualRows(true);
+      this.updateDirtyBadge();
+      this.updateStats();
+    }
+
+    removeHistoryAddRow(rowId) {
+      const key = String(rowId || '').trim();
+      if (!key) return;
+      const index = this.rows.findIndex((row) => String(row?.id || '').trim() === key);
+      if (index < 0) return;
+      if (this.editingCell && this.getVisibleRowAt(this.editingCell.rowIndex)?.id === key) {
+        this.exitEditMode();
+      }
+      this.rows.splice(index, 1);
+      this.pendingDeletes.delete(key);
+      this.diff.delete(key);
+      this.rowMap.delete(key);
+      this.rowIndexMap.delete(key);
+      this.revisionMap.delete(key);
+      this.recordPermissions.delete(key);
+      this.recordAcl.delete(key);
+      this.clearInvalidStateForRecord(key);
+      this.rebuildRowMaps();
+      this.recomputeFilteredRowIds();
+      const visibleCount = this.getVisibleRowCount();
+      if (!visibleCount) {
+        this.selection = null;
+        this.armedCell = null;
+      } else if (this.selection) {
+        const nextRow = Math.max(0, Math.min(visibleCount - 1, this.selection.startRow || 0));
+        const nextCol = Math.max(0, Math.min(this.fields.length - 1, this.selection.startCol || 0));
+        this.setSelectionSingle(nextRow, nextCol);
+      }
+      this.updateVirtualRows(true);
+      this.updateDirtyBadge();
+      this.updateStats();
+    }
+
+    applyHistoryEntry(entry, reverse = false) {
+      if (!entry || !entry.type) return;
+      const payload = entry.payload || {};
+      let shouldRecomputeFilters = false;
+      if (entry.type === 'cell-edit') {
+        const nextValue = reverse ? payload.before : payload.after;
+        this.setRowFieldValueFromHistory(payload.recordId, payload.fieldCode, nextValue);
+        shouldRecomputeFilters = true;
+      } else if (entry.type === 'paste') {
+        const changes = Array.isArray(payload.changes) ? payload.changes.slice() : [];
+        if (reverse) changes.reverse();
+        changes.forEach((change) => {
+          const nextValue = reverse ? change.before : change.after;
+          this.setRowFieldValueFromHistory(change.recordId, change.fieldCode, nextValue);
+        });
+        shouldRecomputeFilters = true;
+      } else if (entry.type === 'add-row') {
+        if (reverse) {
+          this.removeHistoryAddRow(payload.row?.id);
+        } else {
+          this.restoreHistoryAddRow(payload.row, payload.index);
+        }
+      } else if (entry.type === 'toggle-delete') {
+        const nextValue = reverse ? payload.before : payload.after;
+        this.applyDeleteToggleState(payload.recordId, nextValue);
+      } else if (entry.type === 'subtable-edit') {
+        const nextValue = reverse ? payload.before : payload.after;
+        this.setRowFieldValueFromHistory(payload.recordId, payload.fieldCode, nextValue);
+        shouldRecomputeFilters = true;
+      }
+      if (shouldRecomputeFilters && this.hasActiveFilters()) {
+        this.recomputeFilteredRowIds();
+      }
+    }
+
+    undo() {
+      if (!this.canMutateOverlay(true)) return;
+      if (this.saving || !this.undoStack.length) return;
+      const entry = this.undoStack.pop();
+      this.isReplayingHistory = true;
+      try {
+        this.applyHistoryEntry(entry, true);
+        this.redoStack.push(entry);
+      } finally {
+        this.isReplayingHistory = false;
+      }
+      this.updateHistoryButtons();
+      this.updateVirtualRows(true);
+      this.repaintSelection();
+      this.updateDirtyBadge();
+      this.updateStats();
+    }
+
+    redo() {
+      if (!this.canMutateOverlay(true)) return;
+      if (this.saving || !this.redoStack.length) return;
+      const entry = this.redoStack.pop();
+      this.isReplayingHistory = true;
+      try {
+        this.applyHistoryEntry(entry, false);
+        this.undoStack.push(entry);
+      } finally {
+        this.isReplayingHistory = false;
+      }
+      this.updateHistoryButtons();
+      this.updateVirtualRows(true);
+      this.repaintSelection();
+      this.updateDirtyBadge();
+      this.updateStats();
     }
 
     syncScroll() {
       if (!this.bodyScroll) return;
+      const scrollLeft = this.bodyScroll.scrollLeft;
+      const scrollTop = this.bodyScroll.scrollTop;
       if (this.columnHeaderScroll) {
-        this.columnHeaderScroll.scrollLeft = this.bodyScroll.scrollLeft;
+        this.columnHeaderScroll.style.transform = `translateX(${-scrollLeft}px)`;
       }
       if (this.rowHeaderScroll) {
-        this.rowHeaderScroll.scrollTop = this.bodyScroll.scrollTop;
+        this.rowHeaderScroll.scrollTop = scrollTop;
       }
       this.updateVirtualRows();
     }
 
     focusFirstCell() {
-      if (!this.rows.length || !this.fields.length) return;
+      if (!this.getVisibleRowCount() || !this.fields.length) return;
       this.setSelectionSingle(0, 0);
       this.focusCell(0, 0);
+    }
+
+    findFirstEditableColIndex(recordId = '') {
+      const index = this.fields.findIndex((field) => this.isCellEditable(field, recordId));
+      return index >= 0 ? index : 0;
+    }
+
+    addNewRow() {
+      if (!this.canMutateOverlay(true)) return;
+      if (this.saving) return;
+      if (!this.canAddRows()) return;
+      if (!this.fields.length) return;
+      const tempId = `NEW:${Date.now()}:${this.newRowSeq++}`;
+      const values = {};
+      const original = {};
+      this.fields.forEach((field) => {
+        const base = this.isSubtableField(field) ? [] : '';
+        values[field.code] = this.cloneFieldValue(field, base);
+        original[field.code] = this.cloneFieldValue(field, base);
+      });
+      const row = {
+        id: tempId,
+        revision: undefined,
+        values,
+        original,
+        isNew: true
+      };
+      this.rows.unshift(row);
+      this.pushHistory({
+        type: 'add-row',
+        payload: {
+          row: this.deepClone(row),
+          index: 0
+        }
+      });
+      this.rebuildRowMaps();
+      this.recomputeFilteredRowIds();
+      this.recordPermissions.set(tempId, { view: 'allow', edit: 'allow', delete: 'allow', source: 'local' });
+      this.recordAcl.set(tempId, {
+        id: tempId,
+        viewable: true,
+        editable: true,
+        deletable: true,
+        fields: {}
+      });
+      if (this.bodyScroll) {
+        this.bodyScroll.scrollTop = 0;
+      }
+      this.updateVirtualRows(true);
+      const colIndex = this.findFirstEditableColIndex(tempId);
+      this.setSelectionSingle(0, colIndex);
+      this.focusCell(0, colIndex);
+      const targetInput = this.getInput(0, colIndex);
+      if (targetInput) {
+        this.enterEditMode(0, colIndex, targetInput, true);
+      }
+    }
+
+    removeNewRowById(recordId) {
+      const key = String(recordId || '').trim();
+      if (!key || !this.isNewRowId(key)) return;
+      const index = this.rows.findIndex((row) => String(row?.id || '').trim() === key);
+      if (index < 0) return;
+      if (this.editingCell && this.getVisibleRowAt(this.editingCell.rowIndex)?.id === key) {
+        this.exitEditMode();
+      }
+      this.rows.splice(index, 1);
+      this.pendingDeletes.delete(key);
+      this.diff.delete(key);
+      this.recordPermissions.delete(key);
+      this.recordAcl.delete(key);
+      this.clearInvalidStateForRecord(key);
+      this.rebuildRowMaps();
+      this.recomputeFilteredRowIds();
+      const visibleCount = this.getVisibleRowCount();
+      if (!visibleCount) {
+        this.selection = null;
+        this.armedCell = null;
+      } else if (this.selection) {
+        const nextRow = Math.max(0, Math.min(visibleCount - 1, this.selection.startRow || 0));
+        const nextCol = Math.max(0, Math.min(this.fields.length - 1, this.selection.startCol || 0));
+        this.setSelectionSingle(nextRow, nextCol);
+      }
+      this.updateVirtualRows(true);
+      this.updateDirtyBadge();
+      this.updateStats();
+    }
+
+    togglePendingDelete(recordId) {
+      if (!this.canMutateOverlay(true)) return;
+      const key = String(recordId || '').trim();
+      if (!key || this.saving) return;
+      if (this.isNewRowId(key)) {
+        this.removeNewRowById(key);
+        return;
+      }
+      if (!this.canDeleteRecord(key)) return;
+      const before = this.pendingDeletes.has(key);
+      if (this.pendingDeletes.has(key)) {
+        this.pendingDeletes.delete(key);
+      } else {
+        this.pendingDeletes.add(key);
+      }
+      const after = this.pendingDeletes.has(key);
+      if (before !== after) {
+        this.pushHistory({
+          type: 'toggle-delete',
+          payload: {
+            recordId: key,
+            before,
+            after
+          }
+        });
+      }
+      const editingRowId = this.editingCell ? this.getVisibleRowAt(this.editingCell.rowIndex)?.id : '';
+      if (editingRowId && String(editingRowId) === key) {
+        this.exitEditMode();
+      }
+      this.updateVirtualRows(true);
+      this.updateDirtyBadge();
+      this.updateStats();
     }
 
     handleOverlayKeydown(event) {
       if (!this.isOpen) return;
       const target = event.target;
       if (!this.root?.contains(target)) return;
+      if (this.saving) {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+        }
+        return;
+      }
+      if (!this.isComposing && (event.ctrlKey || event.metaKey) && !event.altKey) {
+        const key = String(event.key || '').toLowerCase();
+        const wantsUndo = key === 'z' && !event.shiftKey;
+        const wantsRedo = key === 'y' || (key === 'z' && event.shiftKey);
+        if (wantsUndo || wantsRedo) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          if (wantsUndo) {
+            this.undo();
+          } else {
+            this.redo();
+          }
+          return;
+        }
+      }
 
       if (this.columnPanelLayer && this.columnPanelLayer.contains(target)) {
         if (event.key === 'Escape') {
@@ -2072,6 +4554,33 @@
           event.stopPropagation();
           event.stopImmediatePropagation();
           this.closeColumnManager();
+        }
+        return;
+      }
+
+      if (this.filterPanel?.panel && this.filterPanel.panel.contains(target)) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          this.closeFilterPanel();
+        }
+        return;
+      }
+      if (this.filterPanel && event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        this.closeFilterPanel();
+        return;
+      }
+
+      if (this.subtableEditor?.panel && this.subtableEditor.panel.contains(target)) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          this.closeSubtableEditor(true);
         }
         return;
       }
@@ -2095,13 +4604,44 @@
       const targetInput = target instanceof HTMLInputElement ? target : null;
       const fieldCode = targetInput?.dataset.fieldCode || '';
       const field = fieldCode ? this.fieldMap.get(fieldCode) : null;
-      const isRadioField = field?.type === 'RADIO_BUTTON';
+      const recordId = targetInput?.dataset.recordId || '';
+      const isChoiceField = this.isChoiceField(field);
+      const isSubtableField = this.isSubtableField(field);
+      const isEditableField = this.isCellEditable(field, recordId);
       const isSpaceKey = event.key === ' ' || event.key === 'Spacebar';
+      const isArrowKey = event.key === 'ArrowUp'
+        || event.key === 'ArrowDown'
+        || event.key === 'ArrowLeft'
+        || event.key === 'ArrowRight';
 
-      if (targetInput && targetInput.readOnly && isRadioField) {
+      if (targetInput && targetInput.readOnly && (event.key === 'Enter' || event.key === 'F2')) {
+        if (event.key === 'Enter' && this.isComposing) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        const rowIndex = Number(targetInput.dataset.rowIndex || '0');
+        const colIndex = Number(targetInput.dataset.colIndex || '0');
+        this.armedCell = { rowIndex, colIndex };
+        this.enterEditMode(rowIndex, colIndex, targetInput, true);
+        return;
+      }
+
+      if (targetInput && targetInput.readOnly && isSubtableField) {
+        const wantsOpen = !event.ctrlKey && !event.metaKey && !event.altKey && (event.key === 'Enter' || isSpaceKey);
+        if (wantsOpen) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          const rowIndex = Number(targetInput.dataset.rowIndex || '0');
+          const colIndex = Number(targetInput.dataset.colIndex || '0');
+          this.openSubtableEditor(rowIndex, colIndex, targetInput);
+          return;
+        }
+      }
+
+      if (targetInput && targetInput.readOnly && isChoiceField && isEditableField) {
         const wantsDirectOpen = !event.ctrlKey && !event.metaKey && !event.altKey && (event.key === 'Enter' || isSpaceKey);
-        const wantsAltDropdown = event.key === 'ArrowDown' && event.altKey;
-        if (wantsDirectOpen || wantsAltDropdown) {
+        if (wantsDirectOpen) {
           event.preventDefault();
           event.stopPropagation();
           event.stopImmediatePropagation();
@@ -2113,8 +4653,8 @@
       }
 
       if (targetInput && !targetInput.readOnly) {
-        if (isRadioField) {
-          const wantsPicker = (isSpaceKey && !event.ctrlKey && !event.metaKey) || (event.key === 'ArrowDown' && event.altKey);
+        if (isChoiceField) {
+          const wantsPicker = isSpaceKey && !event.ctrlKey && !event.metaKey && !event.altKey;
           if (wantsPicker) {
             event.preventDefault();
             event.stopPropagation();
@@ -2128,6 +4668,20 @@
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
           return;
         }
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          this.pasteClipboard();
+          return;
+        }
+        if (isArrowKey) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          this.navigateSelectionByArrow(event.key, event.shiftKey, targetInput);
+          return;
+        }
         if (event.key === 'Escape') {
           event.preventDefault();
           event.stopPropagation();
@@ -2135,23 +4689,15 @@
           this.exitEditMode();
           return;
         }
-        if (event.key === 'Enter') {
-          if (this.isComposing) return;
+        if (event.key === 'Enter' || event.key === 'Tab') {
+          if (event.key === 'Enter' && this.isComposing) return;
           event.preventDefault();
           event.stopPropagation();
           event.stopImmediatePropagation();
-          const delta = event.shiftKey ? -1 : 1;
-          const rowIndex = Number(targetInput.dataset.rowIndex || '0');
-          const colIndex = Number(targetInput.dataset.colIndex || '0');
-          this.exitEditMode();
-          const coords = this.moveFocus(targetInput, delta, 0);
-          if (coords) {
-            if (event.shiftKey) {
-              this.updateSelectionRange(coords.row, coords.col, true);
-            } else {
-              this.setSelectionSingle(coords.row, coords.col);
-            }
-          }
+          const isTabKey = event.key === 'Tab';
+          const rowDelta = isTabKey ? 0 : (event.shiftKey ? -1 : 1);
+          const colDelta = isTabKey ? (event.shiftKey ? -1 : 1) : 0;
+          this.moveEditingFocus(rowDelta, colDelta);
           return;
         }
         return;
@@ -2165,6 +4711,13 @@
         this.copySelectionToClipboard();
         return;
       }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        this.pasteClipboard();
+        return;
+      }
 
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -2175,6 +4728,24 @@
       }
 
       if (!targetInput) {
+        if (isArrowKey) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          this.navigateSelectionByArrow(event.key, event.shiftKey, null);
+          return;
+        }
+        if ((event.key === 'Enter' || event.key === 'F2') && this.armedCell) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          const { rowIndex, colIndex } = this.armedCell;
+          const armedInput = this.getInput(rowIndex, colIndex);
+          if (armedInput) {
+            this.enterEditMode(rowIndex, colIndex, armedInput, true);
+          }
+          return;
+        }
         if (event.key === 's' && (event.ctrlKey || event.metaKey)) {
           event.preventDefault();
           event.stopPropagation();
@@ -2183,38 +4754,11 @@
         }
         return;
       }
-
-      const handleMoveResult = (coords, extend = false) => {
-        if (!coords) return;
-        if (extend) {
-          if (!this.selection) {
-            this.setSelectionSingle(coords.row, coords.col);
-          } else {
-            this.updateSelectionRange(coords.row, coords.col, true);
-          }
-        } else {
-          this.setSelectionSingle(coords.row, coords.col);
-        }
-      };
-
-      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      if (isArrowKey) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-        const delta = event.key === 'ArrowUp' ? -1 : 1;
-        this.exitEditMode();
-        const coords = this.moveFocus(targetInput, delta, 0);
-        handleMoveResult(coords, event.shiftKey);
-        return;
-      }
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        const delta = event.key === 'ArrowLeft' ? -1 : 1;
-        this.exitEditMode();
-        const coords = this.moveFocus(targetInput, 0, delta);
-        handleMoveResult(coords, event.shiftKey);
+        this.navigateSelectionByArrow(event.key, event.shiftKey, targetInput);
         return;
       }
       if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey) {
@@ -2225,7 +4769,9 @@
         const delta = event.shiftKey ? -1 : 1;
         this.exitEditMode();
         const coords = this.moveFocus(targetInput, delta, 0);
-        handleMoveResult(coords, false);
+        if (coords) {
+          this.setSelectionSingle(coords.row, coords.col);
+        }
         return;
       }
       if (event.key === 'Tab') {
@@ -2235,7 +4781,9 @@
         const delta = event.shiftKey ? -1 : 1;
         this.exitEditMode();
         const coords = this.moveFocus(targetInput, 0, delta);
-        handleMoveResult(coords, false);
+        if (coords) {
+          this.setSelectionSingle(coords.row, coords.col);
+        }
         return;
       }
       if (event.key === 's' && (event.ctrlKey || event.metaKey)) {
@@ -2247,13 +4795,11 @@
       }
     }
 
-    moveFocus(currentInput, rowDelta, colDelta) {
-      const rowIndex = Number(currentInput.dataset.rowIndex || '0');
-      const colIndex = Number(currentInput.dataset.colIndex || '0');
+    computeNextCoords(rowIndex, colIndex, rowDelta, colDelta) {
       let nextRow = rowIndex + rowDelta;
       let nextCol = colIndex + colDelta;
 
-      const rowCount = this.rows.length;
+      const rowCount = this.getVisibleRowCount();
       const colCount = this.fields.length;
       if (!rowCount || !colCount) return null;
 
@@ -2273,11 +4819,120 @@
 
       nextRow = Math.max(0, Math.min(rowCount - 1, nextRow));
       nextCol = Math.max(0, Math.min(colCount - 1, nextCol));
+      return { row: nextRow, col: nextCol };
+    }
+
+    moveEditingFocus(rowDelta, colDelta) {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLInputElement)) return;
+      this.onInputChanged(active);
+      const prevRow = Number(active.dataset.rowIndex || '0');
+      const prevCol = Number(active.dataset.colIndex || '0');
+      const previousEditingCell = this.editingCell
+        ? {
+          ...this.editingCell,
+          beforeValue: this.deepClone(this.editingCell.beforeValue)
+        }
+        : null;
+      const next = this.computeNextCoords(prevRow, prevCol, rowDelta, colDelta);
+      if (!next) return;
+      const prevInput = this.getInput(prevRow, prevCol) || active;
+      this.setInputEditingVisual(prevInput, false);
+      this.commitCellEditHistory(previousEditingCell);
+      this.editingCell = this.createEditingState(next.row, next.col, false);
+      const nextInput = this.getInput(next.row, next.col);
+      this.setInputEditingVisual(nextInput, true);
+      this.setSelectionSingle(next.row, next.col);
+      this.pendingEdit = { rowIndex: next.row, colIndex: next.col };
+      this.armedCell = { rowIndex: next.row, colIndex: next.col };
+      this.repaintSelection();
+      this.navigating = true;
+      try {
+        this.focusCell(next.row, next.col);
+      } finally {
+        setTimeout(() => {
+          this.navigating = false;
+        }, 0);
+      }
+    }
+
+    moveFocus(currentInput, rowDelta, colDelta) {
+      const rowIndex = Number(currentInput.dataset.rowIndex || '0');
+      const colIndex = Number(currentInput.dataset.colIndex || '0');
+      const next = this.computeNextCoords(rowIndex, colIndex, rowDelta, colDelta);
+      if (!next) return null;
+      const { row: nextRow, col: nextCol } = next;
       this.focusCell(nextRow, nextCol);
       return { row: nextRow, col: nextCol };
     }
 
+    getArrowDelta(key) {
+      if (key === 'ArrowUp') return { rowDelta: -1, colDelta: 0 };
+      if (key === 'ArrowDown') return { rowDelta: 1, colDelta: 0 };
+      if (key === 'ArrowLeft') return { rowDelta: 0, colDelta: -1 };
+      if (key === 'ArrowRight') return { rowDelta: 0, colDelta: 1 };
+      return null;
+    }
+
+    getNavigationOrigin(input = null) {
+      if (input instanceof HTMLInputElement) {
+        const row = Number(input.dataset.rowIndex || '0');
+        const col = Number(input.dataset.colIndex || '0');
+        if (Number.isFinite(row) && Number.isFinite(col)) {
+          return { row, col };
+        }
+      }
+      if (this.editingCell) {
+        return { row: this.editingCell.rowIndex, col: this.editingCell.colIndex };
+      }
+      if (this.armedCell) {
+        return { row: this.armedCell.rowIndex, col: this.armedCell.colIndex };
+      }
+      if (this.selection) {
+        return { row: this.selection.endRow, col: this.selection.endCol };
+      }
+      if (this.getVisibleRowCount() > 0 && this.fields.length > 0) {
+        return { row: 0, col: 0 };
+      }
+      return null;
+    }
+
+    navigateSelectionByArrow(key, extend = false, input = null) {
+      const delta = this.getArrowDelta(key);
+      if (!delta) return null;
+      const origin = this.getNavigationOrigin(input);
+      if (!origin) return null;
+      const next = this.computeNextCoords(origin.row, origin.col, delta.rowDelta, delta.colDelta);
+      if (!next) return null;
+
+      if (this.editingCell) {
+        this.exitEditMode();
+      }
+
+      if (extend) {
+        if (!this.selection) {
+          this.selection = {
+            anchorRow: origin.row,
+            anchorCol: origin.col,
+            startRow: origin.row,
+            endRow: origin.row,
+            startCol: origin.col,
+            endCol: origin.col
+          };
+        }
+        this.updateSelectionRange(next.row, next.col, false);
+        this.armedCell = { rowIndex: next.row, colIndex: next.col };
+      } else {
+        this.setSelectionSingle(next.row, next.col);
+      }
+
+      this.focusCell(next.row, next.col);
+      return next;
+    }
+
     hasUnsavedChanges() {
+      if (this.pendingDeletes.size > 0) return true;
+      if (this.rows.some((row) => this.isNewRowId(row?.id))) return true;
       let has = false;
       this.diff.forEach((entry) => {
         if (Object.keys(entry).length) has = true;
@@ -2293,52 +4948,312 @@
       return code === 'GAIA_CO02' || code === 'GAIA_CO03' || code === 'CB_WA01';
     }
 
-    buildEntriesForIds(ids) {
-      const entries = [];
-      ids.forEach((recordId) => {
-        const fields = this.diff.get(recordId);
-        if (!fields) return;
-        const record = {};
-        Object.keys(fields).forEach((fieldCode) => {
-          record[fieldCode] = { value: fields[fieldCode].value };
-        });
-        if (Object.keys(record).length) {
-          const revision = this.revisionMap.get(recordId);
-          const item = { id: recordId, record };
-          if (revision !== undefined) item.revision = revision;
-          entries.push(item);
-        }
-      });
-      return entries;
+    isNewRowId(recordId) {
+      return String(recordId || '').startsWith('NEW:');
     }
 
-    createBatches() {
-      const allEntries = this.buildEntriesForIds(Array.from(this.diff.keys()));
-      if (!allEntries.length) return [];
+    toRecordPayloadValue(field, value) {
+      if (this.isSubtableField(field)) {
+        const rows = Array.isArray(value) ? value : [];
+        return rows.map((row) => ({
+          id: row?.id ? String(row.id) : undefined,
+          value: row && typeof row.value === 'object' ? JSON.parse(JSON.stringify(row.value)) : {}
+        })).map((row) => {
+          if (!row.id) delete row.id;
+          return row;
+        });
+      }
+      return value ?? '';
+    }
+
+    buildRecordPayload(recordId) {
+      const fields = this.diff.get(recordId);
+      if (!fields) return null;
+      const record = {};
+      Object.keys(fields).forEach((fieldCode) => {
+        const field = this.fieldMap.get(fieldCode);
+        if (!field) return;
+        const item = fields[fieldCode];
+        if (!item) return;
+        if (item.type === 'SUBTABLE') {
+          record[fieldCode] = {
+            value: this.toRecordPayloadValue(field, item.value)
+          };
+          return;
+        }
+        if (!this.isFieldEditable(field)) return;
+        record[fieldCode] = { value: this.toRecordPayloadValue(field, item.value) };
+      });
+      return Object.keys(record).length ? record : null;
+    }
+
+    createPutBatches() {
+      const entries = [];
+      Array.from(this.diff.keys()).forEach((recordId) => {
+        if (this.isNewRowId(recordId)) return;
+        if (this.pendingDeletes.has(recordId)) return;
+        const record = this.buildRecordPayload(recordId);
+        if (!record) return;
+        const revision = this.revisionMap.get(recordId);
+        const item = { id: recordId, record };
+        if (revision !== undefined) item.revision = revision;
+        entries.push(item);
+      });
       const batches = [];
-      for (let i = 0; i < allEntries.length; i += 50) {
-        batches.push(allEntries.slice(i, i + 50));
+      for (let i = 0; i < entries.length; i += 50) {
+        batches.push(entries.slice(i, i + 50));
       }
       return batches;
     }
 
+    createPostBatches() {
+      const entries = [];
+      Array.from(this.diff.keys()).forEach((recordId) => {
+        if (!this.isNewRowId(recordId)) return;
+        if (this.pendingDeletes.has(recordId)) return;
+        const record = this.buildRecordPayload(recordId);
+        if (!record) return;
+        entries.push({ tempId: recordId, record });
+      });
+      const batches = [];
+      for (let i = 0; i < entries.length; i += 50) {
+        batches.push(entries.slice(i, i + 50));
+      }
+      return batches;
+    }
+
+    createDeleteBatches() {
+      const ids = Array.from(this.pendingDeletes).filter((id) => !this.isNewRowId(id));
+      const batches = [];
+      for (let i = 0; i < ids.length; i += 50) {
+        batches.push(ids.slice(i, i + 50));
+      }
+      return batches;
+    }
+
+    isRequiredCheckTargetField(field) {
+      if (!field || !field.required) return false;
+      if (this.isSubtableField(field)) return false;
+      if (field.type === 'LOOKUP') return this.isFieldEditable(field);
+      return true;
+    }
+
+    isMissingRequiredValue(field, value) {
+      if (!this.isRequiredCheckTargetField(field)) return false;
+      if (field.type === 'NUMBER') {
+        return String(value ?? '').trim() === '';
+      }
+      return String(value ?? '').trim() === '';
+    }
+
+    hasRequiredMissingInInvalidSet() {
+      for (const key of this.invalidCells) {
+        const sep = key.lastIndexOf(':');
+        if (sep <= 0) continue;
+        const recordId = key.slice(0, sep);
+        const fieldCode = key.slice(sep + 1);
+        if (!this.isNewRowId(recordId)) continue;
+        const field = this.fieldMap.get(fieldCode);
+        const row = this.rowMap.get(recordId);
+        if (!field || !row) continue;
+        if (this.isMissingRequiredValue(field, row.values[fieldCode])) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    validateRequiredForNewRows(postBatches) {
+      if (!Array.isArray(postBatches) || !postBatches.length) return true;
+      const ids = Array.from(new Set(
+        postBatches.flatMap((batch) => (Array.isArray(batch) ? batch.map((entry) => String(entry?.tempId || '')) : []))
+      )).filter(Boolean);
+      if (!ids.length) return true;
+
+      let firstErrorCell = null;
+      let hasMissing = false;
+      ids.forEach((recordId) => {
+        const row = this.rowMap.get(recordId);
+        if (!row) return;
+        this.fields.forEach((field) => {
+          if (!this.isRequiredCheckTargetField(field)) return;
+          const key = `${recordId}:${field.code}`;
+          const missing = this.isMissingRequiredValue(field, row.values[field.code]);
+          const input = this.findInput(recordId, field.code);
+          if (missing) {
+            hasMissing = true;
+            this.invalidCells.add(key);
+            this.invalidValueCache.delete(key);
+            if (input?.parentElement) {
+              input.parentElement.classList.add('pb-overlay__cell--error');
+              input.parentElement.dataset.errorReason = 'required';
+            }
+            if (!firstErrorCell) {
+              const rowIndex = this.getVisibleRowIndexById(recordId);
+              const colIndex = this.fieldIndexMap.get(field.code);
+              if (rowIndex >= 0 && colIndex !== undefined) {
+                firstErrorCell = { rowIndex, colIndex };
+              }
+            }
+          } else {
+            this.invalidCells.delete(key);
+            this.invalidValueCache.delete(key);
+            if (input?.parentElement) {
+              input.parentElement.classList.remove('pb-overlay__cell--error');
+              if (input.parentElement.dataset.errorReason === 'required') {
+                delete input.parentElement.dataset.errorReason;
+              }
+            }
+          }
+        });
+      });
+
+      if (!hasMissing) return true;
+      this.updateVirtualRows(true);
+      this.updateDirtyBadge();
+      this.updateStats();
+      this.notify(resolveText(this.language, 'toastRequiredMissing'));
+      if (firstErrorCell) {
+        this.setSelectionSingle(firstErrorCell.rowIndex, firstErrorCell.colIndex);
+        this.focusCell(firstErrorCell.rowIndex, firstErrorCell.colIndex);
+      }
+      return false;
+    }
+
+    markBatchError(batch) {
+      if (!Array.isArray(batch)) return;
+      batch.forEach((entry) => {
+        const rowId = String(entry?.id || entry?.tempId || '');
+        if (!rowId) return;
+        const row = this.rowMap.get(rowId);
+        if (!row) return;
+        this.fields.forEach((field) => {
+          const input = this.findInput(rowId, field.code);
+          if (!input || !input.parentElement) return;
+          input.parentElement.classList.add('pb-overlay__cell--error');
+        });
+      });
+    }
+
+    setSaving(flag) {
+      const saving = Boolean(flag);
+      this.saving = saving;
+
+      if (saving) {
+        this.exitEditMode();
+        this.closeRadioPicker();
+      }
+
+      if (this.saveButton) {
+        this.saveButton.disabled = saving;
+        this.saveButton.classList.toggle('is-saving', saving);
+      }
+      this.updatePermissionUiState();
+      if (this.closeButton) this.closeButton.disabled = saving;
+      if (this.columnButton) {
+        this.columnButton.disabled = saving || !this.fields.length;
+      }
+      this.updateHistoryButtons();
+
+      if (this.saveButtonLabel) {
+        this.saveButtonLabel.textContent = resolveText(this.language, saving ? 'btnSaving' : 'btnSave');
+      }
+      if (this.saveButtonSpinner) {
+        this.saveButtonSpinner.classList.toggle('pb-overlay__spinner--hidden', !saving);
+      }
+
+      this.inputsByRow.forEach((inputs) => {
+        inputs.forEach((input) => {
+          if (!input) return;
+          input.disabled = saving;
+          if (saving) input.readOnly = true;
+        });
+      });
+
+      if (!saving) {
+        this.updateVirtualRows(true);
+        this.updateDirtyBadge();
+      }
+    }
+
+    getRefetchFieldCodes() {
+      const codes = new Set(
+        this.fields
+          .map((field) => String(field?.code || '').trim())
+          .filter(Boolean)
+      );
+      this.fieldsMeta.forEach((field) => {
+        if (!field || field.type !== 'SUBTABLE') return;
+        const code = String(field.code || '').trim();
+        if (code) codes.add(code);
+      });
+      return Array.from(codes);
+    }
+
+    async refetchRowsByIds(ids) {
+      const uniqueIds = Array.from(new Set(
+        (ids || [])
+          .map((id) => String(id || '').trim())
+          .filter((id) => id && !this.isNewRowId(id))
+      ));
+      if (!uniqueIds.length || !this.appId) return;
+
+      const fields = this.getRefetchFieldCodes();
+      const fetchedIds = new Set();
+      const chunkSize = 100;
+
+      for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+        const chunk = uniqueIds.slice(i, i + chunkSize);
+        const response = await this.postFn('EXCEL_GET_RECORDS_BY_IDS', {
+          appId: this.appId,
+          ids: chunk,
+          fields
+        });
+        if (!response?.ok) {
+          console.warn('[kintone-excel-overlay] refetchRowsByIds failed', {
+            ids: chunk,
+            error: response?.error || 'unknown error'
+          });
+          continue;
+        }
+        const records = Array.isArray(response.records) ? response.records : [];
+        records.forEach((record) => {
+          const id = String(record?.$id?.value || '').trim();
+          if (id) fetchedIds.add(id);
+          this.refreshRowFromRemote(record);
+        });
+      }
+
+      const missingIds = uniqueIds.filter((id) => !fetchedIds.has(id));
+      if (missingIds.length) {
+        console.warn('[kintone-excel-overlay] refetchRowsByIds returned partial records', { missingIds });
+      }
+    }
+
     async save() {
+      if (!this.canMutateOverlay(true)) return;
       if (this.saving) return;
       if (this.invalidCells.size > 0) {
-        this.notify(resolveText(this.language, 'toastInvalidCells'));
+        const key = this.hasRequiredMissingInInvalidSet() ? 'toastRequiredMissing' : 'toastInvalidCells';
+        this.notify(resolveText(this.language, key));
         return;
       }
-      let batches = this.createBatches();
-      if (!batches.length) {
+      let putBatches = this.createPutBatches();
+      let postBatches = this.createPostBatches();
+      let deleteBatches = this.createDeleteBatches();
+      if (!putBatches.length && !postBatches.length && !deleteBatches.length) {
         this.notify(resolveText(this.language, 'toastNoChanges'));
         return;
       }
-      this.saving = true;
-      this.saveButton.disabled = true;
+      if (!this.validateRequiredForNewRows(postBatches)) {
+        return;
+      }
+      this.setSaving(true);
       let anySaved = false;
+      const savedIds = new Set();
       try {
-        for (let index = 0; index < batches.length;) {
-          let batch = batches[index];
+        for (let index = 0; index < putBatches.length;) {
+          let batch = putBatches[index];
           let attempt = 0;
           while (attempt < 2) {
             attempt += 1;
@@ -2348,6 +5263,10 @@
             });
             if (response?.ok) {
               this.applySaveResult(batch, response.result);
+              batch.forEach((entry) => {
+                const id = String(entry?.id || '').trim();
+                if (id) savedIds.add(id);
+              });
               anySaved = true;
               break;
             }
@@ -2355,17 +5274,17 @@
               const handling = await this.handleConflict(batch);
               if (handling === 'retry') {
                 this.notify(resolveText(this.language, 'conflictRetry'));
-                batches = this.createBatches();
-                if (!batches.length) {
+                putBatches = this.createPutBatches();
+                postBatches = this.createPostBatches();
+                deleteBatches = this.createDeleteBatches();
+                if (!putBatches.length && !postBatches.length && !deleteBatches.length) {
                   this.updateDirtyBadge();
                   this.updateStats();
                   this.notify(resolveText(this.language, 'conflictNoChanges'));
-                  this.saving = false;
-                  this.saveButton.disabled = false;
                   return;
                 }
                 index = 0;
-                batch = batches[index];
+                batch = putBatches[index];
                 attempt = 0;
                 continue;
               }
@@ -2373,12 +5292,11 @@
                 this.updateDirtyBadge();
                 this.updateStats();
                 this.notify(resolveText(this.language, 'conflictNoChanges'));
-                this.saving = false;
-                this.saveButton.disabled = false;
                 return;
               }
             }
             const err = new Error(response?.error || 'save failed');
+            this.markBatchError(batch);
             if (this.isConflictResponse(response)) {
               err.conflict = true;
             }
@@ -2386,20 +5304,51 @@
           }
           index += 1;
         }
+        for (const batch of postBatches) {
+          const response = await this.postFn('EXCEL_POST_RECORDS', {
+            appId: this.appId,
+            records: batch.map((entry) => ({ ...entry.record }))
+          });
+          if (!response?.ok) {
+            this.markBatchError(batch);
+            throw new Error(response?.error || 'create failed');
+          }
+          const createdIds = this.applyCreateResult(batch, response.result);
+          createdIds.forEach((id) => {
+            const normalized = String(id || '').trim();
+            if (normalized) savedIds.add(normalized);
+          });
+          anySaved = true;
+        }
+        for (const batch of deleteBatches) {
+          const response = await this.postFn('EXCEL_DELETE_RECORDS', {
+            appId: this.appId,
+            ids: batch
+          });
+          if (!response?.ok) {
+            throw new Error(response?.error || 'delete failed');
+          }
+          this.applyDeleteResult(batch);
+          anySaved = true;
+        }
         if (anySaved) {
+          if (savedIds.size) {
+            await this.refetchRowsByIds(Array.from(savedIds));
+          }
           this.notify(resolveText(this.language, 'toastSaveSuccess'));
           this.diff.clear();
+          this.pendingDeletes.clear();
+          this.clearHistory();
           this.updateDirtyBadge();
           this.updateStats();
-          this.requireReload = true;
+          this.requireReload = false;
         }
       } catch (error) {
         const key = error?.conflict ? 'conflictFailed' : 'toastSaveFailed';
         this.notify(resolveText(this.language, key));
         console.error('[kintone-excel-overlay] save failed', error);
       } finally {
-        this.saving = false;
-        this.saveButton.disabled = false;
+        this.setSaving(false);
       }
     }
 
@@ -2418,13 +5367,14 @@
         const row = this.rowMap.get(entry.id);
         if (!row) return;
         Object.keys(entry.record).forEach((fieldCode) => {
-          const value = entry.record[fieldCode].value ?? '';
-          row.original[fieldCode] = value;
-          row.values[fieldCode] = value;
+          const field = this.fieldMap.get(fieldCode);
+          const value = this.cloneFieldValue(field, entry.record[fieldCode].value);
+          row.original[fieldCode] = this.cloneFieldValue(field, value);
+          row.values[fieldCode] = this.cloneFieldValue(field, value);
           const input = this.findInput(entry.id, fieldCode);
           if (input) {
-            input.dataset.originalValue = value;
-            input.value = value;
+            input.dataset.originalValue = this.formatCellDisplayValue(field, row.original[fieldCode]);
+            input.value = this.formatCellDisplayValue(field, row.values[fieldCode]);
             this.applyCellVisualState(input, row, fieldCode);
           }
         });
@@ -2436,6 +5386,109 @@
         this.diff.delete(entry.id);
         this.clearInvalidStateForRecord(entry.id);
       });
+    }
+
+    applyCreateResult(batch, result) {
+      const ids = Array.isArray(result?.ids) ? result.ids : [];
+      const revisions = Array.isArray(result?.revisions) ? result.revisions : [];
+      const createdIds = [];
+      batch.forEach((entry, index) => {
+        const tempId = entry.tempId;
+        const newId = ids[index] != null ? String(ids[index]) : '';
+        if (!tempId || !newId) return;
+        createdIds.push(newId);
+        const row = this.rowMap.get(tempId);
+        if (!row) return;
+        const newRevision = revisions[index] != null ? String(revisions[index]) : undefined;
+        Object.keys(entry.record || {}).forEach((fieldCode) => {
+          const field = this.fieldMap.get(fieldCode);
+          const value = this.cloneFieldValue(field, entry.record[fieldCode]?.value);
+          row.original[fieldCode] = this.cloneFieldValue(field, value);
+          row.values[fieldCode] = this.cloneFieldValue(field, value);
+        });
+        row.id = newId;
+        row.isNew = false;
+        if (newRevision !== undefined) row.revision = newRevision;
+
+        const rowIndex = this.rowIndexMap.get(tempId);
+        this.rowMap.delete(tempId);
+        this.rowMap.set(newId, row);
+        this.recordPermissions.delete(tempId);
+        this.recordPermissions.set(newId, {
+          view: this.appPermissions.view === 'allow' ? 'allow' : 'unknown',
+          edit: this.appPermissions.edit === 'allow' ? 'allow' : 'unknown',
+          delete: this.appPermissions.delete === 'allow' ? 'allow' : 'unknown',
+          source: this.appPermissions.source === 'api' ? 'api' : 'unknown'
+        });
+        if (rowIndex !== undefined) {
+          this.rowIndexMap.delete(tempId);
+          this.rowIndexMap.set(newId, rowIndex);
+        }
+        this.revisionMap.delete(tempId);
+        if (newRevision !== undefined) this.revisionMap.set(newId, newRevision);
+        this.diff.delete(tempId);
+        this.clearInvalidStateForRecord(tempId);
+        const tempAcl = this.recordAcl.get(tempId);
+        this.recordAcl.delete(tempId);
+        if (tempAcl) {
+          this.recordAcl.set(newId, {
+            ...tempAcl,
+            id: newId
+          });
+        }
+
+        this.fields.forEach((field) => {
+          const input = this.findInput(newId, field.code);
+          if (!input) return;
+          input.dataset.recordId = newId;
+          input.dataset.originalValue = this.formatCellDisplayValue(field, row.original[field.code]);
+          this.applyCellVisualState(input, row, field.code);
+        });
+      });
+      this.recomputeFilteredRowIds();
+      this.updateVirtualRows(true);
+      return createdIds;
+    }
+
+    applyDeleteResult(ids) {
+      const deleteIds = new Set(
+        (ids || [])
+          .map((id) => String(id || '').trim())
+          .filter((id) => id && !this.isNewRowId(id))
+      );
+      if (!deleteIds.size) return;
+
+      if (this.editingCell) {
+        const editingRowId = String(this.getVisibleRowAt(this.editingCell.rowIndex)?.id || '').trim();
+        if (editingRowId && deleteIds.has(editingRowId)) {
+          this.exitEditMode();
+        }
+      }
+
+      this.rows = this.rows.filter((row) => !deleteIds.has(String(row?.id || '').trim()));
+      deleteIds.forEach((id) => {
+        this.pendingDeletes.delete(id);
+        this.diff.delete(id);
+        this.rowMap.delete(id);
+        this.rowIndexMap.delete(id);
+        this.revisionMap.delete(id);
+        this.recordPermissions.delete(id);
+        this.recordAcl.delete(id);
+        this.clearInvalidStateForRecord(id);
+      });
+
+      this.rebuildRowMaps();
+      this.recomputeFilteredRowIds();
+      const visibleCount = this.getVisibleRowCount();
+      if (!visibleCount) {
+        this.selection = null;
+        this.armedCell = null;
+      } else if (this.selection) {
+        const nextRow = Math.max(0, Math.min(visibleCount - 1, this.selection.startRow || 0));
+        const nextCol = Math.max(0, Math.min(this.fields.length - 1, this.selection.startCol || 0));
+        this.setSelectionSingle(nextRow, nextCol);
+      }
+      this.updateVirtualRows(true);
     }
 
     tryClose() {
@@ -2450,7 +5503,9 @@
       if (!force && this.saving) return;
       this.isOpen = false;
       this.closeColumnManager(true);
+      this.closeFilterPanel();
       this.closeRadioPicker();
+      this.closeSubtableEditor();
       if (this.requireReload) {
         this.requireReload = false;
         this.reloading = true;
@@ -2484,20 +5539,62 @@
       this.rowHeaderScroll = null;
       this.toastHost = null;
       this.loadingEl = null;
+      this.permissionWarningEl = null;
       this.dirtyBadge = null;
       this.saveButton = null;
+      this.saveButtonSpinner = null;
+      this.saveButtonLabel = null;
+      this.addRowButton = null;
+      this.undoButton = null;
+      this.redoButton = null;
+      this.prevPageButton = null;
+      this.nextPageButton = null;
+      this.pageLabelElement = null;
       this.closeButton = null;
       this.titleElement = null;
+      this.modeBadge = null;
       this.appName = '';
-      this.statsElements = { sum: null, avg: null, count: null };
+      this.baseQuery = '';
+      this.query = '';
+      this.pageOffset = 0;
+      this.totalCount = 0;
+      this.paging = false;
+      this.statsElements = {
+        sum: null,
+        avg: null,
+        count: null,
+        selected: null,
+        filtered: null,
+        pendingDelete: null,
+        newRows: null
+      };
       this.fields = [];
+      this.fieldsMeta = [];
       this.fieldMap.clear();
+      this.fieldsMetaMap.clear();
       this.fieldIndexMap.clear();
       this.rows = [];
       this.rowMap.clear();
       this.rowIndexMap.clear();
+      this.recordPermissions.clear();
+      this.recordAcl.clear();
+      this.aclStatus = { loaded: false, failed: false };
+      this.pendingDeletes.clear();
+      this.filters.clear();
+      this.filteredRowIds = null;
+      this.filterPanel = null;
+      this.appPermissions = {
+        view: 'unknown',
+        add: 'unknown',
+        edit: 'unknown',
+        delete: 'unknown',
+        source: 'unknown'
+      };
       this.inputsByRow.clear();
       this.diff.clear();
+      this.undoStack = [];
+      this.redoStack = [];
+      this.isReplayingHistory = false;
       this.invalidCells.clear();
       this.revisionMap.clear();
       this.invalidValueCache.clear();
@@ -2506,8 +5603,15 @@
       this.virtualStart = 0;
       this.virtualEnd = 0;
       this.pendingFocus = null;
+      this.pendingEdit = null;
+      this.pasteFlashTimer = null;
+      this.needsFilterReapply = false;
+      this.sortState = { fieldCode: '', direction: '' };
       this.editingCell = null;
+      this.viewOnlyNoticeShown = false;
       this.selection = null;
+      this.armedCell = null;
+      this.navigating = false;
       this.dragSelecting = false;
       if (document.body) {
         document.body.style.overflow = this.bodyOverflowBackup || '';
@@ -2621,12 +5725,15 @@
         this.invalidCells.delete(key);
         this.invalidValueCache.delete(key);
         if (!input) return;
-        input.dataset.originalValue = existing.original[field.code];
+        input.dataset.originalValue = this.formatCellDisplayValue(field, existing.original[field.code]);
         if (!diffEntry[field.code]) {
-          input.value = existing.values[field.code];
+          input.value = this.formatCellDisplayValue(field, existing.values[field.code]);
         }
         this.applyCellVisualState(input, existing, field.code);
       });
+      if (this.hasActiveFilters()) {
+        this.recomputeFilteredRowIds();
+      }
       this.updateVirtualRows(true);
     }
 
@@ -2639,8 +5746,14 @@
       pairs.forEach(([fieldCode, info]) => {
         const input = this.findInput(recordId, fieldCode);
         if (!input) return;
-        input.dataset.originalValue = row.original[fieldCode];
-        input.value = info.value ?? '';
+        const field = this.fieldMap.get(fieldCode);
+        if (this.isSubtableField(field)) {
+          row.values[fieldCode] = this.cloneFieldValue(field, info.value);
+          this.applyCellVisualState(input, row, fieldCode);
+          return;
+        }
+        input.dataset.originalValue = this.formatCellDisplayValue(field, row.original[fieldCode]);
+        input.value = this.formatCellDisplayValue(field, info.value ?? '');
         this.onInputChanged(input);
       });
     }

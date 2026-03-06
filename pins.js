@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 import {
   loadPinnedRecords,
@@ -15,15 +15,31 @@ export function initPins(options = {}) {
   const doc = options.document || document;
   const pinListEl = doc.getElementById('pinList');
   const pinNoticeEl = doc.getElementById('pinNotice');
-  const refreshBtn = doc.getElementById('refreshPins');
+  let refreshBtn = doc.getElementById('refreshPins');
   const addBtn = doc.getElementById('addPinFromTab');
 
-  if (!pinListEl || !refreshBtn) {
+  if (!pinListEl) {
     return {
+      reload() {},
+      refresh() {},
       refreshPins() {},
       quickAdd() { return false; },
       dispose() {}
     };
+  }
+
+  if (!refreshBtn) {
+    const sectionActions = doc.querySelector('#recordPinSection .section-actions');
+    if (sectionActions) {
+      const btn = doc.createElement('button');
+      btn.id = 'refreshPins';
+      btn.className = 'ghost-btn';
+      btn.type = 'button';
+      btn.textContent = '↻ Refresh';
+      btn.title = 'Refresh pinned records';
+      sectionActions.appendChild(btn);
+      refreshBtn = btn;
+    }
   }
 
   const state = {
@@ -32,17 +48,32 @@ export function initPins(options = {}) {
     storageListener: null,
     fetchToken: 0,
     isRefreshing: false,
-    skipStorageOnce: false
+    skipStorageOnce: false,
+    lastUpdatedAt: 0
   };
 
   let noticeTimer = null;
   let persistTimer = null;
   let dragSourceId = null;
+
   const escapeSelector = (value) => {
     if (value == null) return '';
     if (globalThis.CSS?.escape) return CSS.escape(String(value));
     return String(value).replace(/[^\w-]/g, (ch) => `\\${ch}`);
   };
+
+  function normalizePinnedEntry(entry) {
+    if (!entry || typeof entry !== 'object') return null;
+    return {
+      id: entry.id || createId(),
+      label: entry.label || '',
+      host: entry.host || '',
+      appId: String(entry.appId || '').trim(),
+      recordId: String(entry.recordId || '').trim(),
+      titleField: entry.titleField || '',
+      note: entry.note || ''
+    };
+  }
 
   async function persistPins() {
     state.skipStorageOnce = true;
@@ -75,14 +106,39 @@ export function initPins(options = {}) {
       pinNoticeEl.textContent = msg;
       pinNoticeEl.classList.remove('hidden');
       if (ttlMs > 0) {
-        noticeTimer = setTimeout(() => {
-          setNotice('');
-        }, ttlMs);
+        noticeTimer = setTimeout(() => setNotice(''), ttlMs);
       }
     } else {
       pinNoticeEl.textContent = '';
       pinNoticeEl.classList.add('hidden');
     }
+  }
+
+  function formatUpdatedAt(ts) {
+    if (!ts) return '';
+    try {
+      return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch (_err) {
+      return '';
+    }
+  }
+
+  function normalizePinErrorMessage(message) {
+    const text = String(message || '').trim();
+    if (!text) return 'Failed to load record.';
+    if (/permission|required|forbidden|denied/i.test(text)) {
+      return 'Permission is required to access this app.';
+    }
+    if (/404|not found|record.*(not|missing)/i.test(text)) {
+      return 'Record not found or no longer accessible.';
+    }
+    if (/login|sign in|unauthorized|auth|session/i.test(text)) {
+      return 'Please sign in to kintone and retry.';
+    }
+    if (/host|app id|record id|required|invalid/i.test(text)) {
+      return 'Host / App ID / Record ID is not configured correctly.';
+    }
+    return text;
   }
 
   function deriveRecordTitle(entry, detail) {
@@ -91,19 +147,26 @@ export function initPins(options = {}) {
       const val = record[entry.titleField].value.trim();
       if (val) return val;
     }
-    if (record?.$id?.value) return `#${record.$id.value}`;
     return '';
   }
 
   function defaultLabel(entry) {
-    const app = entry.appId ? `App ${entry.appId}` : 'App 未指定';
-    const record = entry.recordId ? `Record ${entry.recordId}` : 'Record 未指定';
+    const app = entry.appId ? `App ${entry.appId}` : 'App (unset)';
+    const record = entry.recordId ? `Record ${entry.recordId}` : 'Record (unset)';
     return `${app} / ${record}`;
+  }
+
+  function openOptionsPage() {
+    if (chrome?.runtime?.openOptionsPage) {
+      chrome.runtime.openOptionsPage();
+    } else {
+      window.open(chrome.runtime.getURL('options.html'), '_blank');
+    }
   }
 
   function createCard(entry, detail) {
     const li = doc.createElement('li');
-    li.className = 'pin-card';
+    li.className = 'pin-card record-pin-card';
     li.dataset.id = entry.id;
 
     li.addEventListener('dragenter', handleDragEnter, true);
@@ -113,18 +176,18 @@ export function initPins(options = {}) {
     li.addEventListener('dragend', handleDragEnd);
 
     const header = doc.createElement('div');
-    header.className = 'pin-card-header';
+    header.className = 'pin-card-header record-pin-head';
 
     const titleWrap = doc.createElement('div');
-    titleWrap.className = 'pin-title-wrap';
+    titleWrap.className = 'pin-title-wrap record-pin-title';
     const dragHandle = doc.createElement('span');
     dragHandle.className = 'pin-drag-handle';
-    dragHandle.title = 'ドラッグで並び替え';
-    dragHandle.textContent = '⋮⋮';
+    dragHandle.title = 'Drag to reorder';
+    dragHandle.textContent = '::';
     dragHandle.draggable = true;
     dragHandle.dataset.cardId = entry.id;
     dragHandle.setAttribute('role', 'button');
-    dragHandle.setAttribute('aria-label', 'ドラッグで並び替え');
+    dragHandle.setAttribute('aria-label', 'Drag to reorder');
     dragHandle.addEventListener('dragstart', handleDragStart);
     dragHandle.addEventListener('dragend', handleDragEnd);
     dragHandle.addEventListener('click', (ev) => ev.preventDefault());
@@ -148,18 +211,20 @@ export function initPins(options = {}) {
     header.appendChild(titleWrap);
 
     const actions = doc.createElement('div');
-    actions.className = 'pin-actions';
+    actions.className = 'pin-actions record-pin-actions';
     const openBtn = doc.createElement('a');
-    openBtn.textContent = '開く';
+    openBtn.textContent = 'Open';
+    openBtn.className = 'btn record-pin-open';
     openBtn.href = `${entry.host}/k/${entry.appId}/show#record=${entry.recordId}`;
     openBtn.target = '_blank';
     openBtn.rel = 'noopener';
 
     const removeBtn = doc.createElement('button');
     removeBtn.type = 'button';
-    removeBtn.className = 'pin-remove';
-    removeBtn.title = 'ピンを外す';
-    removeBtn.textContent = '🗑';
+    removeBtn.className = 'pin-remove btn record-pin-remove x-only';
+    removeBtn.title = 'Remove';
+    removeBtn.setAttribute('aria-label', 'Remove');
+    removeBtn.textContent = '✖';
     removeBtn.addEventListener('click', (ev) => {
       ev.stopPropagation();
       removeEntry(entry.id).catch(() => {});
@@ -173,18 +238,21 @@ export function initPins(options = {}) {
     const recordTitle = deriveRecordTitle(entry, detail);
     if (recordTitle) {
       const recordTitleEl = doc.createElement('div');
-      recordTitleEl.className = 'pin-record-title';
+      recordTitleEl.className = 'pin-record-title record-pin-sub';
       recordTitleEl.textContent = recordTitle;
       li.appendChild(recordTitleEl);
     }
 
     const meta = doc.createElement('div');
-    meta.className = 'pin-meta';
+    meta.className = 'pin-meta record-pin-meta';
     const metaItems = [
-      `Host: ${entry.host || '-'}`,
       `App: ${entry.appId || '-'}`,
       `Record: ${entry.recordId || '-'}`
     ];
+    const updatedAtText = formatUpdatedAt(state.lastUpdatedAt);
+    if (updatedAtText) {
+      metaItems.push(`Updated: ${updatedAtText}`);
+    }
     metaItems.forEach((text) => {
       const span = doc.createElement('span');
       span.textContent = text;
@@ -192,9 +260,12 @@ export function initPins(options = {}) {
     });
     li.appendChild(meta);
 
+    const body = doc.createElement('div');
+    body.className = 'record-pin-body';
+
     const note = doc.createElement('textarea');
     note.className = 'pin-note-input';
-    note.placeholder = 'メモを入力…';
+    note.placeholder = 'Notes';
     note.value = entry.note || '';
     note.addEventListener('input', () => {
       entry.note = note.value;
@@ -204,14 +275,16 @@ export function initPins(options = {}) {
       entry.note = note.value;
       schedulePersist();
     });
-    li.appendChild(note);
+    body.appendChild(note);
 
     if (detail?.error) {
       const err = doc.createElement('div');
       err.className = 'pin-error';
-      err.textContent = `⚠ ${detail.error}`;
-      li.appendChild(err);
+      err.textContent = `Error: ${normalizePinErrorMessage(detail.error)}`;
+      body.appendChild(err);
     }
+
+    li.appendChild(body);
 
     return li;
   }
@@ -226,8 +299,21 @@ export function initPins(options = {}) {
     pinListEl.innerHTML = '';
     if (!state.entries.length) {
       const empty = doc.createElement('li');
-      empty.className = 'muted';
-      empty.textContent = 'まだピン留めされたレコードはありません。設定ページから追加してください。';
+      empty.className = 'pin-empty';
+      const msg = doc.createElement('div');
+      msg.textContent = 'No pinned records yet.';
+
+      const actions = doc.createElement('div');
+      actions.className = 'pin-empty-actions';
+      const openOptionsBtn = doc.createElement('button');
+      openOptionsBtn.type = 'button';
+      openOptionsBtn.className = 'ghost-btn';
+      openOptionsBtn.textContent = 'Open settings';
+      openOptionsBtn.addEventListener('click', openOptionsPage);
+      actions.appendChild(openOptionsBtn);
+
+      empty.appendChild(msg);
+      empty.appendChild(actions);
       pinListEl.appendChild(empty);
       state.detailMap = new Map();
       return;
@@ -240,6 +326,20 @@ export function initPins(options = {}) {
     });
   }
 
+  async function reloadPins({ silent = true } = {}) {
+    state.entries = (await loadPinnedRecords()).map(normalizePinnedEntry).filter(Boolean);
+    const hosts = new Set(state.entries.map((entry) => entry.host).filter(Boolean));
+    for (const host of hosts) {
+      try {
+        await chrome.runtime.sendMessage({ type: 'WARMUP_CONNECTOR', host });
+      } catch (_warmErr) {
+        // ignore
+      }
+    }
+    renderList();
+    await refreshPins({ silent });
+  }
+
   function attachStorageListener() {
     if (!chrome?.storage?.onChanged) return;
     const listener = async (changes, area) => {
@@ -248,49 +348,26 @@ export function initPins(options = {}) {
         state.skipStorageOnce = false;
         return;
       }
-      const next = changes.kfavPins.newValue;
-      const arr = Array.isArray(next) ? next : next ? [next] : [];
-      state.entries = arr.map(normalizePinnedEntry).filter(Boolean);
-      const hosts = new Set(state.entries.map((entry) => entry.host).filter(Boolean));
-      for (const host of hosts) {
-        try {
-          await chrome.runtime.sendMessage({ type: 'WARMUP_CONNECTOR', host });
-        } catch (_warmErr) {}
-      }
-      renderList();
-      refreshPins({ silent: true }).catch(() => {});
+      await reloadPins({ silent: true });
     };
     chrome.storage.onChanged.addListener(listener);
     state.storageListener = listener;
-  }
-
-  function normalizePinnedEntry(entry) {
-    if (!entry || typeof entry !== 'object') return null;
-    return {
-      id: entry.id || createId(),
-      label: entry.label || '',
-      host: entry.host || '',
-      appId: String(entry.appId || '').trim(),
-      recordId: String(entry.recordId || '').trim(),
-      titleField: entry.titleField || '',
-      note: entry.note || ''
-    };
   }
 
   async function quickAddCurrentRecord() {
     try {
       const tab = await getActiveTab();
       if (!tab || !isKintoneUrl(tab.url || '')) {
-        setNotice('kintone のレコードを表示してから実行してください。', 2000);
+        setNotice('Open a kintone record tab first.', 2000);
         return false;
       }
       const parsed = parseKintoneUrl(tab.url || '');
       if (!parsed.host || !parsed.appId || !parsed.recordId) {
-        setNotice('レコード詳細画面で実行してください。', 2000);
+        setNotice('Open a record detail page and try again.', 2000);
         return false;
       }
       if (state.entries.some((entry) => entry.host === parsed.host && entry.appId === parsed.appId && entry.recordId === parsed.recordId)) {
-        setNotice('このレコードは既にピン留めされています。', 2000);
+        setNotice('This record is already pinned.', 2000);
         return false;
       }
       const labelFromTab = (tab.title || '').replace(/\s+-\s+kintone.*/i, '').trim();
@@ -308,8 +385,8 @@ export function initPins(options = {}) {
       state.detailMap.set(entry.id, state.detailMap.get(entry.id) || null);
       await persistPins();
       renderList();
-      setNotice('ピン留めしました。', 2000);
-      refreshPins({ silent: true }).catch(() => {});
+      setNotice('Pinned.', 2000);
+      await refreshPins({ silent: true });
       return true;
     } catch (error) {
       setNotice(String(error?.message || error), 2000);
@@ -324,8 +401,8 @@ export function initPins(options = {}) {
     if (state.detailMap instanceof Map) state.detailMap.delete(id);
     await persistPins();
     renderList();
-    setNotice('ピンを外しました。', 2000);
-    refreshPins({ silent: true }).catch(() => {});
+    setNotice('Pin removed.', 2000);
+    await refreshPins({ silent: true });
   }
 
   function handleDragStart(event) {
@@ -392,7 +469,7 @@ export function initPins(options = {}) {
 
     if (state.isRefreshing) return;
     state.isRefreshing = true;
-    if (!silent) setNotice('更新中…');
+    if (!silent) setNotice('Refreshing pinned records...');
     const token = ++state.fetchToken;
     const results = new Map();
 
@@ -400,7 +477,7 @@ export function initPins(options = {}) {
       const byHost = new Map();
       state.entries.forEach((entry) => {
         if (!entry.host || !entry.appId || !entry.recordId) {
-          results.set(entry.id, { error: '設定が不足しています（host / App ID / Record）' });
+          results.set(entry.id, { error: 'Host / App ID / Record ID is not configured.' });
           return;
         }
         if (!byHost.has(entry.host)) byHost.set(entry.host, []);
@@ -412,7 +489,7 @@ export function initPins(options = {}) {
           const granted = await ensureHostPermission(host);
           if (!granted) {
             entries.forEach((entry) => {
-              results.set(entry.id, { error: 'このホストの許可が必要です' });
+              results.set(entry.id, { error: 'Permission is required for this host.' });
             });
             continue;
           }
@@ -433,7 +510,9 @@ export function initPins(options = {}) {
         try {
           try {
             await chrome.runtime.sendMessage({ type: 'WARMUP_CONNECTOR', host });
-          } catch (_warmErr) {}
+          } catch (_warmErr) {
+            // ignore
+          }
           const res = await sendRunInKintone(host, { type: 'PIN_FETCH', payload: { items: payloadItems } });
           if (token !== state.fetchToken) return;
           if (res?.ok && res.results) {
@@ -442,17 +521,17 @@ export function initPins(options = {}) {
               if (detail?.ok) {
                 results.set(entry.id, { record: detail.record });
               } else {
-                results.set(entry.id, { error: detail?.error || '取得失敗' });
+                results.set(entry.id, { error: normalizePinErrorMessage(detail?.error || 'Failed to fetch record.') });
               }
             }
           } else {
-            const errorText = res?.error || '取得失敗';
+            const errorText = normalizePinErrorMessage(res?.error || 'Failed to fetch records.');
             entries.forEach((entry) => {
               results.set(entry.id, { error: errorText });
             });
           }
         } catch (error) {
-          const message = String(error?.message || error);
+          const message = normalizePinErrorMessage(String(error?.message || error));
           entries.forEach((entry) => {
             results.set(entry.id, { error: message });
           });
@@ -461,14 +540,15 @@ export function initPins(options = {}) {
 
       if (token !== state.fetchToken) return;
 
+      state.lastUpdatedAt = Date.now();
       renderList(results);
 
       const errors = Array.from(results.values()).filter((detail) => detail?.error);
       if (!silent) {
         if (errors.length && errors.length === state.entries.length) {
-          setNotice(errors[0].error);
+          setNotice(normalizePinErrorMessage(errors[0].error));
         } else if (errors.length) {
-          setNotice('一部のレコードで取得に失敗しました。');
+          setNotice('Some pinned records could not be refreshed.');
         } else {
           setNotice('');
         }
@@ -478,29 +558,26 @@ export function initPins(options = {}) {
     }
   }
 
-  refreshBtn.addEventListener('click', () => {
+  const handleRefreshClick = () => {
     refreshPins().catch((error) => setNotice(String(error?.message || error)));
-  });
-  addBtn?.addEventListener('click', () => {
+  };
+  refreshBtn?.addEventListener('click', handleRefreshClick);
+
+  const handleQuickAddClick = () => {
     quickAddCurrentRecord().catch((error) => setNotice(String(error?.message || error)));
-  });
+  };
+  addBtn?.addEventListener('click', handleQuickAddClick);
 
   async function boot() {
-    state.entries = (await loadPinnedRecords()).map(normalizePinnedEntry).filter(Boolean);
-    const hosts = new Set(state.entries.map((entry) => entry.host).filter(Boolean));
-    for (const host of hosts) {
-      try {
-        await chrome.runtime.sendMessage({ type: 'WARMUP_CONNECTOR', host });
-      } catch (_warmErr) {}
-    }
-    renderList();
-    await refreshPins();
+    await reloadPins({ silent: false });
   }
 
   attachStorageListener();
   boot().catch((error) => setNotice(String(error?.message || error)));
 
   return {
+    reload: reloadPins,
+    refresh: refreshPins,
     refreshPins,
     quickAdd: quickAddCurrentRecord,
     dispose() {
@@ -516,6 +593,8 @@ export function initPins(options = {}) {
         clearTimeout(persistTimer);
         persistTimer = null;
       }
+      refreshBtn?.removeEventListener('click', handleRefreshClick);
+      addBtn?.removeEventListener('click', handleQuickAddClick);
     }
   };
 }

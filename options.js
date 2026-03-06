@@ -57,6 +57,7 @@ const hostPermRequestBtn = document.getElementById('perm_request');
 const hostPermCheckBtn = document.getElementById('perm_check');
 const hostPermStatusEl = document.getElementById('perm_status');
 const iconEl = document.getElementById('icon');
+const iconColorEl = document.getElementById('iconColor');
 const categoryEl = document.getElementById('category');
 const addBtn = document.getElementById('add');
 const listEl = document.getElementById('list');
@@ -64,22 +65,12 @@ const shortcutToggleEl = document.getElementById('shortcut_visible');
 const shortcutListEl = document.getElementById('shortcut_list');
 const excelListEl = document.getElementById('excel_columns_list');
 const excelClearBtn = document.getElementById('excel_columns_clear');
+const excelModeInputs = Array.from(document.querySelectorAll('input[name="excel_overlay_mode"]'));
 const EXCEL_COLUMN_PREF_KEY = 'kfavExcelColumns';
-// ---- schedule form elements ----
-const schLabelEl = document.getElementById('sch_label');
-const schUrlEl = document.getElementById('sch_url');
-const schAppIdEl = document.getElementById('sch_appId');
-const schDateFieldEl = document.getElementById('sch_dateField');
-const schTitleFieldEl = document.getElementById('sch_titleField');
-const schExtraQueryEl = document.getElementById('sch_extraQuery');
-const schLimitEl = document.getElementById('sch_limit');
-const schSaveBtn = document.getElementById('sch_save');
-const schResetBtn = document.getElementById('sch_reset');
-const schDetectBtn = document.getElementById('sch_detect');
-const dateFieldList = document.getElementById('dateFieldList');
-const titleFieldList = document.getElementById('titleFieldList');
-const schStatusEl = document.getElementById('sch_status');
-const schListEl = document.getElementById('sch_list');
+const EXCEL_OVERLAY_MODE_KEY = 'kfavExcelOverlayMode';
+const DEFAULT_EXCEL_OVERLAY_MODE = 'edit';
+const EXCEL_OVERLAY_MODE_VALUES = ['off', 'view', 'edit'];
+const PIN_VISIBLE_KEY = 'kfavRecordPinsVisible';
 // ---- pinned record elements ----
 const pinLabelEl = document.getElementById('pin_label');
 const pinUrlEl = document.getElementById('pin_url');
@@ -90,6 +81,7 @@ const pinNoteEl = document.getElementById('pin_note');
 const pinSaveBtn = document.getElementById('pin_save');
 const pinResetBtn = document.getElementById('pin_reset');
 const pinListEl = document.getElementById('pin_list');
+const pinVisibleToggleEl = document.getElementById('pin_visible');
 // 編集ダイアログ要素
 const editDialog = document.getElementById('editDialog');
 const editForm = document.getElementById('editForm');
@@ -99,23 +91,50 @@ const editAppIdEl = document.getElementById('edit_appId');
 const editViewEl = document.getElementById('edit_viewIdOrName');
 const editQueryEl = document.getElementById('edit_query');
 const editIconEl = document.getElementById('edit_icon');
+const editIconColorEl = document.getElementById('edit_iconColor');
 const editCategoryEl = document.getElementById('edit_category');
+const iconPreviewEl = document.getElementById('iconPreview');
+const editIconPreviewEl = document.getElementById('editIconPreview');
+const categorySuggestionsEl = document.getElementById('categorySuggestions');
+const editCancelBtn = document.getElementById('editCancel');
+const editCloseXBtn = document.getElementById('editCloseX');
 const editSaveBtn = document.getElementById('editSave');
+const pinEditDialog = document.getElementById('pinEditDialog');
+const pinEditForm = document.getElementById('pinEditForm');
+const pinEditLabelEl = document.getElementById('pin_edit_label');
+const pinEditUrlEl = document.getElementById('pin_edit_url');
+const pinEditAppIdEl = document.getElementById('pin_edit_appId');
+const pinEditRecordIdEl = document.getElementById('pin_edit_recordId');
+const pinEditTitleFieldEl = document.getElementById('pin_edit_titleField');
+const pinEditNoteEl = document.getElementById('pin_edit_note');
+const pinEditCancelBtn = document.getElementById('pinEditCancel');
+const pinEditCloseXBtn = document.getElementById('pinEditCloseX');
+const pinEditSaveBtn = document.getElementById('pinEditSave');
+editForm?.addEventListener('click', (event) => event.stopPropagation());
+pinEditForm?.addEventListener('click', (event) => event.stopPropagation());
 let editingId = null;
-let scheduleEntries = [];
-let scheduleEditingId = null;
 let pinnedEntries = [];
-let pinEditingId = null;
+let pinModalEditingId = null;
 let shortcutEntries = [];
 let shortcutsVisible = true;
 let shortcutDraggingId = null;
 let excelColumnPrefs = {};
 const ensuredOrigins = new Set();
 const ICON_CHOICES = [
-  'bookmark', 'clipboard', 'file-text', 'package', 'box', 'truck', 'factory', 'wrench',
-  'calendar', 'list-checks', 'search', 'chart-bar', 'receipt', 'users', 'settings', 'star'
+  'clipboard', 'file-text', 'package', 'box', 'truck', 'factory', 'wrench', 'calendar',
+  'list-checks', 'search', 'chart-bar', 'receipt', 'users', 'settings', 'bookmark', 'star'
 ];
-const DEFAULT_ICON = 'bookmark';
+const DEFAULT_ICON = 'file-text';
+const ICON_COLOR_CHOICES = ['gray', 'blue', 'green', 'orange', 'red', 'purple'];
+const ICON_COLOR_LABELS = {
+  gray: 'グレー',
+  blue: 'ブルー',
+  green: 'グリーン',
+  orange: 'オレンジ',
+  red: 'レッド',
+  purple: 'パープル'
+};
+const DEFAULT_ICON_COLOR = 'gray';
 const DEFAULT_CATEGORY = 'その他';
 const MAX_SHORTCUT_INITIAL_LENGTH = 2;
 
@@ -131,18 +150,101 @@ function sanitizeIcon(value) {
   return ICON_CHOICES.includes(name) ? name : DEFAULT_ICON;
 }
 
+function sanitizeIconColor(value) {
+  const color = String(value || '').trim().toLowerCase();
+  return ICON_COLOR_CHOICES.includes(color) ? color : DEFAULT_ICON_COLOR;
+}
+
+function sanitizeShortcutIcon(value) {
+  return sanitizeIcon(value);
+}
+
+function sanitizeShortcutIconColor(value) {
+  return sanitizeIconColor(value);
+}
+
 function sanitizeCategory(value) {
   const trimmed = (value || '').trim();
-  return trimmed || DEFAULT_CATEGORY;
+  return trimmed;
+}
+
+function getCategoryLabel(value) {
+  const name = sanitizeCategory(value);
+  return name || DEFAULT_CATEGORY;
 }
 
 function normalizeFavoriteEntryLocal(item, fallbackOrder) {
   return {
     ...item,
     icon: sanitizeIcon(item.icon),
+    iconColor: sanitizeIconColor(item.iconColor),
     category: sanitizeCategory(item.category),
     order: typeof item.order === 'number' ? item.order : fallbackOrder
   };
+}
+
+function toPascalIconName(name) {
+  return String(name || '')
+    .trim()
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join('');
+}
+
+function iconToSvgLocal(name, size = 18) {
+  const lucide = globalThis.lucide;
+  const icons = lucide?.icons;
+  if (!icons) return '';
+  const kebab = sanitizeIcon(name);
+  const candidates = [kebab, toPascalIconName(kebab)];
+  for (const key of candidates) {
+    const iconNode = icons[key];
+    if (!iconNode) continue;
+    if (typeof iconNode.toSvg === 'function') {
+      return iconNode.toSvg({ width: size, height: size });
+    }
+    if (typeof lucide.createElement === 'function') {
+      const node = lucide.createElement(iconNode, { width: size, height: size });
+      return node?.outerHTML || '';
+    }
+  }
+  return '';
+}
+
+function renderLucideIconsLocal(root = document) {
+  const nodes = root.querySelectorAll('.lc[data-icon]');
+  nodes.forEach((el) => {
+    const iconName = sanitizeIcon(el.dataset.icon);
+    el.dataset.icon = iconName;
+    el.innerHTML = iconToSvgLocal(iconName, 18);
+  });
+}
+
+function renderIconPreview(targetEl, iconName, iconColor = DEFAULT_ICON_COLOR) {
+  if (!targetEl) return;
+  const name = sanitizeIcon(iconName);
+  const color = sanitizeIconColor(iconColor);
+  targetEl.dataset.icon = name;
+  targetEl.dataset.icoColor = color;
+  targetEl.innerHTML = iconToSvgLocal(name, 18);
+}
+
+function updateCategorySuggestions(items = []) {
+  if (!categorySuggestionsEl) return;
+  const categories = Array.from(
+    new Set(
+      (items || [])
+        .map((item) => sanitizeCategory(item.category))
+        .filter((name) => name && name !== DEFAULT_CATEGORY)
+    )
+  ).sort((a, b) => a.localeCompare(b, 'ja'));
+  categorySuggestionsEl.innerHTML = '';
+  categories.forEach((name) => {
+    const option = document.createElement('option');
+    option.value = name;
+    categorySuggestionsEl.appendChild(option);
+  });
 }
 
 function normalizeOrigin(input) {
@@ -193,8 +295,60 @@ function populateIconSelect(selectEl) {
   selectEl.value = DEFAULT_ICON;
 }
 
+function populateIconColorSelect(selectEl) {
+  if (!selectEl) return;
+  selectEl.innerHTML = '';
+  ICON_COLOR_CHOICES.forEach((name) => {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = ICON_COLOR_LABELS[name] || name;
+    selectEl.appendChild(option);
+  });
+  selectEl.value = DEFAULT_ICON_COLOR;
+}
+
+function populateShortcutIconSelect(selectEl, currentValue = '') {
+  if (!selectEl) return;
+  const normalized = sanitizeShortcutIcon(currentValue);
+  selectEl.innerHTML = '';
+  ICON_CHOICES.forEach((name) => {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    selectEl.appendChild(option);
+  });
+  selectEl.value = normalized;
+}
+
+function populateShortcutIconColorSelect(selectEl, currentValue = '') {
+  if (!selectEl) return;
+  const normalized = sanitizeShortcutIconColor(currentValue);
+  selectEl.innerHTML = '';
+  ICON_COLOR_CHOICES.forEach((name) => {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = ICON_COLOR_LABELS[name] || name;
+    selectEl.appendChild(option);
+  });
+  selectEl.value = normalized;
+}
+
+function shortcutEditorPreviewState(iconValue, colorValue) {
+  const icon = sanitizeShortcutIcon(iconValue);
+  const color = sanitizeShortcutIconColor(colorValue);
+  return { icon, color };
+}
+
 populateIconSelect(iconEl);
 populateIconSelect(editIconEl);
+populateIconColorSelect(iconColorEl);
+populateIconColorSelect(editIconColorEl);
+renderIconPreview(iconPreviewEl, DEFAULT_ICON, DEFAULT_ICON_COLOR);
+renderIconPreview(editIconPreviewEl, DEFAULT_ICON, DEFAULT_ICON_COLOR);
+iconEl?.addEventListener('change', () => renderIconPreview(iconPreviewEl, iconEl.value, iconColorEl?.value));
+iconColorEl?.addEventListener('change', () => renderIconPreview(iconPreviewEl, iconEl?.value, iconColorEl.value));
+editIconEl?.addEventListener('change', () => renderIconPreview(editIconPreviewEl, editIconEl.value, editIconColorEl?.value));
+editIconColorEl?.addEventListener('change', () => renderIconPreview(editIconPreviewEl, editIconEl?.value, editIconColorEl.value));
 
 async function warmHostPermissionStatus(items = []) {
   const hosts = Array.from(new Set(items.map((item) => item.host).filter(Boolean)));
@@ -210,30 +364,6 @@ async function ensureHostPermissionFor(host) {
   if (!origin) return true;
   if (ensuredOrigins.has(origin)) return true;
   return await requestHostPermission(origin);
-}
-
-const ICON_PATHS = {
-  clipboard: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="9" y="2" width="6" height="4" rx="1" ry="1"/>',
-  'file-text': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M10 13h6"/><path d="M10 17h4"/>',
-  package: '<path d="M21 16V8a2 2 0 0 0-1-1.73L13 3.27a2 2 0 0 0-2 0L4 6.27A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7.5 12 12.5l8.7-5"/><path d="M12 22v-9"/>',
-  box: '<path d="M21 16V8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v9"/>',
-  truck: '<path d="M3 5h12v10H3z"/><path d="M15 8h4l2 3v4h-6"/><circle cx="7.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/>',
-  factory: '<path d="M2 20h20V10l-5 3V8l-5 3V4L2 8z"/><path d="M6 20v-4"/><path d="M10 20v-4"/><path d="M14 20v-4"/>',
-  wrench: '<path d="M21 16.5a5.5 5.5 0 0 1-7.78 0L3.5 6.78a4 4 0 0 1 5.66-5.66l.82.82-3 3 4.24 4.24 3-3 .82.82a4 4 0 0 1 0 5.66z"/>',
-  calendar: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8h18"/><path d="M16 2v4"/><path d="M8 2v4"/>',
-  'list-checks': '<path d="M10 6h11"/><path d="M10 12h11"/><path d="M10 18h11"/><path d="m3 6 1.5 1.5 3-3"/><path d="m3 12 1.5 1.5 3-3"/><path d="m3 18 1.5 1.5 3-3"/>',
-  search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
-  'chart-bar': '<path d="M3 3v18h18"/><rect x="7" y="13" width="3" height="5" rx="0.5"/><rect x="12" y="9" width="3" height="9" rx="0.5"/><rect x="17" y="5" width="3" height="13" rx="0.5"/>',
-  receipt: '<path d="M21 4v16l-3-2-3 2-3-2-3 2-3-2-3 2V4l3 2 3-2 3 2 3-2 3 2z"/><path d="M8 11h8"/><path d="M8 15h5"/>',
-  users: '<path d="M16 21v-1a5 5 0 0 0-3-4.58"/><path d="M7 4a4 4 0 1 1 1 7.87A4 4 0 0 1 7 4z"/><path d="M3 21v-1a7 7 0 0 1 11.9-4.9"/><path d="M20 8a3 3 0 1 1-4 2.82"/>',
-  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 2l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-2 .33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-2 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-2l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 2 .33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 2-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 2V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
-  bookmark: '<path d="M6 3h12v18l-6-4-6 4z"/>',
-  star: '<path d="M12 3.5 14.8 9l6.2.9-4.5 4.3 1 6.3L12 17l-5.5 3.5 1-6.3-4.5-4.3L9.2 9z"/>'
-};
-
-function renderIconSvgLocal(name) {
-  const body = ICON_PATHS[name] || ICON_PATHS[DEFAULT_ICON];
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 }
 
 function clearShortcutDropIndicators() {
@@ -347,6 +477,8 @@ function normalizeShortcutEntryLocal(entry, fallbackOrder = 0) {
   const viewIdOrName = entry.viewIdOrName == null ? '' : String(entry.viewIdOrName).trim();
   const label = entry.label == null ? '' : String(entry.label);
   const initial = normalizeShortcutInitialLocal(entry.initial);
+  const icon = sanitizeShortcutIcon(entry.icon);
+  const iconColor = sanitizeShortcutIconColor(entry.iconColor);
   const order = Number.isFinite(entry.order) ? entry.order : fallbackOrder;
   return {
     id: entry.id || createId(),
@@ -356,6 +488,8 @@ function normalizeShortcutEntryLocal(entry, fallbackOrder = 0) {
     viewIdOrName,
     label,
     initial,
+    icon,
+    iconColor,
     order
   };
 }
@@ -389,12 +523,13 @@ function shortcutMetaText(entry) {
   const parts = [
     `種別: ${shortcutTypeLabel(entry.type)}`,
     `Host: ${entry.host || '-'}`,
-    `App: ${entry.appId || '-'}`
+    `App: ${entry.appId || '-'}`,
+    `Icon: ${sanitizeShortcutIcon(entry.icon)}`,
+    `色: ${sanitizeShortcutIconColor(entry.iconColor)}`
   ];
   if (entry.type === 'view') {
     parts.push(`View: ${entry.viewIdOrName || '-'}`);
   }
-  parts.push(`頭文字: ${normalizeShortcutInitialLocal(entry.initial) || '自動'}`);
   return parts.join(' / ');
 }
 
@@ -402,19 +537,12 @@ async function persistShortcutEntries() {
   shortcutEntries = shortcutEntries.map((entry, index) => ({
     ...entry,
     order: index,
-    initial: normalizeShortcutInitialLocal(entry.initial)
+    initial: normalizeShortcutInitialLocal(entry.initial),
+    icon: sanitizeShortcutIcon(entry.icon),
+    iconColor: sanitizeShortcutIconColor(entry.iconColor)
   }));
-  const payload = shortcutEntries.map((entry) => ({
-    id: entry.id,
-    type: entry.type,
-    host: entry.host,
-    appId: entry.appId,
-    viewIdOrName: entry.viewIdOrName,
-    label: entry.label,
-    initial: entry.initial,
-    order: entry.order
-  }));
-  await chrome.storage.sync.set({ kfavShortcuts: payload });
+  const core = await import('./core.js');
+  await core.saveShortcuts(shortcutEntries);
 }
 
 function renderShortcutEntries() {
@@ -433,6 +561,8 @@ function renderShortcutEntries() {
   shortcutEntries.forEach((entry, index) => {
     entry.order = index;
     entry.initial = normalizeShortcutInitialLocal(entry.initial);
+    entry.icon = sanitizeShortcutIcon(entry.icon);
+    entry.iconColor = sanitizeShortcutIconColor(entry.iconColor);
     const li = document.createElement('li');
     li.className = 'shortcut-item';
     li.dataset.id = entry.id;
@@ -447,12 +577,79 @@ function renderShortcutEntries() {
     info.className = 'shortcut-info';
     const title = document.createElement('div');
     title.className = 'shortcut-title';
-    title.textContent = entry.label || shortcutTypeLabel(entry.type);
+    const titleIcon = document.createElement('span');
+    titleIcon.className = 'item-icon lc';
+    const rowPreview = shortcutEditorPreviewState(entry.icon, entry.iconColor);
+    titleIcon.dataset.icon = rowPreview.icon;
+    titleIcon.dataset.icoColor = rowPreview.color;
+    titleIcon.setAttribute('aria-hidden', 'true');
+    const titleText = document.createElement('span');
+    titleText.textContent = entry.label || shortcutTypeLabel(entry.type);
+    title.appendChild(titleIcon);
+    title.appendChild(titleText);
     const meta = document.createElement('div');
     meta.className = 'shortcut-meta';
     meta.textContent = shortcutMetaText(entry);
     info.appendChild(title);
     info.appendChild(meta);
+
+    const editor = document.createElement('div');
+    editor.className = 'shortcut-editor';
+
+    const editorGrid = document.createElement('div');
+    editorGrid.className = 'grid icon-cat-grid shortcut-editor-grid';
+
+    const labelWrap = document.createElement('label');
+    labelWrap.textContent = '表示名';
+    labelWrap.appendChild(document.createElement('br'));
+    const labelInput = document.createElement('input');
+    labelInput.value = entry.label || '';
+    labelWrap.appendChild(labelInput);
+
+    const iconWrap = document.createElement('label');
+    iconWrap.textContent = 'アイコン';
+    iconWrap.appendChild(document.createElement('br'));
+    const iconSelect = document.createElement('select');
+    populateShortcutIconSelect(iconSelect, entry.icon);
+    const iconPreview = document.createElement('span');
+    iconPreview.className = 'icon-preview lc';
+    iconPreview.setAttribute('aria-hidden', 'true');
+    iconWrap.appendChild(iconSelect);
+    iconWrap.appendChild(iconPreview);
+
+    const colorWrap = document.createElement('label');
+    colorWrap.textContent = 'アイコン色';
+    colorWrap.appendChild(document.createElement('br'));
+    const colorSelect = document.createElement('select');
+    populateShortcutIconColorSelect(colorSelect, entry.iconColor);
+    colorWrap.appendChild(colorSelect);
+
+    editorGrid.appendChild(labelWrap);
+    editorGrid.appendChild(iconWrap);
+    editorGrid.appendChild(colorWrap);
+
+    const editorActions = document.createElement('div');
+    editorActions.className = 'shortcut-editor-actions';
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.textContent = '保存';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'キャンセル';
+
+    editorActions.appendChild(saveBtn);
+    editorActions.appendChild(cancelBtn);
+    editor.appendChild(editorGrid);
+    editor.appendChild(editorActions);
+    info.appendChild(editor);
+
+    const updateEditorPreview = () => {
+      const preview = shortcutEditorPreviewState(iconSelect.value, colorSelect.value);
+      iconPreview.dataset.icon = preview.icon;
+      iconPreview.dataset.icoColor = preview.color;
+      renderLucideIconsLocal(editor);
+    };
+    updateEditorPreview();
 
     const ops = document.createElement('div');
     ops.className = 'shortcut-ops';
@@ -474,37 +671,43 @@ function renderShortcutEntries() {
     }
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
-        editBtn.textContent = '編集';
-    editBtn.addEventListener('click', async () => {
-      const current = entry.label || '';
-      const next = window.prompt('表示名を入力してください', current);
-      if (next === null) return;
-      entry.label = next.trim();
-      await persistShortcutEntries();
-      renderShortcutEntries();
+    editBtn.textContent = '編集';
+    editBtn.addEventListener('click', () => {
+      const opening = !editor.classList.contains('is-open');
+      editor.classList.toggle('is-open', opening);
+      editBtn.textContent = opening ? '閉じる' : '編集';
+      if (opening) {
+        labelInput.focus();
+        labelInput.select();
+      }
     });
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
-        delBtn.textContent = '削除';
+    delBtn.textContent = '削除';
     delBtn.addEventListener('click', async () => {
       shortcutEntries = shortcutEntries.filter((item) => item.id !== entry.id);
       await persistShortcutEntries();
       renderShortcutEntries();
     });
-    ops.appendChild(openA);
-    ops.appendChild(editBtn);
-    const initialBtn = document.createElement('button');
-    initialBtn.type = 'button';
-    initialBtn.textContent = '頭文字';
-    initialBtn.addEventListener('click', async () => {
-      const current = entry.initial || '';
-      const next = window.prompt('ショートカットの頭文字（最大2文字。空欄で自動設定）', current);
-      if (next === null) return;
-      entry.initial = normalizeShortcutInitialLocal(next);
+    iconSelect.addEventListener('change', updateEditorPreview);
+    colorSelect.addEventListener('change', updateEditorPreview);
+    saveBtn.addEventListener('click', async () => {
+      entry.label = labelInput.value.trim();
+      entry.icon = sanitizeShortcutIcon(iconSelect.value);
+      entry.iconColor = sanitizeShortcutIconColor(colorSelect.value);
       await persistShortcutEntries();
       renderShortcutEntries();
     });
-    ops.appendChild(initialBtn);
+    cancelBtn.addEventListener('click', () => {
+      labelInput.value = entry.label || '';
+      populateShortcutIconSelect(iconSelect, entry.icon);
+      populateShortcutIconColorSelect(colorSelect, entry.iconColor);
+      updateEditorPreview();
+      editor.classList.remove('is-open');
+      editBtn.textContent = '編集';
+    });
+    ops.appendChild(openA);
+    ops.appendChild(editBtn);
     ops.appendChild(delBtn);
 
     li.appendChild(handle);
@@ -528,6 +731,7 @@ function renderShortcutEntries() {
 
     shortcutListEl.appendChild(li);
   });
+  renderLucideIconsLocal(shortcutListEl);
 }
 
 shortcutToggleEl?.addEventListener('change', async () => {
@@ -537,138 +741,6 @@ shortcutToggleEl?.addEventListener('change', async () => {
 
 function createId() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function setScheduleStatus(msg) {
-  if (!schStatusEl) return;
-  schStatusEl.textContent = msg || '';
-}
-
-function normalizeScheduleEntry(entry) {
-  if (!entry || typeof entry !== 'object') return null;
-  const limit = Math.max(1, Math.min(100, Number.parseInt(entry.limit ?? 20, 10) || 20));
-  return {
-    id: entry.id || createId(),
-    label: entry.label || '',
-    host: entry.host || '',
-    appId: String(entry.appId || '').trim(),
-    dateField: entry.dateField || '',
-    titleField: entry.titleField || '',
-    extraQuery: entry.extraQuery || '',
-    limit
-  };
-}
-
-function scheduleEntryLabel(entry) {
-  const label = entry.label?.trim();
-  if (label) return label;
-  const app = entry.appId ? `App ${entry.appId}` : 'App 未指定';
-  return `${app} @ ${entry.host}`;
-}
-
-async function saveScheduleEntries() {
-  await chrome.storage.sync.set({ kfavSchedule: scheduleEntries.map(({ id, label, host, appId, dateField, titleField, extraQuery, limit }) => ({
-    id,
-    label,
-    host,
-    appId,
-    dateField,
-    titleField,
-    extraQuery,
-    limit
-  })) });
-}
-
-function renderScheduleEntries() {
-  if (!schListEl) return;
-  schListEl.innerHTML = '';
-  if (!scheduleEntries.length) {
-    const li = document.createElement('li');
-    li.className = 'muted';
-    li.textContent = 'まだ登録されていません';
-    schListEl.appendChild(li);
-    return;
-  }
-
-  scheduleEntries.forEach((entry) => {
-    const li = document.createElement('li');
-    li.className = 'schedule-item';
-
-    const info = document.createElement('div');
-    info.className = 'schedule-info';
-    const title = document.createElement('div');
-    title.className = 'schedule-title';
-    title.textContent = scheduleEntryLabel(entry);
-    const meta = document.createElement('div');
-    meta.className = 'schedule-meta';
-    const detailRows = [
-      ['Host', entry.host || '-'],
-      ['App ID', entry.appId || '-'],
-      ['Date', entry.dateField || '-'],
-      ['Title', entry.titleField || '-'],
-      ['Limit', String(entry.limit || '')]
-    ];
-    if (entry.extraQuery) detailRows.push(['Query', entry.extraQuery]);
-    detailRows.forEach(([label, value]) => {
-      const line = document.createElement('div');
-      line.textContent = `${label}: ${value}`;
-      meta.appendChild(line);
-    });
-    info.appendChild(title);
-    info.appendChild(meta);
-
-    const ops = document.createElement('div');
-    ops.className = 'schedule-ops';
-    const editBtn = document.createElement('button');
-    editBtn.type = 'button';
-        editBtn.textContent = '編集';
-    editBtn.addEventListener('click', () => fillScheduleForm(entry));
-    const delBtn = document.createElement('button');
-    delBtn.type = 'button';
-        delBtn.textContent = '削除';
-    delBtn.addEventListener('click', async () => {
-      scheduleEntries = scheduleEntries.filter((item) => item.id !== entry.id);
-      await saveScheduleEntries();
-      renderScheduleEntries();
-    });
-    ops.appendChild(editBtn);
-    ops.appendChild(delBtn);
-
-
-    li.appendChild(info);
-    li.appendChild(ops);
-    schListEl.appendChild(li);
-  });
-}
-
-function resetScheduleForm() {
-  scheduleEditingId = null;
-  if (schLabelEl) schLabelEl.value = '';
-  schUrlEl.value = '';
-  schAppIdEl.value = '';
-  schDateFieldEl.value = '';
-  schTitleFieldEl.value = '';
-  schExtraQueryEl.value = '';
-  schLimitEl.value = '';
-  setScheduleStatus('');
-  if (schSaveBtn) schSaveBtn.textContent = '追加 / 更新';
-}
-
-function fillScheduleForm(entry) {
-  scheduleEditingId = entry.id;
-  if (schLabelEl) schLabelEl.value = entry.label || '';
-  schUrlEl.value = entry.host ? `${entry.host}/k/${entry.appId || ''}/` : '';
-  schAppIdEl.value = entry.appId || '';
-  schDateFieldEl.value = entry.dateField || '';
-  schTitleFieldEl.value = entry.titleField || '';
-  schExtraQueryEl.value = entry.extraQuery || '';
-  schLimitEl.value = entry.limit ? String(entry.limit) : '';
-  if (schSaveBtn) schSaveBtn.textContent = '更新';
-  if (entry.host) {
-    if (hostPermInputEl && !hostPermInputEl.value) hostPermInputEl.value = entry.host;
-    updatePermStatus(entry.host);
-  }
-  setScheduleStatus('編集モードです。変更後「更新」を押してください。');
 }
 
 function normalizePinnedEntry(entry) {
@@ -717,35 +789,34 @@ function renderPinnedEntries() {
 
   pinnedEntries.forEach((entry) => {
     const li = document.createElement('li');
-    li.className = 'pin-item';
+    li.className = 'pin-item pin-card-item';
+    li.dataset.id = entry.id;
 
-    const info = document.createElement('div');
-    info.className = 'pin-info';
+    const main = document.createElement('div');
+    main.className = 'pin-main';
+    const top = document.createElement('div');
+    top.className = 'pin-top';
+
     const title = document.createElement('div');
     title.className = 'pin-title';
-    title.textContent = pinnedEntryLabel(entry);
-    const meta = document.createElement('div');
-    meta.className = 'pin-meta';
-    const details = [
-      ['Host', entry.host || '-'],
-      ['App ID', entry.appId || '-'],
-      ['Record', entry.recordId || '-'],
-      ['Title field', entry.titleField || '-']
-    ];
-    if (entry.note) details.push(['Note', entry.note]);
-    details.forEach(([label, value]) => {
-      const line = document.createElement('div');
-      line.textContent = `${label}: ${value}`;
-      meta.appendChild(line);
-    });
-    info.appendChild(title);
-    info.appendChild(meta);
+    const pinMark = document.createElement('span');
+    pinMark.className = 'pin-mark';
+    pinMark.textContent = '📌';
+    pinMark.setAttribute('aria-hidden', 'true');
+    const titleText = document.createElement('span');
+    titleText.className = 'pin-title-text';
+    titleText.textContent = pinnedEntryLabel(entry);
+    titleText.title = titleText.textContent;
+    title.appendChild(pinMark);
+    title.appendChild(titleText);
 
     const ops = document.createElement('div');
-    ops.className = 'pin-ops';
+    ops.className = 'pin-ops pin-actions';
     const openBtn = document.createElement('a');
-    openBtn.textContent = '開く';
-    openBtn.className = 'btn';
+    openBtn.className = 'watch-icon-btn pin-icon-btn pin-open-btn';
+    openBtn.textContent = '↗';
+    openBtn.title = '開く';
+    openBtn.setAttribute('aria-label', '開く');
     if (entry.host && entry.appId && entry.recordId) {
       openBtn.href = `${entry.host}/k/${entry.appId}/show#record=${entry.recordId}`;
       openBtn.target = '_blank';
@@ -753,16 +824,22 @@ function renderPinnedEntries() {
     } else {
       openBtn.href = '#';
       openBtn.setAttribute('aria-disabled', 'true');
-      openBtn.classList.add('disabled');
+      openBtn.classList.add('disabled', 'is-disabled');
       openBtn.addEventListener('click', (ev) => ev.preventDefault());
     }
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
-        editBtn.textContent = '編集';
-    editBtn.addEventListener('click', () => fillPinnedForm(entry));
+    editBtn.className = 'watch-icon-btn pin-icon-btn pin-edit-btn';
+    editBtn.textContent = '✎';
+    editBtn.title = '編集';
+    editBtn.setAttribute('aria-label', '編集');
+    editBtn.addEventListener('click', () => openPinEditModal(entry, editBtn));
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
-        delBtn.textContent = '削除';
+    delBtn.className = 'watch-icon-btn pin-icon-btn pin-del-btn';
+    delBtn.textContent = '×';
+    delBtn.title = '削除';
+    delBtn.setAttribute('aria-label', '削除');
     delBtn.addEventListener('click', async () => {
       pinnedEntries = pinnedEntries.filter((item) => item.id !== entry.id);
       await savePinnedEntries();
@@ -772,34 +849,71 @@ function renderPinnedEntries() {
     ops.appendChild(editBtn);
     ops.appendChild(delBtn);
 
-    li.appendChild(info);
-    li.appendChild(ops);
+    top.appendChild(title);
+    top.appendChild(ops);
+
+    const summary = document.createElement('div');
+    summary.className = 'watch-summary pin-summary';
+    const appChip = document.createElement('span');
+    appChip.className = 'watch-chip pin-chip';
+    appChip.textContent = `App ${entry.appId || '-'}`;
+    const recordChip = document.createElement('span');
+    recordChip.className = 'watch-chip pin-chip';
+    recordChip.textContent = `Record ${entry.recordId || '-'}`;
+    summary.appendChild(appChip);
+    summary.appendChild(recordChip);
+
+    const noteText = (entry.note || '').trim();
+    let noteEl = null;
+    if (noteText) {
+      noteEl = document.createElement('div');
+      noteEl.className = 'watch-query pin-note-line';
+      noteEl.textContent = noteText;
+      noteEl.title = noteText;
+    }
+
+    const details = document.createElement('details');
+    details.className = 'watch-details pin-details';
+    const detailSummary = document.createElement('summary');
+    detailSummary.textContent = '詳細';
+    const detailBody = document.createElement('div');
+    detailBody.className = 'watch-details-body pin-details-body';
+    const fullUrl = entry.host && entry.appId && entry.recordId
+      ? `${entry.host}/k/${entry.appId}/show#record=${entry.recordId}`
+      : '-';
+    [
+      ['Host', entry.host || '-'],
+      ['URL', fullUrl],
+      ['App ID', entry.appId || '-'],
+      ['Record ID', entry.recordId || '-'],
+      ['Title field', entry.titleField || '-']
+    ].forEach(([label, value]) => {
+      const row = document.createElement('div');
+      row.className = 'watch-detail-row pin-detail-row';
+      row.textContent = `${label}: ${value}`;
+      row.title = String(value);
+      detailBody.appendChild(row);
+    });
+    details.appendChild(detailSummary);
+    details.appendChild(detailBody);
+
+    main.appendChild(top);
+    main.appendChild(summary);
+    if (noteEl) main.appendChild(noteEl);
+    main.appendChild(details);
+    li.appendChild(main);
     pinListEl.appendChild(li);
   });
 }
 
 function resetPinnedForm() {
-  pinEditingId = null;
   if (pinLabelEl) pinLabelEl.value = '';
   pinUrlEl.value = '';
   pinAppIdEl.value = '';
   pinRecordIdEl.value = '';
   pinTitleFieldEl.value = '';
   pinNoteEl.value = '';
-  if (pinSaveBtn) pinSaveBtn.textContent = '追加 / 更新';
-}
-
-function fillPinnedForm(entry) {
-  pinEditingId = entry.id;
-  if (pinLabelEl) pinLabelEl.value = entry.label || '';
-  pinUrlEl.value = entry.host && entry.appId && entry.recordId
-    ? `${entry.host}/k/${entry.appId}/show#record=${entry.recordId}`
-    : '';
-  pinAppIdEl.value = entry.appId || '';
-  pinRecordIdEl.value = entry.recordId || '';
-  pinTitleFieldEl.value = entry.titleField || '';
-  pinNoteEl.value = entry.note || '';
-  if (pinSaveBtn) pinSaveBtn.textContent = '更新';
+  if (pinSaveBtn) pinSaveBtn.textContent = '追加';
 }
 async function loadFavorites() {
   const { kintoneFavorites = [] } = await chrome.storage.sync.get('kintoneFavorites');
@@ -827,6 +941,7 @@ async function render(items) {
   if (!listEl) return;
   const sorted = sortItems(items);
   const badgeTargetId = await getBadgeTarget();
+  updateCategorySuggestions(sorted);
 
   listEl.innerHTML = '';
   if (!sorted.length) {
@@ -841,61 +956,67 @@ async function render(items) {
     if (typeof it.order !== 'number') it.order = idx;
 
     const li = document.createElement('li');
-    li.className = 'item';
+    li.className = 'item watch-item';
     li.draggable = true;
     li.dataset.id = it.id;
 
     const handle = document.createElement('div');
-    handle.className = 'drag-handle';
-    handle.textContent = '↕';
+    handle.className = 'drag-handle watch-drag-handle';
+    handle.textContent = '⋮⋮';
+    handle.title = 'ドラッグで並び替え';
 
-    const left = document.createElement('div');
-    left.className = 'meta';
+    const body = document.createElement('div');
+    body.className = 'watch-main';
+    const top = document.createElement('div');
+    top.className = 'watch-top';
     const title = document.createElement('div');
-    title.className = 'title';
+    title.className = 'title watch-title';
     const iconPreview = document.createElement('span');
-    iconPreview.className = 'item-icon';
-    iconPreview.innerHTML = renderIconSvgLocal(it.icon || DEFAULT_ICON);
+    iconPreview.className = 'item-icon lc';
+    iconPreview.dataset.icon = sanitizeIcon(it.icon);
+    iconPreview.dataset.icoColor = sanitizeIconColor(it.iconColor);
+    iconPreview.setAttribute('aria-hidden', 'true');
     const titleText = document.createElement('span');
+    titleText.className = 'watch-title-text';
     titleText.textContent = it.label || '(no label)';
     title.appendChild(iconPreview);
     title.appendChild(titleText);
-    const meta = document.createElement('div');
-    meta.className = 'meta';
-    const metaRows = [
-      ['URL', it.url || '-'],
-      ['App', it.appId || '-'],
-      ['View', it.viewIdOrName || '-'],
-      ['Query', it.query || '-'],
-      ['Host', it.host || '-'],
-      ['Icon', it.icon || DEFAULT_ICON],
-      ['カテゴリ', it.category || DEFAULT_CATEGORY]
-    ];
-    metaRows.forEach(([label, value]) => {
-      const row = document.createElement('div');
-      row.className = 'meta-row';
-      row.textContent = `${label}: ${value}`;
-      meta.appendChild(row);
-    });
-    left.appendChild(title);
-    left.appendChild(meta);
+    top.appendChild(title);
 
     const right = document.createElement('div');
-    right.className = 'ops';
+    right.className = 'ops watch-actions';
 
     // バッジ対象ラジオ
+    const badgeWrap = document.createElement('label');
+    badgeWrap.className = 'watch-icon-btn watch-badge-btn';
+    badgeWrap.title = 'このウォッチリストをバッジ対象にする';
+    badgeWrap.setAttribute('aria-label', 'このウォッチリストをバッジ対象にする');
     const radio = document.createElement('input');
     radio.type = 'radio';
     radio.name = 'badgeTarget';
-    radio.className = 'badge-radio';
+    radio.className = 'badge-radio watch-badge-radio';
     radio.checked = badgeTargetId ? (badgeTargetId === it.id) : (sorted[0]?.id === it.id);
-        radio.title = 'このウォッチリストをバッジ対象にする';
-    radio.addEventListener('change', () => setBadgeTarget(it.id));
+    const badgeMark = document.createElement('span');
+    badgeMark.className = 'watch-badge-mark';
+    badgeMark.textContent = '◎';
+    radio.addEventListener('change', async () => {
+      await setBadgeTarget(it.id);
+      const wraps = listEl.querySelectorAll('.watch-badge-btn');
+      wraps.forEach((el) => el.classList.remove('is-active'));
+      badgeWrap.classList.add('is-active');
+    });
+    badgeWrap.classList.toggle('is-active', radio.checked);
+    badgeWrap.appendChild(radio);
+    badgeWrap.appendChild(badgeMark);
 
     // ピン切替
     const pinBtn = document.createElement('button');
-    pinBtn.className = 'pin';
-        pinBtn.textContent = it.pinned ? '📌 解除' : '📌 固定';
+    pinBtn.className = 'pin watch-icon-btn watch-pin-btn';
+    pinBtn.type = 'button';
+    pinBtn.textContent = '📌';
+    pinBtn.title = it.pinned ? '固定を解除' : '固定する';
+    pinBtn.setAttribute('aria-label', it.pinned ? '固定を解除' : '固定する');
+    pinBtn.classList.toggle('is-active', Boolean(it.pinned));
     pinBtn.addEventListener('click', async () => {
       const all = await loadFavorites();
       const me = all.find(x => x.id === it.id);
@@ -906,29 +1027,95 @@ async function render(items) {
 
     // 開く・削除
     const openA = document.createElement('a');
-        openA.textContent = '開く';
-    openA.className = 'btn';
+    openA.textContent = '↗';
+    openA.className = 'btn watch-icon-btn watch-open-btn';
+    openA.title = '開く';
+    openA.setAttribute('aria-label', '開く');
     openA.href = it.url;
     openA.target = '_blank';
     openA.rel = 'noopener';
     // 編集ボタン
     const editBtn = document.createElement('button');
-        editBtn.textContent = '編集';
-    editBtn.addEventListener('click', () => openEdit(it));
+    editBtn.type = 'button';
+    editBtn.textContent = '✎';
+    editBtn.className = 'watch-icon-btn watch-edit-btn';
+    editBtn.title = '編集';
+    editBtn.setAttribute('aria-label', '編集');
+    editBtn.addEventListener('click', () => openEdit(it, editBtn));
 
     const delBtn = document.createElement('button');
-        delBtn.textContent = '削除';
+    delBtn.type = 'button';
+    delBtn.textContent = '✕';
+    delBtn.className = 'watch-icon-btn watch-del-btn';
+    delBtn.title = '削除';
+    delBtn.setAttribute('aria-label', '削除');
     delBtn.addEventListener('click', async () => {
       const next = (await loadFavorites()).filter(x => x.id !== it.id);
       await saveFavorites(next);
       render(next);
     });
 
-    right.appendChild(radio);
+    right.appendChild(badgeWrap);
     right.appendChild(pinBtn);
     right.appendChild(openA);
     right.appendChild(editBtn);
     right.appendChild(delBtn);
+    top.appendChild(right);
+
+    const summary = document.createElement('div');
+    summary.className = 'watch-summary';
+    const addChip = (text) => {
+      const chip = document.createElement('span');
+      chip.className = 'watch-chip';
+      chip.textContent = text;
+      summary.appendChild(chip);
+    };
+    if (it.appId) addChip(`App ${it.appId}`);
+    if (it.viewIdOrName) addChip(`View ${it.viewIdOrName}`);
+    addChip(getCategoryLabel(it.category));
+
+    const urlLine = document.createElement('div');
+    urlLine.className = 'watch-url';
+    urlLine.textContent = it.url || '-';
+    urlLine.title = it.url || '';
+
+    const queryLine = document.createElement('div');
+    queryLine.className = 'watch-query';
+    if (it.query) {
+      queryLine.textContent = `Query: ${it.query}`;
+      queryLine.title = it.query;
+    }
+
+    const details = document.createElement('details');
+    details.className = 'watch-details';
+    const detailsSummary = document.createElement('summary');
+    detailsSummary.textContent = '詳細';
+    const detailsBody = document.createElement('div');
+    detailsBody.className = 'watch-details-body';
+    const metaRows = [
+      ['Host', it.host || '-'],
+      ['URL', it.url || '-'],
+      ['App', it.appId || '-'],
+      ['View', it.viewIdOrName || '-'],
+      ['Query', it.query || '-'],
+      ['Icon', sanitizeIcon(it.icon)],
+      ['色', sanitizeIconColor(it.iconColor)],
+      ['カテゴリ', getCategoryLabel(it.category)]
+    ];
+    metaRows.forEach(([label, value]) => {
+      const row = document.createElement('div');
+      row.className = 'watch-detail-row';
+      row.textContent = `${label}: ${value}`;
+      detailsBody.appendChild(row);
+    });
+    details.appendChild(detailsSummary);
+    details.appendChild(detailsBody);
+
+    body.appendChild(top);
+    body.appendChild(summary);
+    body.appendChild(urlLine);
+    if (it.query) body.appendChild(queryLine);
+    body.appendChild(details);
 
     // D&D
     li.addEventListener('dragstart', e => {
@@ -953,14 +1140,84 @@ async function render(items) {
     });
 
     li.appendChild(handle);
-    li.appendChild(left);
-    li.appendChild(right);
+    li.appendChild(body);
     listEl.appendChild(li);
   });
+  renderLucideIconsLocal(listEl);
 }
 
 // ---- 編集処理（renderの外に1回だけ定義）----
-function openEdit(item) {
+const editModalState = {
+  triggerEl: null,
+  previousBodyOverflow: '',
+  handlers: null
+};
+
+function getDialogFocusableElements() {
+  if (!editDialog) return [];
+  const selector = [
+    'button:not([disabled])',
+    'a[href]',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])'
+  ].join(',');
+  return Array.from(editDialog.querySelectorAll(selector))
+    .filter((el) => !el.hasAttribute('hidden') && el.offsetParent !== null);
+}
+
+function handleDialogTabTrap(event) {
+  if (event.key !== 'Tab' || !editDialog?.open) return;
+  const focusables = getDialogFocusableElements();
+  if (!focusables.length) {
+    event.preventDefault();
+    return;
+  }
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement;
+  if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function closeEditDialog({ restoreFocus = true } = {}) {
+  if (!editDialog) return;
+  const closingId = editingId;
+  const handlers = editModalState.handlers;
+  if (handlers) {
+    document.removeEventListener('keydown', handlers.onDocumentKeydown, true);
+    editDialog.removeEventListener('click', handlers.onDialogClick);
+    editDialog.removeEventListener('cancel', handlers.onDialogCancel);
+    editDialog.removeEventListener('keydown', handlers.onDialogKeydown);
+    editModalState.handlers = null;
+  }
+  if (editDialog.open && typeof editDialog.close === 'function') {
+    editDialog.close();
+  }
+  document.body.style.overflow = editModalState.previousBodyOverflow;
+  let focusTarget = editModalState.triggerEl;
+  if ((!focusTarget || !focusTarget.isConnected) && closingId) {
+    const escaped = globalThis.CSS?.escape ? CSS.escape(String(closingId)) : String(closingId);
+    focusTarget = document.querySelector(`#list .watch-item[data-id="${escaped}"] .watch-edit-btn`);
+  }
+  if (restoreFocus && focusTarget && typeof focusTarget.focus === 'function') {
+    try {
+      focusTarget.focus();
+    } catch (_err) {
+      // ignore
+    }
+  }
+  editModalState.triggerEl = null;
+  editingId = null;
+}
+
+function openEdit(item, triggerEl = null) {
   editingId = item.id;
   editLabelEl.value = item.label || '';
   editUrlEl.value = item.url || '';
@@ -970,20 +1227,71 @@ function openEdit(item) {
   if (editIconEl) {
     editIconEl.value = sanitizeIcon(item.icon);
   }
+  if (editIconColorEl) {
+    editIconColorEl.value = sanitizeIconColor(item.iconColor);
+  }
+  if (editIconEl) {
+    renderIconPreview(editIconPreviewEl, editIconEl.value, editIconColorEl?.value);
+  }
   if (editCategoryEl) {
-    const value = sanitizeCategory(item.category);
-    editCategoryEl.value = value === DEFAULT_CATEGORY ? '' : value;
+    editCategoryEl.value = sanitizeCategory(item.category);
   }
   if (typeof editDialog.showModal === 'function') {
+    if (editDialog.open) {
+      closeEditDialog({ restoreFocus: false });
+    }
+    editModalState.triggerEl = triggerEl || document.activeElement;
+    editModalState.previousBodyOverflow = document.body.style.overflow;
+    const onDocumentKeydown = (event) => {
+      if (event.isComposing) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeEditDialog();
+      }
+    };
+    const onDialogClick = (event) => {
+      if (event.target === editDialog) {
+        closeEditDialog();
+      }
+    };
+    const onDialogCancel = (event) => {
+      event.preventDefault();
+      closeEditDialog();
+    };
+    const onDialogKeydown = (event) => {
+      handleDialogTabTrap(event);
+    };
+    editModalState.handlers = {
+      onDocumentKeydown,
+      onDialogClick,
+      onDialogCancel,
+      onDialogKeydown
+    };
+    document.addEventListener('keydown', onDocumentKeydown, true);
+    editDialog.addEventListener('click', onDialogClick);
+    editDialog.addEventListener('cancel', onDialogCancel);
+    editDialog.addEventListener('keydown', onDialogKeydown);
     editDialog.showModal();
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => {
+      try {
+        editLabelEl.focus();
+        editLabelEl.select();
+      } catch (_err) {
+        // ignore
+      }
+    }, 0);
   } else {
     alert('このブラウザはdialog要素に対応していません');
   }
 }
-editDialog.addEventListener('close', () => { /* noop */ });
+
+editCancelBtn?.addEventListener('click', () => closeEditDialog());
+editCloseXBtn?.addEventListener('click', () => closeEditDialog());
+
 editSaveBtn.addEventListener('click', async (e) => {
   e.preventDefault();
-  if (!editingId) { editDialog.close(); return; }
+  if (!editingId) { closeEditDialog(); return; }
   const newLabel = editLabelEl.value.trim();
   const newUrl = editUrlEl.value.trim();
   let { host, appId, viewIdOrName } = parseKintoneUrl(newUrl);
@@ -991,6 +1299,7 @@ editSaveBtn.addEventListener('click', async (e) => {
   if (editViewEl.value.trim()) viewIdOrName = editViewEl.value.trim();
   const newQuery = editQueryEl.value.trim() || '';
   const newIcon = sanitizeIcon(editIconEl?.value);
+  const newIconColor = sanitizeIconColor(editIconColorEl?.value);
   const newCategory = sanitizeCategory(editCategoryEl?.value);
   if (!newUrl || !host) { alert('有効な kintone URL を入力してください'); return; }
   if (!(await ensureHostPermissionFor(host))) {
@@ -999,7 +1308,7 @@ editSaveBtn.addEventListener('click', async (e) => {
   }
   const all = await loadFavorites();
   const idx = all.findIndex(x => x.id === editingId);
-  if (idx === -1) { editDialog.close(); return; }
+  if (idx === -1) { closeEditDialog(); return; }
   if (all.some((x, i) => i !== idx && x.url === newUrl)) {
     alert('このURLは既に登録済みです'); return;
   }
@@ -1013,12 +1322,187 @@ editSaveBtn.addEventListener('click', async (e) => {
     viewIdOrName: viewIdOrName||'',
     query: newQuery,
     icon: newIcon,
+    iconColor: newIconColor,
     category: newCategory
   };
   await saveFavorites(all);
   await render(all);
-  editingId = null;
-  editDialog.close();
+  closeEditDialog();
+});
+
+const pinEditModalState = {
+  triggerEl: null,
+  previousBodyOverflow: '',
+  handlers: null
+};
+
+function getPinDialogFocusableElements() {
+  if (!pinEditDialog) return [];
+  const selector = [
+    'button:not([disabled])',
+    'a[href]',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])'
+  ].join(',');
+  return Array.from(pinEditDialog.querySelectorAll(selector))
+    .filter((el) => !el.hasAttribute('hidden') && el.offsetParent !== null);
+}
+
+function handlePinDialogTabTrap(event) {
+  if (event.key !== 'Tab' || !pinEditDialog?.open) return;
+  const focusables = getPinDialogFocusableElements();
+  if (!focusables.length) {
+    event.preventDefault();
+    return;
+  }
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement;
+  if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function closePinEditDialog({ restoreFocus = true } = {}) {
+  if (!pinEditDialog) return;
+  const closingId = pinModalEditingId;
+  const handlers = pinEditModalState.handlers;
+  if (handlers) {
+    document.removeEventListener('keydown', handlers.onDocumentKeydown, true);
+    pinEditDialog.removeEventListener('click', handlers.onDialogClick);
+    pinEditDialog.removeEventListener('cancel', handlers.onDialogCancel);
+    pinEditDialog.removeEventListener('keydown', handlers.onDialogKeydown);
+    pinEditModalState.handlers = null;
+  }
+  if (pinEditDialog.open && typeof pinEditDialog.close === 'function') {
+    pinEditDialog.close();
+  }
+  document.body.style.overflow = pinEditModalState.previousBodyOverflow;
+  let focusTarget = pinEditModalState.triggerEl;
+  if ((!focusTarget || !focusTarget.isConnected) && closingId) {
+    const escaped = globalThis.CSS?.escape ? CSS.escape(String(closingId)) : String(closingId);
+    focusTarget = document.querySelector(`#pin_list .pin-item[data-id="${escaped}"] .pin-edit-btn`);
+  }
+  if (restoreFocus && focusTarget && typeof focusTarget.focus === 'function') {
+    try {
+      focusTarget.focus();
+    } catch (_err) {
+      // ignore
+    }
+  }
+  pinEditModalState.triggerEl = null;
+  pinModalEditingId = null;
+}
+
+function openPinEditModal(entry, triggerEl = null) {
+  if (!entry || !pinEditDialog) return;
+  pinModalEditingId = entry.id;
+  if (pinEditLabelEl) pinEditLabelEl.value = entry.label || '';
+  if (pinEditUrlEl) {
+    pinEditUrlEl.value = entry.host && entry.appId && entry.recordId
+      ? `${entry.host}/k/${entry.appId}/show#record=${entry.recordId}`
+      : '';
+  }
+  if (pinEditAppIdEl) pinEditAppIdEl.value = entry.appId || '';
+  if (pinEditRecordIdEl) pinEditRecordIdEl.value = entry.recordId || '';
+  if (pinEditTitleFieldEl) pinEditTitleFieldEl.value = entry.titleField || '';
+  if (pinEditNoteEl) pinEditNoteEl.value = entry.note || '';
+
+  if (typeof pinEditDialog.showModal === 'function') {
+    if (pinEditDialog.open) {
+      closePinEditDialog({ restoreFocus: false });
+    }
+    pinEditModalState.triggerEl = triggerEl || document.activeElement;
+    pinEditModalState.previousBodyOverflow = document.body.style.overflow;
+    const onDocumentKeydown = (event) => {
+      if (event.isComposing) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closePinEditDialog();
+      }
+    };
+    const onDialogClick = (event) => {
+      if (event.target === pinEditDialog) {
+        closePinEditDialog();
+      }
+    };
+    const onDialogCancel = (event) => {
+      event.preventDefault();
+      closePinEditDialog();
+    };
+    const onDialogKeydown = (event) => {
+      handlePinDialogTabTrap(event);
+    };
+    pinEditModalState.handlers = {
+      onDocumentKeydown,
+      onDialogClick,
+      onDialogCancel,
+      onDialogKeydown
+    };
+    document.addEventListener('keydown', onDocumentKeydown, true);
+    pinEditDialog.addEventListener('click', onDialogClick);
+    pinEditDialog.addEventListener('cancel', onDialogCancel);
+    pinEditDialog.addEventListener('keydown', onDialogKeydown);
+    pinEditDialog.showModal();
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => {
+      try {
+        (pinEditLabelEl || pinEditUrlEl)?.focus();
+      } catch (_err) {
+        // ignore
+      }
+    }, 0);
+  } else {
+    alert('このブラウザはdialog要素に対応していません');
+  }
+}
+
+pinEditCancelBtn?.addEventListener('click', () => closePinEditDialog());
+pinEditCloseXBtn?.addEventListener('click', () => closePinEditDialog());
+
+pinEditSaveBtn?.addEventListener('click', async (event) => {
+  event.preventDefault();
+  if (!pinModalEditingId) {
+    closePinEditDialog();
+    return;
+  }
+  const label = pinEditLabelEl?.value.trim() || '';
+  const url = pinEditUrlEl?.value.trim() || '';
+  const parsed = parseKintoneUrl(url);
+  const host = parsed.host || hostFromUrl(url);
+  const appId = (pinEditAppIdEl?.value || parsed.appId || '').toString().trim();
+  const recordId = (pinEditRecordIdEl?.value || parsed.recordId || '').toString().trim();
+  const titleField = pinEditTitleFieldEl?.value.trim() || '';
+  const note = pinEditNoteEl?.value.trim() || '';
+
+  if (!host || !appId || !recordId) {
+    alert('host / App ID / レコードID は必須です');
+    return;
+  }
+
+  const idx = pinnedEntries.findIndex((item) => item.id === pinModalEditingId);
+  if (idx === -1) {
+    closePinEditDialog();
+    return;
+  }
+  pinnedEntries[idx] = normalizePinnedEntry({
+    id: pinModalEditingId,
+    label,
+    host,
+    appId,
+    recordId,
+    titleField,
+    note
+  });
+  await savePinnedEntries();
+  renderPinnedEntries();
+  closePinEditDialog();
 });
 
 addBtn.addEventListener('click', async () => {
@@ -1030,6 +1514,7 @@ addBtn.addEventListener('click', async () => {
   if (viewEl.value.trim()) viewIdOrName = viewEl.value.trim();
   const query = queryEl.value.trim() || '';
   const icon = sanitizeIcon(iconEl?.value);
+  const iconColor = sanitizeIconColor(iconColorEl?.value);
   const category = sanitizeCategory(categoryEl?.value);
 
   if (!url || !host) {
@@ -1055,8 +1540,8 @@ addBtn.addEventListener('click', async () => {
     appId: appId || '',
     viewIdOrName: viewIdOrName || '',
     query: query || '',
-    initial: '',
     icon,
+    iconColor,
     category,
     order: list.length,
     pinned: false
@@ -1071,7 +1556,15 @@ addBtn.addEventListener('click', async () => {
   appIdEl.value = '';
   viewEl.value = '';
   queryEl.value = '';
-  if (iconEl) iconEl.value = DEFAULT_ICON;
+  if (iconEl) {
+    iconEl.value = DEFAULT_ICON;
+  }
+  if (iconColorEl) {
+    iconColorEl.value = DEFAULT_ICON_COLOR;
+  }
+  if (iconEl) {
+    renderIconPreview(iconPreviewEl, iconEl.value, iconColorEl?.value);
+  }
   if (categoryEl) categoryEl.value = '';
 });
 
@@ -1081,31 +1574,33 @@ addBtn.addEventListener('click', async () => {
   await warmHostPermissionStatus(items);
   await render(items);
 
-  const shortcutStored = await chrome.storage.sync.get(['kfavShortcuts', 'kfavShortcutsVisible']);
-  const rawShortcuts = shortcutStored.kfavShortcuts;
-  const shortcutArr = Array.isArray(rawShortcuts) ? rawShortcuts : rawShortcuts ? [rawShortcuts] : [];
-  shortcutEntries = shortcutArr.map((item, idx) => normalizeShortcutEntryLocal(item, idx)).filter(Boolean);
-  shortcutEntries = sortShortcutEntriesLocal(shortcutEntries);
+  const [core, shortcutStored] = await Promise.all([
+    import('./core.js'),
+    chrome.storage.sync.get(['kfavShortcutsVisible'])
+  ]);
+  shortcutEntries = core
+    .sortShortcuts(await core.loadShortcuts())
+    .map((item, idx) => normalizeShortcutEntryLocal(item, idx))
+    .filter(Boolean);
   const visibleFlag = shortcutStored.kfavShortcutsVisible;
   shortcutsVisible = typeof visibleFlag === 'boolean' ? visibleFlag : true;
   if (shortcutToggleEl) shortcutToggleEl.checked = shortcutsVisible;
   renderShortcutEntries();
 
-  const stored = await chrome.storage.sync.get('kfavSchedule');
-  const raw = stored.kfavSchedule;
-  const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
-  scheduleEntries = arr.map(normalizeScheduleEntry).filter(Boolean);
-  renderScheduleEntries();
-  resetScheduleForm();
-
-  const pinsStored = await chrome.storage.sync.get('kfavPins');
+  const pinsStored = await chrome.storage.sync.get(['kfavPins', PIN_VISIBLE_KEY]);
   const pinRaw = pinsStored.kfavPins;
   const pinArr = Array.isArray(pinRaw) ? pinRaw : pinRaw ? [pinRaw] : [];
   pinnedEntries = pinArr.map(normalizePinnedEntry).filter(Boolean);
   renderPinnedEntries();
   resetPinnedForm();
+  const pinVisibleFlag = pinsStored[PIN_VISIBLE_KEY];
+  const pinVisible = typeof pinVisibleFlag === 'boolean' ? pinVisibleFlag : true;
+  if (pinVisibleToggleEl) pinVisibleToggleEl.checked = pinVisible;
 
-  await loadExcelColumnPrefs();
+  await Promise.all([
+    loadExcelColumnPrefs(),
+    loadExcelOverlayMode()
+  ]);
 })();
 
 if (chrome?.storage?.onChanged) {
@@ -1116,74 +1611,25 @@ if (chrome?.storage?.onChanged) {
       pinnedEntries = arr.map(normalizePinnedEntry).filter(Boolean);
       renderPinnedEntries();
     }
-    if (area === 'sync' && Object.prototype.hasOwnProperty.call(changes, 'kfavSchedule')) {
-      const next = changes.kfavSchedule.newValue;
-      const arr = Array.isArray(next) ? next : next ? [next] : [];
-      scheduleEntries = arr.map(normalizeScheduleEntry).filter(Boolean);
-      renderScheduleEntries();
+    if (area === 'sync' && Object.prototype.hasOwnProperty.call(changes, PIN_VISIBLE_KEY)) {
+      const flag = typeof changes[PIN_VISIBLE_KEY].newValue === 'boolean'
+        ? changes[PIN_VISIBLE_KEY].newValue
+        : true;
+      if (pinVisibleToggleEl) pinVisibleToggleEl.checked = flag;
     }
     if (area === 'sync' && Object.prototype.hasOwnProperty.call(changes, EXCEL_COLUMN_PREF_KEY)) {
       excelColumnPrefs = normalizeExcelColumnPrefs(changes[EXCEL_COLUMN_PREF_KEY].newValue);
       renderExcelColumnPrefs();
     }
+    if (area === 'sync' && Object.prototype.hasOwnProperty.call(changes, EXCEL_OVERLAY_MODE_KEY)) {
+      const mode = normalizeExcelOverlayMode(changes[EXCEL_OVERLAY_MODE_KEY].newValue);
+      excelModeInputs.forEach((input) => {
+        input.checked = input.value === mode;
+      });
+    }
   });
 }
 
-// ---- schedule save ----
-schUrlEl?.addEventListener('change', async () => {
-  // URLからhost/appIdを補完
-  const raw = schUrlEl.value.trim();
-  const parsed = parseKintoneUrl(raw);
-  if (parsed.host && !schAppIdEl.value) schAppIdEl.value = parsed.appId || '';
-  const host = parsed.host || hostFromUrl(raw);
-  if (host) {
-    if (hostPermInputEl) hostPermInputEl.value = host;
-    await updatePermStatus(host);
-  }
-  setScheduleStatus('');
-});
-
-schResetBtn?.addEventListener('click', () => {
-  resetScheduleForm();
-});
-schSaveBtn?.addEventListener('click', async () => {
-  const label = schLabelEl?.value.trim() || '';
-  const url = schUrlEl.value.trim();
-  const parsed = parseKintoneUrl(url);
-  const host = parsed.host || hostFromUrl(url);
-  if (hostPermInputEl && host) hostPermInputEl.value = host;
-  const appId = (schAppIdEl.value || parsed.appId || '').toString().trim();
-  const dateField = schDateFieldEl.value.trim();
-  const titleField = schTitleFieldEl.value.trim();
-  const extraQuery = schExtraQueryEl.value.trim();
-  const limit = Math.max(1, Math.min(100, parseInt(schLimitEl.value || '20', 10)));
-
-  if (!host || !appId || !dateField) {
-    alert('host / App ID / 日付フィールドは必須です');
-    return;
-  }
-
-  const entry = normalizeScheduleEntry({
-    id: scheduleEditingId || createId(),
-    label,
-    host,
-    appId,
-    dateField,
-    titleField,
-    extraQuery,
-    limit
-  });
-  const idx = scheduleEntries.findIndex((item) => item.id === entry.id);
-  if (idx >= 0) scheduleEntries[idx] = entry;
-  else scheduleEntries.push(entry);
-
-  await saveScheduleEntries();
-  renderScheduleEntries();
-  setScheduleStatus(scheduleEditingId ? '更新しました。' : '追加しました。');
-  resetScheduleForm();
-});
-
-// ---- kintoneフィールド検出 ----
 function hostFromUrl(u){
   if (!u) return '';
   try {
@@ -1197,44 +1643,29 @@ function hostFromUrl(u){
   }
 }
 
-schDetectBtn?.addEventListener('click', async () => {
-  const hostHint = hostFromUrl(schUrlEl.value || '');
-  const appId = schAppIdEl.value || parseKintoneUrl(schUrlEl.value || '').appId || '';
-  if (!hostHint) { setScheduleStatus('先に kintone URL を入力し、ホストを特定してください。'); return; }
-  if (!appId) { alert('App ID を入力してから実行してください'); return; }
-  if (!(await hasHostPermission(hostHint))) {
-    setScheduleStatus('このホストの許可が必要です。全般タブの「ホストアクセス許可」で許可してください。');
-    return;
-  }
-  try {
-    setScheduleStatus('フィールド情報を取得中…');
-    const res = await chrome.runtime.sendMessage({
-      type: 'RUN_IN_KINTONE',
-      host: hostHint,
-      forward: { type: 'LIST_FIELDS', payload: { appId } }
-    });
-    if (!res?.ok) throw new Error(res?.error || 'LIST_FIELDS failed');
-    const fields = res.fields || [];
-    const dateCandidates = fields.filter(f => f.type === 'DATE' || f.type === 'DATETIME');
-    dateFieldList.innerHTML = '';
-    dateCandidates.forEach(f => {
-      const opt = document.createElement('option');
-      opt.value = f.code;
-      opt.label = `${f.label} (${f.code})`;
-      dateFieldList.appendChild(opt);
-    });
-    const titleCandidates = fields.filter(f => ['SINGLE_LINE_TEXT','MULTI_LINE_TEXT','RICH_TEXT','LINK'].includes(f.type));
-    titleFieldList.innerHTML = '';
-    titleCandidates.forEach(f => {
-      const opt = document.createElement('option');
-      opt.value = f.code;
-      opt.label = `${f.label} (${f.code})`;
-      titleFieldList.appendChild(opt);
-    });
-    setScheduleStatus('フィールド候補を更新しました（入力欄の候補から選択できます）');
-  } catch (e) {
-    setScheduleStatus('フィールド検出に失敗：' + String(e?.message || e));
-  }
+function normalizeExcelOverlayMode(value) {
+  return EXCEL_OVERLAY_MODE_VALUES.includes(value) ? value : DEFAULT_EXCEL_OVERLAY_MODE;
+}
+
+async function loadExcelOverlayMode() {
+  if (!excelModeInputs.length) return;
+  const stored = await chrome.storage.sync.get(EXCEL_OVERLAY_MODE_KEY);
+  const mode = normalizeExcelOverlayMode(stored[EXCEL_OVERLAY_MODE_KEY]);
+  excelModeInputs.forEach((input) => {
+    input.checked = input.value === mode;
+  });
+}
+
+async function saveExcelOverlayMode(modeValue) {
+  const mode = normalizeExcelOverlayMode(modeValue);
+  await chrome.storage.sync.set({ [EXCEL_OVERLAY_MODE_KEY]: mode });
+}
+
+excelModeInputs.forEach((input) => {
+  input.addEventListener('change', async () => {
+    if (!input.checked) return;
+    await saveExcelOverlayMode(input.value);
+  });
 });
 
 // ---- Excel column prefs ----
@@ -1285,7 +1716,7 @@ function renderExcelColumnPrefs() {
   if (!entries.length) {
     const li = document.createElement('li');
     li.className = 'excel-columns-empty';
-    li.textContent = '保存済みの列順はありません。';
+    li.innerHTML = '保存済みの列レイアウトはありません。<br/>一覧画面で列並びや列幅を変更すると、ここに保存されます。';
     excelListEl.appendChild(li);
     return;
   }
@@ -1304,25 +1735,34 @@ function renderExcelColumnPrefs() {
     const meta = document.createElement('div');
     meta.className = 'excel-columns-meta';
     const count = document.createElement('span');
-    count.textContent = `列数: ${entry.count}`;
+    count.textContent = `列順: ${entry.count}列`;
+    const widthInfo = document.createElement('span');
+    widthInfo.textContent = `幅設定: ${entry.widthCount}列`;
     const saved = document.createElement('span');
     saved.textContent = `保存: ${formatPrefDate(entry.savedAt)}`;
     meta.appendChild(count);
-    if (entry.widthCount > 0) {
-      const widthInfo = document.createElement('span');
-      widthInfo.textContent = `幅設定: ${entry.widthCount}列`;
-      meta.appendChild(widthInfo);
-    }
+    meta.appendChild(widthInfo);
     meta.appendChild(saved);
     info.appendChild(title);
     info.appendChild(meta);
 
     const actions = document.createElement('div');
     actions.className = 'excel-columns-actions';
+    const clearOrderBtn = document.createElement('button');
+    clearOrderBtn.type = 'button';
+    clearOrderBtn.textContent = '並びを解除';
+    clearOrderBtn.addEventListener('click', () => { clearExcelPrefOrder(entry.key); });
+    const clearWidthBtn = document.createElement('button');
+    clearWidthBtn.type = 'button';
+    clearWidthBtn.textContent = '幅を解除';
+    clearWidthBtn.addEventListener('click', () => { clearExcelPrefWidths(entry.key); });
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.textContent = '削除';
+    removeBtn.className = 'btn-danger-subtle';
     removeBtn.addEventListener('click', () => { removeExcelPref(entry.key); });
+    actions.appendChild(clearOrderBtn);
+    actions.appendChild(clearWidthBtn);
     actions.appendChild(removeBtn);
 
     li.appendChild(info);
@@ -1338,22 +1778,52 @@ async function loadExcelColumnPrefs() {
   renderExcelColumnPrefs();
 }
 
-async function removeExcelPref(key) {
-  if (!key || !excelColumnPrefs[key]) return;
-  const next = { ...excelColumnPrefs };
-  delete next[key];
-  excelColumnPrefs = next;
+async function saveExcelColumnPrefsMap(next) {
   if (Object.keys(next).length) {
     await chrome.storage.sync.set({ [EXCEL_COLUMN_PREF_KEY]: next });
   } else {
     await chrome.storage.sync.remove(EXCEL_COLUMN_PREF_KEY);
   }
+}
+
+async function clearExcelPrefOrder(key) {
+  if (!key || !excelColumnPrefs[key]) return;
+  const current = excelColumnPrefs[key];
+  const nextEntry = { ...current, order: [], savedAt: Date.now() };
+  const shouldDelete = !nextEntry.order.length && !Object.keys(nextEntry.widths || {}).length;
+  const next = { ...excelColumnPrefs };
+  if (shouldDelete) delete next[key];
+  else next[key] = nextEntry;
+  excelColumnPrefs = next;
+  await saveExcelColumnPrefsMap(next);
+  renderExcelColumnPrefs();
+}
+
+async function clearExcelPrefWidths(key) {
+  if (!key || !excelColumnPrefs[key]) return;
+  const current = excelColumnPrefs[key];
+  const nextEntry = { ...current, widths: {}, savedAt: Date.now() };
+  const shouldDelete = !nextEntry.order.length && !Object.keys(nextEntry.widths || {}).length;
+  const next = { ...excelColumnPrefs };
+  if (shouldDelete) delete next[key];
+  else next[key] = nextEntry;
+  excelColumnPrefs = next;
+  await saveExcelColumnPrefsMap(next);
+  renderExcelColumnPrefs();
+}
+
+async function removeExcelPref(key) {
+  if (!key || !excelColumnPrefs[key]) return;
+  const next = { ...excelColumnPrefs };
+  delete next[key];
+  excelColumnPrefs = next;
+  await saveExcelColumnPrefsMap(next);
   renderExcelColumnPrefs();
 }
 
 excelClearBtn?.addEventListener('click', async () => {
   if (!Object.keys(excelColumnPrefs).length) return;
-  if (!window.confirm('保存済みの列順をすべて削除します。よろしいですか？')) return;
+  if (!window.confirm('保存済みの列レイアウトをすべて削除します。よろしいですか？')) return;
   excelColumnPrefs = {};
   await chrome.storage.sync.remove(EXCEL_COLUMN_PREF_KEY);
   renderExcelColumnPrefs();
@@ -1433,6 +1903,10 @@ hostPermCheckBtn?.addEventListener('click', async () => {
 pinResetBtn?.addEventListener('click', () => {
   resetPinnedForm();
 });
+pinVisibleToggleEl?.addEventListener('change', async () => {
+  const visible = Boolean(pinVisibleToggleEl.checked);
+  await chrome.storage.sync.set({ [PIN_VISIBLE_KEY]: visible });
+});
 pinSaveBtn?.addEventListener('click', async () => {
   const label = pinLabelEl?.value.trim() || '';
   const url = pinUrlEl.value.trim();
@@ -1449,7 +1923,7 @@ pinSaveBtn?.addEventListener('click', async () => {
   }
 
   const entry = normalizePinnedEntry({
-    id: pinEditingId || createId(),
+    id: createId(),
     label,
     host,
     appId,
@@ -1457,9 +1931,7 @@ pinSaveBtn?.addEventListener('click', async () => {
     titleField,
     note
   });
-  const idx = pinnedEntries.findIndex((item) => item.id === entry.id);
-  if (idx >= 0) pinnedEntries[idx] = entry;
-  else pinnedEntries.push(entry);
+  pinnedEntries.push(entry);
 
   await savePinnedEntries();
   renderPinnedEntries();
@@ -1470,4 +1942,10 @@ pinUrlEl?.addEventListener('change', () => {
   const parsed = parseKintoneUrl(raw);
   if (parsed.appId && !pinAppIdEl.value) pinAppIdEl.value = parsed.appId;
   if (parsed.recordId && !pinRecordIdEl.value) pinRecordIdEl.value = parsed.recordId;
+});
+pinEditUrlEl?.addEventListener('change', () => {
+  const raw = pinEditUrlEl.value.trim();
+  const parsed = parseKintoneUrl(raw);
+  if (parsed.appId && pinEditAppIdEl && !pinEditAppIdEl.value) pinEditAppIdEl.value = parsed.appId;
+  if (parsed.recordId && pinEditRecordIdEl && !pinEditRecordIdEl.value) pinEditRecordIdEl.value = parsed.recordId;
 });

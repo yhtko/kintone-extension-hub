@@ -1,6 +1,14 @@
 ﻿// service_worker.js
 // 目的：アクティブな kintone タブがあるときに、指定ウォッチリスト項目の件数を取得して拡張アイコンのバッジ表示を更新
-import { createId, isKintoneUrl, parseKintoneUrl } from './core.js';
+import {
+  createId,
+  isKintoneUrl,
+  parseKintoneUrl,
+  loadShortcuts,
+  saveShortcuts,
+  upsertRecentRecord,
+  saveAppNameMap
+} from './core.js';
 
 async function pickBadgeTarget() {
   const { kintoneFavorites = [], kfavBadgeTargetId = null } = await chrome.storage.sync.get([
@@ -70,14 +78,18 @@ chrome.runtime.onInstalled.addListener(() => {
       }
     }
   } catch (e) {
-    warmupConnectorTabs(); /// 既存設定からホストを読み、コネクタタブを確保
+    // 起動時/導入時に自動でタブを作成しない
   }
 
   setupContextMenus();
+  migrateShortcutsFillIconFieldsOnce().catch(() => {});
 });
 
-chrome.runtime.onStartup?.addListener(() => warmupConnectorTabs());
+// 起動時に自動でコネクタタブを作成しない
 chrome.runtime.onStartup?.addListener(() => setupContextMenus());
+chrome.runtime.onStartup?.addListener(() => {
+  migrateShortcutsFillIconFieldsOnce().catch(() => {});
+});
 
 const PIN_MENU_ID = 'kfav-pin-record';
 const FAVORITE_PARENT_ID = 'kfav-favorite-parent';
@@ -208,47 +220,37 @@ function flashBadge(tabId, text, color) {
   }
 }
 
-const SHORTCUT_TYPES = ['appTop', 'view', 'create'];
-const MAX_SHORTCUT_INITIAL_LENGTH = 2;
+const DEFAULT_SHORTCUT_ICON = 'file-text';
+const DEFAULT_SHORTCUT_ICON_COLOR = 'gray';
+const SHORTCUT_ICON_MIGRATION_KEY = 'kfavShortcutsIconMigratedV1';
 
-function normalizeShortcutInitial(value) {
-  if (value == null) return '';
-  const str = String(value).trim();
-  if (!str) return '';
-  return Array.from(str).slice(0, MAX_SHORTCUT_INITIAL_LENGTH).join('');
-}
-
-function sanitizeShortcutForStorage(entry, order) {
-  const type = SHORTCUT_TYPES.includes(entry?.type) ? entry.type : 'appTop';
-  const host = typeof entry?.host === 'string' ? entry.host : '';
-  const appId = entry?.appId == null ? '' : String(entry.appId).trim();
-  const viewVal = type === 'view' ? (entry?.viewIdOrName == null ? '' : String(entry.viewIdOrName).trim()) : '';
-  const label = entry?.label == null ? '' : String(entry.label);
-  const initial = normalizeShortcutInitial(entry?.initial);
-  return {
-    id: entry?.id || createId(),
-    type,
-    host,
-    appId,
-    viewIdOrName: viewVal,
-    label,
-    initial,
-    order
-  };
-}
-
-async function loadShortcutList() {
-  const stored = await chrome.storage.sync.get('kfavShortcuts');
-  const raw = stored.kfavShortcuts;
+function toShortcutArray(raw) {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw.slice();
   if (raw && typeof raw === 'object') return [raw];
   return [];
 }
 
-async function saveShortcutList(list) {
-  const payload = (list || []).map((item, index) => sanitizeShortcutForStorage(item, index));
-  await chrome.storage.sync.set({ kfavShortcuts: payload });
+async function migrateShortcutsFillIconFieldsOnce() {
+  try {
+    const mark = await chrome.storage.local.get(SHORTCUT_ICON_MIGRATION_KEY);
+    if (mark?.[SHORTCUT_ICON_MIGRATION_KEY]) return;
+  } catch (_err) {
+    // ignore
+  }
+
+  const stored = await chrome.storage.sync.get('kfavShortcuts');
+  const list = toShortcutArray(stored.kfavShortcuts);
+  if (list.length) {
+    const normalized = await loadShortcuts();
+    await saveShortcuts(normalized);
+  }
+
+  try {
+    await chrome.storage.local.set({ [SHORTCUT_ICON_MIGRATION_KEY]: true });
+  } catch (_err) {
+    // ignore
+  }
 }
 
 function favoriteUrlOf(host, appId, viewIdOrName) {
@@ -347,7 +349,7 @@ async function handleShortcutContextMenu(menuId, info, tab) {
     flashBadge(tab?.id, '!', '#e67e22');
     return;
   }
-  const list = await loadShortcutList();
+  const list = await loadShortcuts();
   const appIdStr = String(appId || '').trim();
   const normalizedView = type === 'view' ? String(viewIdOrName || '') : '';
   const duplicate = list.some((item) => {
@@ -372,9 +374,11 @@ async function handleShortcutContextMenu(menuId, info, tab) {
     viewIdOrName: normalizedView,
     label,
     initial: '',
+    icon: DEFAULT_SHORTCUT_ICON,
+    iconColor: DEFAULT_SHORTCUT_ICON_COLOR,
     order: list.length
   });
-  await saveShortcutList(list);
+  await saveShortcuts(list);
   flashBadge(tab?.id, '+', '#2980b9');
 }
 
@@ -387,11 +391,21 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function normalizeHostOrigin(host) {
+  const raw = String(host || '').trim();
+  if (!raw) return '';
+  try {
+    return new URL(raw).origin.replace(/\/$/, '');
+  } catch (_err) {
+    return raw.replace(/\/$/, '');
+  }
+}
+
 const READY_CHECK_INTERVAL_MS = 400;
 const READY_CHECK_SHORT_ATTEMPTS = 5;
-const READY_CHECK_LONG_ATTEMPTS = 12;
-const CONNECTOR_NEW_TAB_DELAY_MS = 800;
 const SIGN_IN_REQUIRED_MESSAGE = 'kintoneにサインインしてから再実行してください';
+const APPS_MAP_PAGE_LIMIT = 100;
+const APPS_MAP_MAX_PAGES = 200;
 
 async function checkKintoneReady(tabId) {
   if (!tabId) return false;
@@ -447,44 +461,94 @@ async function ensureConnectorTab(host) {
     const ready = await prepareConnectorTab(tab.id, READY_CHECK_SHORT_ATTEMPTS);
     if (ready) return tab;
   }
-  const tab = await chrome.tabs.create({
-    url: `${host}/k/`,
-    active: false
-  });
-  if (!tab?.id) throw new Error('connector tab could not be created');
-  await sleep(CONNECTOR_NEW_TAB_DELAY_MS);
-  const readyNew = await prepareConnectorTab(tab.id, READY_CHECK_LONG_ATTEMPTS);
-  if (!readyNew) {
-    throw new Error(SIGN_IN_REQUIRED_MESSAGE);
+  if (!existing.length) {
+    throw new Error('No open kintone tab found for this host');
   }
-  return tab;
+  throw new Error(SIGN_IN_REQUIRED_MESSAGE);
 }
 
-async function warmupConnectorTabs() {
-  // 設定から参照される host を収集（スケジュール設定 + ウォッチリスト）
-  const { kfavSchedule = null, kintoneFavorites = [], kfavPins = null } = await chrome.storage.sync.get(['kfavSchedule','kintoneFavorites','kfavPins']);
-  const hosts = new Set();
-  const scheduleEntries = Array.isArray(kfavSchedule) ? kfavSchedule : kfavSchedule ? [kfavSchedule] : [];
-  for (const entry of scheduleEntries) {
-    if (entry?.host) hosts.add(entry.host);
+async function runForwardOnHost(host, forward) {
+  const safeHost = normalizeHostOrigin(host);
+  if (!safeHost) throw new Error('host required');
+  const tab = await ensureConnectorTab(safeHost);
+  if (!tab) throw new Error('no tab');
+  await ensureInjection(tab.id);
+  return await chrome.tabs.sendMessage(tab.id, forward);
+}
+
+async function fetchAppsMap(host) {
+  const safeHost = normalizeHostOrigin(host);
+  if (!safeHost) throw new Error('host required');
+  const out = {};
+  let offset = 0;
+  for (let page = 0; page < APPS_MAP_MAX_PAGES; page++) {
+    const url = `${safeHost}/k/v1/apps.json?limit=${APPS_MAP_PAGE_LIMIT}&offset=${offset}`;
+    const resp = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      console.debug('[kfav] apps.json failed', { url, status: resp.status, text: String(text).slice(0, 300) });
+      throw new Error(`apps.json failed (${resp.status})`);
+    }
+    const json = await resp.json();
+    const apps = Array.isArray(json?.apps) ? json.apps : [];
+    apps.forEach((item) => {
+      const appId = String(item?.appId || item?.id || '').trim();
+      const name = String(item?.name || '').trim();
+      if (!appId || !name) return;
+      out[appId] = name;
+    });
+    if (apps.length < APPS_MAP_PAGE_LIMIT) break;
+    offset += apps.length;
   }
-  const pinEntries = Array.isArray(kfavPins) ? kfavPins : kfavPins ? [kfavPins] : [];
-  for (const entry of pinEntries) {
-    if (entry?.host) hosts.add(entry.host);
+  return out;
+}
+
+async function fetchAppsMapByAppIds(host, appIds) {
+  const safeHost = normalizeHostOrigin(host);
+  const uniqueIds = Array.from(new Set((appIds || []).map((id) => String(id || '').trim()).filter((id) => /^\d+$/.test(id))));
+  const out = {};
+  if (!safeHost || !uniqueIds.length) return out;
+  for (const appId of uniqueIds) {
+    const url = `${safeHost}/k/v1/app.json?id=${encodeURIComponent(appId)}`;
+    try {
+      const resp = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      });
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        console.debug('[kfav] app.json fallback failed', { url, status: resp.status, text: String(text).slice(0, 300) });
+        continue;
+      }
+      const data = await resp.json();
+      const name = String(data?.name || data?.app?.name || '').trim();
+      if (name) out[appId] = name;
+    } catch (error) {
+      console.debug('[kfav] app.json fallback error', { appId, error: String(error?.message || error) });
+    }
   }
-  for (const f of (kintoneFavorites||[])) {
-    try { const h = new URL(f.url).origin; if (isKintoneUrl(h)) hosts.add(h); } catch {}
-  }
-  for (const h of hosts) { try { await ensureConnectorTab(h); } catch {} }
+  return out;
 }
 
 // ===== UIから「kintoneで実行して結果を返して」の汎用エンドポイント =====
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     if (msg?.type === 'WARMUP_CONNECTOR') {
-      if (!msg.host) { sendResponse({ ok: false, error: 'host required' }); return; }
+      const safeHost = normalizeHostOrigin(msg.host);
+      if (!safeHost) { sendResponse({ ok: false, error: 'host required' }); return; }
       try {
-        await ensureConnectorTab(msg.host);
+        await ensureConnectorTab(safeHost);
         sendResponse({ ok: true });
       } catch (e) {
         sendResponse({ ok: false, error: String(e) });
@@ -492,17 +556,50 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
 
+    if (msg?.type === 'RECENT_UPSERT') {
+      try {
+        const list = await upsertRecentRecord(msg.payload || {});
+        sendResponse({ ok: true, size: Array.isArray(list) ? list.length : 0 });
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e) });
+      }
+      return;
+    }
+
+    if (msg?.type === 'GET_APPS_MAP') {
+      const safeHost = normalizeHostOrigin(msg?.payload?.host || msg?.host);
+      const appIds = Array.isArray(msg?.payload?.appIds)
+        ? msg.payload.appIds
+        : (Array.isArray(msg?.appIds) ? msg.appIds : []);
+      if (!safeHost) {
+        sendResponse({ ok: false, error: 'host required' });
+        return;
+      }
+      try {
+        const map = await fetchAppsMap(safeHost);
+        await saveAppNameMap(safeHost, map);
+        console.debug('[kfav] apps map loaded', { host: safeHost, size: Object.keys(map).length });
+        sendResponse({ ok: true, host: safeHost, map });
+      } catch (error) {
+        console.debug('[kfav] apps map load failed', { host: safeHost, error: String(error?.message || error) });
+        const fallbackMap = await fetchAppsMapByAppIds(safeHost, appIds);
+        if (Object.keys(fallbackMap).length) {
+          await saveAppNameMap(safeHost, fallbackMap);
+          console.debug('[kfav] apps map fallback loaded', { host: safeHost, size: Object.keys(fallbackMap).length });
+          sendResponse({ ok: true, host: safeHost, map: fallbackMap, fallback: true });
+          return;
+        }
+        sendResponse({ ok: false, host: safeHost, error: String(error?.message || error), map: {} });
+      }
+      return;
+    }
+
     if (msg?.type !== 'RUN_IN_KINTONE') return;
-    const { host, forward } = msg; // forward: { type: 'LIST_FIELDS' | 'LIST_SCHEDULE' | 'LIST_VIEWS' | ... , payload: {...} }
-    if (!host || !forward?.type) { sendResponse({ ok:false, error:'bad request' }); return; }
+    const safeHost = normalizeHostOrigin(msg.host);
+    const { forward } = msg; // forward: { type: 'LIST_FIELDS' | 'LIST_SCHEDULE' | 'LIST_VIEWS' | ... , payload: {...} }
+    if (!safeHost || !forward?.type) { sendResponse({ ok:false, error:'bad request' }); return; }
     try {
-      // 既存kintoneタブ or コネクタタブを用意
-      const tab = await ensureConnectorTab(host);
-      if (!tab) { sendResponse({ ok:false, error:'no tab' }); return; }
-      // 念のため注入
-      await ensureInjection(tab.id);
-      // ページ文脈へプロキシ実行
-      const res = await chrome.tabs.sendMessage(tab.id, forward);
+      const res = await runForwardOnHost(safeHost, forward);
       sendResponse(res || { ok:false, error:'no response' });
     } catch (e) {
       sendResponse({ ok:false, error:String(e) });
@@ -540,8 +637,7 @@ chrome.action.onClicked.addListener(async (tab) => {
       // フォールバックに進む
     }
   }
-  // フォールバック：通常タブでUIを開く
-  await chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html') });
+  // 自動で拡張ページのタブを作成しない
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -555,9 +651,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         await chrome.sidePanel.open?.({ tabId });
         sendResponse({ ok: true });
       } else {
-        // フォールバック：新規タブで開く
-       await chrome.tabs.create({ url: chrome.runtime.getURL(path) });
-       sendResponse({ ok: true, fallback: true });
+        sendResponse({ ok: false, error: 'sidePanel API is not available' });
       }
     } catch (e) {
       sendResponse({ ok: false, error: String(e) });

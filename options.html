@@ -12,8 +12,8 @@
       <h1>kintone Base 設定</h1>
       <nav class="menu" aria-label="設定メニュー">
         <button type="button" class="menu-item is-active" data-pane-target="general">全般</button>
+        <button type="button" class="menu-item" data-pane-target="excel-overlay">Excel Overlay</button>
         <button type="button" class="menu-item" data-pane-target="watchlist">ウォッチリスト</button>
-        <button type="button" class="menu-item" data-pane-target="schedule">直近スケジュール</button>
         <button type="button" class="menu-item" data-pane-target="pins">ピン止め</button>
         <button type="button" class="menu-item" data-pane-target="shortcuts">ショートカット</button>
       </nav>
@@ -29,7 +29,6 @@
           <h2>使い方のヒント</h2>
           <ul class="general-tips">
             <li>ウォッチリストに登録したアプリはサイドパネルから素早く開けます。</li>
-            <li>直近スケジュールはアプリごとに日付フィールドを指定して集計します。</li>
             <li>ピン止めは重要レコードをメモ付きで保存できます。</li>
             <li>ショートカットはよく使う画面を Chrome から直接開くためのリンクです。</li>
           </ul>
@@ -48,37 +47,78 @@
           </div>
           <p class="hint">InPrivate で利用する場合は拡張機能の「InPrivate で許可」をオンにしてから実行してください。</p>
         </section>
+      </section>
+
+      <section class="pane" data-pane="excel-overlay" aria-labelledby="pane-excel-overlay-title">
         <section class="card">
-          <h2>Excelモードの列カスタマイズ</h2>
-          <p class="hint">Excelモードで保存した列順の一覧です。不要な設定は削除したり、まとめてリセットできます。</p>
+          <h2 id="pane-excel-overlay-title">Excel Overlay</h2>
+          <p class="hint">kintone 一覧画面で Excel風 Overlay を利用します。モードに応じて、無効・閲覧専用・編集可能を切り替えます。</p>
+          <fieldset class="excel-mode-group">
+            <legend>利用モード</legend>
+            <label class="excel-mode-option">
+              <input type="radio" name="excel_overlay_mode" value="off" />
+              <span>無効</span>
+              <small class="hint">Overlay を起動しません。標準の kintone 一覧を使います。</small>
+            </label>
+            <label class="excel-mode-option">
+              <input type="radio" name="excel_overlay_mode" value="view" />
+              <span>閲覧のみ</span>
+              <small class="hint">フィルタ・ソート・コピー・列レイアウト変更は可能、編集保存は不可です。</small>
+            </label>
+            <label class="excel-mode-option">
+              <input type="radio" name="excel_overlay_mode" value="edit" />
+              <span>編集可能</span>
+              <small class="hint">現在の Excel Overlay 機能をフルに利用できます。</small>
+            </label>
+          </fieldset>
+        </section>
+
+        <section class="card">
+          <h2>列レイアウト設定</h2>
+          <p class="hint">一覧画面で保存された列並び・列幅を管理します。閲覧のみモードでも列レイアウト保存は利用できます。</p>
           <div class="actions actions--end">
             <button id="excel_columns_clear" type="button">すべてリセット</button>
           </div>
-          <ul id="excel_columns_list" class="excel-columns-list"></ul>
+          <ul id="excel_columns_list" class="excel-columns-list excel-layout-list"></ul>
+        </section>
+
+        <section class="card">
+          <h2>補足</h2>
+          <p class="hint">今後、列表示設定や固定列などもこのセクションに追加予定です。</p>
         </section>
       </section>
 
       <section class="pane" data-pane="watchlist" aria-labelledby="pane-watchlist-title">
         <section class="card">
           <h2 id="pane-watchlist-title">ウォッチリストに追加</h2>
-          <label>表示名（任意）<br/>
-            <input id="label" placeholder="例：受注一覧（未出荷）"/>
-          </label>
-          
-          <label>kintone URL（アプリ／ビュー）<br/>
-            <input id="url" placeholder="例：https://xxx.cybozu.com/k/45/?view=123"/>
-          </label>
-          
-          <div class="grid icon-cat-grid">
-            <label>アイコン<br/>
-              <select id="icon"></select>
-            </label>
-            <label>カテゴリ（任意）<br/>
-              <input id="category" placeholder="例： 営業" />
-            </label>
+          <div class="watch-form-grid">
+            <div class="watch-form-col">
+              <label>表示名（任意）<br/>
+                <input id="label" placeholder="例：受注一覧（未出荷）"/>
+              </label>
+
+              <label>kintone URL（アプリ／ビュー）<br/>
+                <input id="url" placeholder="例：https://xxx.cybozu.com/k/45/?view=123"/>
+              </label>
+            </div>
+
+            <div class="watch-form-col">
+              <div class="grid icon-cat-grid watch-meta-grid">
+                <label>カテゴリ（任意）<br/>
+                  <input id="category" list="categorySuggestions" placeholder="例：営業" />
+                </label>
+                <label>アイコン<br/>
+                  <select id="icon"></select>
+                  <span id="iconPreview" class="icon-preview lc" data-icon="file-text" aria-hidden="true"></span>
+                </label>
+                <label>アイコン色<br/>
+                  <select id="iconColor"></select>
+                </label>
+              </div>
+            </div>
           </div>
-          <p class="hint">※ アイコンはショートカット行、カテゴリはサイドパネルのグループ分けに利用されます。</p>
-          
+          <p class="hint">※ アイコンと色はショートカット/ウォッチ行に反映されます。カテゴリはサイドパネルのグループ分けに利用されます。</p>
+
           <details>
             <summary>高度な設定（手動指定）</summary>
             <div class="grid">
@@ -89,56 +129,15 @@
             <p class="hint">※ View を指定するとそのフィルタ条件で件数カウント。Query を指定した場合は View より優先します。</p>
           </details>
 
-          <div class="actions">
+          <div class="actions actions--end">
             <button id="add">追加</button>
           </div>
         </section>
 
         <section class="card">
           <h2>登録済みウォッチリスト</h2>
-          <p class="hint">ドラッグで並び替え／📌で固定／◎でバッジ対象／✏️で編集できます。</p>
+          <p class="hint">ドラッグで並び替え。右上のアイコンで固定・開く・編集・削除ができます。詳細は各カードの「詳細」を展開してください。</p>
           <ul id="list"></ul>
-        </section>
-      </section>
-
-      <section class="pane" data-pane="schedule" aria-labelledby="pane-schedule-title">
-        <section class="card">
-          <h2 id="pane-schedule-title">直近スケジュール設定（先1週間を表示）</h2>
-          <p class="hint">※ 複数アプリを登録できます。サイドパネルで切り替えて表示します。</p>
-          <label>表示名（任意・サイドパネルに表示）<br/>
-            <input id="sch_label" placeholder="例：納期チェック" />
-          </label>
-          <label>kintone URL（例：アプリ一覧やビューのURL。ホスト検出に使用）<br/>
-            <input id="sch_url" placeholder="例：https://xxx.cybozu.com/k/45/?view=123"/>
-          </label>
-          <div class="grid">
-            <label>App ID<br/><input id="sch_appId" placeholder="45"/></label>
-            <label>日付フィールドコード<br/>
-              <input id="sch_dateField" list="dateFieldList" placeholder="例：納期"/>
-              <datalist id="dateFieldList"></datalist>
-            </label>
-            <label>タイトル用フィールドコード（任意）<br/>
-              <input id="sch_titleField" list="titleFieldList" placeholder="例：件名"/>
-              <datalist id="titleFieldList"></datalist>
-            </label>
-          </div>
-          <div class="actions">
-            <button id="sch_detect" class="btn" type="button">フィールドを検出</button>
-          </div>
-          <p class="hint" id="sch_status"></p>
-          <label>追加のクエリ（任意。and (...) で結合されます）<br/>
-            <input id="sch_extraQuery" placeholder='例：ステータス in ("未着手","進行中")'/>
-          </label>
-          <div class="grid">
-            <label>表示上限（既定20）<br/><input id="sch_limit" type="number" min="1" max="100" placeholder="20"/></label>
-            <div></div><div></div>
-          </div>
-          <div class="actions" style="gap:8px;">
-            <button id="sch_save">追加 / 更新</button>
-            <button id="sch_reset" type="button">入力をクリア</button>
-          </div>
-          <h3>登録済みスケジュール</h3>
-          <ul id="sch_list" class="schedule-list"></ul>
         </section>
       </section>
 
@@ -146,25 +145,46 @@
         <section class="card">
           <h2 id="pane-pins-title">ピン留めレコード</h2>
           <p class="hint">※ 気になるレコードを登録すると、サイドパネルの専用タブでメモ付きで表示できます。</p>
-          <label>表示名（任意）<br/>
-            <input id="pin_label" placeholder="例：重要案件A" />
+          <label class="shortcut-toggle">
+            <input id="pin_visible" type="checkbox" />
+            <span>サイドパネルにレコードピンを表示する</span>
           </label>
-          <label>kintone レコード URL<br/>
-            <input id="pin_url" placeholder="例：https://xxx.cybozu.com/k/45/show#record=12" />
-          </label>
-          <div class="grid">
-            <label>App ID<br/><input id="pin_appId" placeholder="45"/></label>
-            <label>レコードID<br/><input id="pin_recordId" placeholder="12"/></label>
-            <label>タイトル用フィールドコード（任意）<br/><input id="pin_titleField" placeholder="例：件名"/></label>
+          <p class="hint">この設定をオフにするとサイドパネルからレコードピンカード全体が非表示になります。</p>
+
+          <h3>ピン留めレコードを追加</h3>
+          <div class="pin-form-grid">
+            <div class="pin-form-col">
+              <label>表示名（任意）<br/>
+                <input id="pin_label" placeholder="例：重要案件A" />
+              </label>
+              <label>kintone レコード URL<br/>
+                <input id="pin_url" placeholder="例：https://xxx.cybozu.com/k/45/show#record=12" />
+              </label>
+              <div class="grid pin-inline-grid">
+                <label>App ID<br/><input id="pin_appId" placeholder="45"/></label>
+                <label>レコードID<br/><input id="pin_recordId" placeholder="12"/></label>
+              </div>
+            </div>
+            <div class="pin-form-col">
+              <label>初期メモ（任意）<br/>
+                <textarea id="pin_note" rows="5" placeholder="サイドパネルで編集できます"></textarea>
+              </label>
+              <details class="pin-titlefield-details">
+                <summary>高度な設定（手動指定）</summary>
+                <label>タイトル用フィールドコード（任意）<br/><input id="pin_titleField" placeholder="例：件名"/></label>
+              </details>
+            </div>
           </div>
-          <label>初期メモ（任意）<br/>
-            <textarea id="pin_note" rows="3" placeholder="サイドパネルで編集できます"></textarea>
-          </label>
-          <div class="actions" style="gap:8px;">
-            <button id="pin_save" type="button">追加 / 更新</button>
+
+          <div class="actions actions--end">
+            <button id="pin_save" type="button">追加</button>
             <button id="pin_reset" type="button">入力をクリア</button>
           </div>
+        </section>
+
+        <section class="card">
           <h3>登録済みピン</h3>
+          <p class="hint">カード右上のアイコンで開く・編集・削除ができます。詳細情報は「詳細」を展開してください。</p>
           <ul id="pin_list" class="pin-list"></ul>
         </section>
       </section>
@@ -184,39 +204,103 @@
     </main>
   </div>
   <!-- 編集ダイアログ -->
-  <dialog id="editDialog">
-    <form method="dialog" id="editForm">
-      <h3>ウォッチリストを編集</h3>
-      <label>表示名<br/>
-        <input id="edit_label" placeholder="例：受注一覧（未出荷）"/>
-      </label>
-      <label>kintone URL（アプリ／ビュー）<br/>
-        <input id="edit_url" placeholder="例：https://xxx.cybozu.com/k/45/?view=123"/>
-      </label>
-      <div class="grid icon-cat-grid">
-        <label>アイコン<br/>
-          <select id="edit_icon"></select>
-        </label>
-        <label>カテゴリ（任意）<br/>
-          <input id="edit_category" placeholder="例： 営業" />
-        </label>
-      </div>
-      <p class="hint">※ アイコンとカテゴリはショートカット／サイドパネルでそのまま利用されます。</p>
-      <details>
-        <summary>高度な設定（手動指定）</summary>
-        <div class="grid">
-          <label>App ID<br/><input id="edit_appId" placeholder="45"/></label>
-          <label>View ID/Name<br/><input id="edit_viewIdOrName" placeholder="123 または ビュー名"/></label>
-          <label>Query（任意）<br/><input id="edit_query" placeholder="ステータス in (&quot;未出荷&quot;)"/></label>
+  <dialog id="editDialog" class="edit-modal" role="dialog" aria-modal="true" aria-labelledby="editDialogTitle">
+    <form id="editForm" class="edit-modal-form">
+      <header class="edit-modal-head">
+        <h3 id="editDialogTitle">ウォッチリストを編集</h3>
+        <button id="editCloseX" type="button" class="modal-close-btn" aria-label="閉じる" title="閉じる">✕</button>
+      </header>
+
+      <div class="edit-modal-body">
+        <div class="edit-modal-grid">
+          <div class="edit-modal-col">
+            <label>表示名<br/>
+              <input id="edit_label" placeholder="例：受注一覧（未出荷）"/>
+            </label>
+            <label>kintone URL（アプリ／ビュー）<br/>
+              <input id="edit_url" placeholder="例：https://xxx.cybozu.com/k/45/?view=123"/>
+            </label>
+          </div>
+          <div class="edit-modal-col">
+            <div class="grid icon-cat-grid watch-meta-grid">
+              <label>カテゴリ（任意）<br/>
+                <input id="edit_category" list="categorySuggestions" placeholder="例：営業" />
+              </label>
+              <label>アイコン<br/>
+                <select id="edit_icon"></select>
+                <span id="editIconPreview" class="icon-preview lc" data-icon="file-text" aria-hidden="true"></span>
+              </label>
+              <label>アイコン色<br/>
+                <select id="edit_iconColor"></select>
+              </label>
+            </div>
+          </div>
         </div>
-        <p class="hint">※ Query を指定した場合は View より優先します。</p>
-      </details>
-      <menu class="dialog-actions">
-        <button value="cancel" type="reset">キャンセル</button>
-        <button id="editSave" value="default">保存</button>
-      </menu>
+        <p class="hint">※ アイコンと色、カテゴリはショートカット／サイドパネルでそのまま利用されます。</p>
+        <details>
+          <summary>高度な設定（手動指定）</summary>
+          <div class="grid">
+            <label>App ID<br/><input id="edit_appId" placeholder="45"/></label>
+            <label>View ID/Name<br/><input id="edit_viewIdOrName" placeholder="123 または ビュー名"/></label>
+            <label>Query（任意）<br/><input id="edit_query" placeholder="ステータス in (&quot;未出荷&quot;)"/></label>
+          </div>
+          <p class="hint">※ Query を指定した場合は View より優先します。</p>
+        </details>
+      </div>
+
+      <footer class="edit-modal-foot">
+        <p class="hint">変更内容は保存時のみ反映されます。</p>
+        <menu class="dialog-actions">
+          <button id="editCancel" type="button">キャンセル</button>
+          <button id="editSave" type="button">保存</button>
+        </menu>
+      </footer>
     </form>
   </dialog>
+  <dialog id="pinEditDialog" class="edit-modal" role="dialog" aria-modal="true" aria-labelledby="pinEditDialogTitle">
+    <form id="pinEditForm" class="edit-modal-form">
+      <header class="edit-modal-head">
+        <h3 id="pinEditDialogTitle">ピン止めを編集</h3>
+        <button id="pinEditCloseX" type="button" class="modal-close-btn" aria-label="閉じる" title="閉じる">✕</button>
+      </header>
+
+      <div class="edit-modal-body">
+        <div class="edit-modal-grid">
+          <div class="edit-modal-col">
+            <label>表示名（任意）<br/>
+              <input id="pin_edit_label" placeholder="例：重要案件A"/>
+            </label>
+            <label>kintone レコード URL<br/>
+              <input id="pin_edit_url" placeholder="例：https://xxx.cybozu.com/k/45/show#record=12"/>
+            </label>
+            <label>初期メモ（任意）<br/>
+              <textarea id="pin_edit_note" rows="4" placeholder="サイドパネルで編集できます"></textarea>
+            </label>
+          </div>
+          <div class="edit-modal-col">
+            <div class="grid">
+              <label>App ID<br/><input id="pin_edit_appId" placeholder="45"/></label>
+              <label>レコードID<br/><input id="pin_edit_recordId" placeholder="12"/></label>
+            </div>
+            <details>
+              <summary>高度な設定（手動指定）</summary>
+              <label>タイトル用フィールドコード（任意）<br/><input id="pin_edit_titleField" placeholder="例：件名"/></label>
+            </details>
+          </div>
+        </div>
+      </div>
+
+      <footer class="edit-modal-foot">
+        <p class="hint">変更内容は保存時のみ反映されます。</p>
+        <menu class="dialog-actions">
+          <button id="pinEditCancel" type="button">キャンセル</button>
+          <button id="pinEditSave" type="button">保存</button>
+        </menu>
+      </footer>
+    </form>
+  </dialog>
+  <datalist id="categorySuggestions"></datalist>
+  <script src="./vendor/lucide.umd.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

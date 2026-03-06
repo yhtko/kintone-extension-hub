@@ -13,8 +13,14 @@ import {
   isKintoneUrl,
   hasHostPermission,
   sendCountBulk,
-  createId
+  createId,
+  loadRecordPinVisibility,
+  loadRecentRecords,
+  saveRecentRecords,
+  loadAppNameMap,
+  saveAppNameMap
 } from './core.js';
+import { initPins } from './pins.js';
 
 const REFRESH_INTERVAL = 30000;
 const MAX_SHORTCUT_INITIAL_LENGTH = 2;
@@ -22,21 +28,29 @@ const MAX_SHORTCUT_INITIAL_LENGTH = 2;
 const doc = document;
 
 const els = {
+  filterPanel: doc.getElementById('filterPanel'),
+  toggleFilterPanel: doc.getElementById('toggleFilterPanel'),
   filter: doc.getElementById('filter'),
   clearFilter: doc.getElementById('clearFilter'),
   togglePinsOnly: doc.getElementById('togglePinsOnly'),
-  pinList: doc.getElementById('pinList'),
+  togglePinsOnlyIcon: doc.getElementById('togglePinsOnlyIcon'),
+  pinnedList: doc.getElementById('pinnedWatchList'),
   pinSection: doc.getElementById('pinSection'),
+  recentSection: doc.getElementById('recentSection'),
+  recentList: doc.getElementById('recentList'),
+  recentClear: doc.getElementById('recentClear'),
+  recordPinSection: doc.getElementById('recordPinSection'),
   favSection: doc.getElementById('favSection'),
   favCategories: doc.getElementById('favCategories'),
   notice: doc.getElementById('notice'),
   refreshCounts: doc.getElementById('refreshCounts'),
   quickAdd: doc.getElementById('quickAdd'),
   openOptions: doc.getElementById('openOptions'),
-  menuLayer: doc.getElementById('menuLayer'),
   shortcutRow: doc.getElementById('shortcutRow'),
   shortcutPanel: doc.getElementById('shortcutPanel'),
-  toggleShortcuts: doc.getElementById('toggleShortcuts')
+  toggleShortcuts: doc.getElementById('toggleShortcuts'),
+  toggleRecordPins: doc.getElementById('toggleRecordPins'),
+  pinList: doc.getElementById('pinList')
 };
 
 const state = {
@@ -48,43 +62,88 @@ const state = {
   selectionIndex: -1,
   countTimer: null,
   storageListener: null,
-  menu: null,
   dragging: null,
-  shortcutToggleHandler: null
+  shortcutToggleHandler: null,
+  recentRecords: [],
+  recentHydrationSeq: 0,
+  filterPanelVisible: false,
+  recordPinsCollapsed: false
 };
 
-const boundCloseMenuOnBlur = () => closeMenu();
 const shortcutState = {
   entries: [],
   visible: true,
   warmedHosts: new Set()
 };
-const DEFAULT_ICON = 'bookmark';
-const DEFAULT_CATEGORY = 'その他';
-
-const ICON_PATHS = {
-  clipboard: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="9" y="2" width="6" height="4" rx="1" ry="1"/>',
-  'file-text': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M10 13h6"/><path d="M10 17h4"/>',
-  package: '<path d="M21 16V8a2 2 0 0 0-1-1.73L13 3.27a2 2 0 0 0-2 0L4 6.27A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7.5 12 12.5l8.7-5"/><path d="M12 22v-9"/>',
-  box: '<path d="M21 16V8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v9"/>',
-  truck: '<path d="M3 5h12v10H3z"/><path d="M15 8h4l2 3v4h-6"/><circle cx="7.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/>',
-  factory: '<path d="M2 20h20V10l-5 3V8l-5 3V4L2 8z"/><path d="M6 20v-4"/><path d="M10 20v-4"/><path d="M14 20v-4"/>',
-  wrench: '<path d="M21 16.5a5.5 5.5 0 0 1-7.78 0L3.5 6.78a4 4 0 0 1 5.66-5.66l.82.82-3 3 4.24 4.24 3-3 .82.82a4 4 0 0 1 0 5.66z"/>',
-  calendar: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8h18"/><path d="M16 2v4"/><path d="M8 2v4"/>',
-  'list-checks': '<path d="M10 6h11"/><path d="M10 12h11"/><path d="M10 18h11"/><path d="m3 6 1.5 1.5 3-3"/><path d="m3 12 1.5 1.5 3-3"/><path d="m3 18 1.5 1.5 3-3"/>',
-  search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
-  'chart-bar': '<path d="M3 3v18h18"/><rect x="7" y="13" width="3" height="5" rx="0.5"/><rect x="12" y="9" width="3" height="9" rx="0.5"/><rect x="17" y="5" width="3" height="13" rx="0.5"/>',
-  receipt: '<path d="M21 4v16l-3-2-3 2-3-2-3 2-3-2-3 2V4l3 2 3-2 3 2 3-2 3 2z"/><path d="M8 11h8"/><path d="M8 15h5"/>',
-  users: '<path d="M16 21v-1a5 5 0 0 0-3-4.58"/><path d="M7 4a4 4 0 1 1 1 7.87A4 4 0 0 1 7 4z"/><path d="M3 21v-1a7 7 0 0 1 11.9-4.9"/><path d="M20 8a3 3 0 1 1-4 2.82"/>',
-  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 2l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-2 .33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-2 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-2l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 2 .33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 2-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 2V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
-  bookmark: '<path d="M6 3h12v18l-6-4-6 4z"/>',
-  star: '<path d="M12 3.5 14.8 9l6.2.9-4.5 4.3 1 6.3L12 17l-5.5 3.5 1-6.3-4.5-4.3L9.2 9z"/>'
+const recordPinState = {
+  visible: true,
+  controller: null
 };
-const ICON_OPTIONS = Object.keys(ICON_PATHS);
+const DEFAULT_ICON = 'file-text';
+const DEFAULT_CATEGORY = 'その他';
+const ICON_OPTIONS = [
+  'clipboard', 'file-text', 'package', 'box', 'truck', 'factory', 'wrench', 'calendar',
+  'list-checks', 'search', 'chart-bar', 'receipt', 'users', 'settings', 'bookmark', 'star', 'history'
+];
+const DEFAULT_ICON_COLOR = 'gray';
+const ICON_COLOR_OPTIONS = ['gray', 'blue', 'green', 'orange', 'red', 'purple'];
 
-function renderIconSvg(name) {
-  const body = ICON_PATHS[name] || ICON_PATHS[DEFAULT_ICON];
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+function normalizeIconName(value) {
+  const name = typeof value === 'string' ? value.trim() : '';
+  return ICON_OPTIONS.includes(name) ? name : DEFAULT_ICON;
+}
+
+function normalizeIconColor(value) {
+  const color = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return ICON_COLOR_OPTIONS.includes(color) ? color : DEFAULT_ICON_COLOR;
+}
+
+function normalizeCategoryName(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function getCategoryLabel(value) {
+  const name = normalizeCategoryName(value);
+  return name || DEFAULT_CATEGORY;
+}
+
+function toPascalIconName(name) {
+  return String(name || '')
+    .trim()
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join('');
+}
+
+function iconToSvg(name, size = 16) {
+  const lucide = globalThis.lucide;
+  const icons = lucide?.icons;
+  if (!icons) return '';
+  const kebab = normalizeIconName(name);
+  const candidates = [kebab, toPascalIconName(kebab)];
+  for (const key of candidates) {
+    const iconNode = icons[key];
+    if (!iconNode) continue;
+    if (typeof iconNode.toSvg === 'function') {
+      return iconNode.toSvg({ width: size, height: size });
+    }
+    if (typeof lucide.createElement === 'function') {
+      const node = lucide.createElement(iconNode, { width: size, height: size });
+      return node?.outerHTML || '';
+    }
+  }
+  return '';
+}
+
+function renderLucideIcons(root = doc) {
+  const nodes = root.querySelectorAll('.lc[data-icon]');
+  nodes.forEach((el) => {
+    const iconName = normalizeIconName(el.dataset.icon);
+    el.dataset.icon = iconName;
+    const svg = iconToSvg(iconName, 16);
+    el.innerHTML = svg;
+  });
 }
 
 function escapeId(value) {
@@ -139,6 +198,14 @@ function buildShortcutUrl(entry) {
   return base;
 }
 
+function resolveShortcutIcon(entry) {
+  return normalizeIconName(entry?.icon);
+}
+
+function resolveShortcutIconColor(entry) {
+  return normalizeIconColor(entry?.iconColor);
+}
+
 function setNotice(message) {
   if (!els.notice) return;
   if (message) {
@@ -147,6 +214,292 @@ function setNotice(message) {
   } else {
     els.notice.textContent = '';
     els.notice.classList.add('hidden');
+  }
+}
+
+function setFilterPanelVisible(visible, { focus = false } = {}) {
+  state.filterPanelVisible = Boolean(visible);
+  if (els.filterPanel) {
+    els.filterPanel.classList.toggle('hidden', !state.filterPanelVisible);
+  }
+  if (els.toggleFilterPanel) {
+    els.toggleFilterPanel.setAttribute('aria-pressed', state.filterPanelVisible ? 'true' : 'false');
+    els.toggleFilterPanel.title = state.filterPanelVisible ? '検索を閉じる' : '検索を表示';
+  }
+  if (focus && state.filterPanelVisible && els.filter) {
+    setTimeout(() => {
+      try {
+        els.filter.focus();
+        els.filter.select();
+      } catch (_err) {
+        // ignore
+      }
+    }, 0);
+  }
+}
+
+function setRecordPinsCollapsed(collapsed) {
+  state.recordPinsCollapsed = Boolean(collapsed);
+  if (els.pinList) {
+    els.pinList.classList.toggle('hidden', state.recordPinsCollapsed);
+  }
+  if (els.toggleRecordPins) {
+    els.toggleRecordPins.textContent = state.recordPinsCollapsed ? '▸' : '▾';
+    els.toggleRecordPins.setAttribute('aria-pressed', state.recordPinsCollapsed ? 'true' : 'false');
+    els.toggleRecordPins.title = state.recordPinsCollapsed ? 'レコードピンを展開' : 'レコードピンを折りたたむ';
+  }
+}
+
+function setWatchlistCollapsed(collapsed) {
+  state.pinsOnly = Boolean(collapsed);
+  if (els.togglePinsOnly) {
+    els.togglePinsOnly.checked = state.pinsOnly;
+    els.togglePinsOnly.setAttribute('aria-pressed', state.pinsOnly ? 'true' : 'false');
+  }
+  if (els.favCategories) {
+    els.favCategories.classList.toggle('is-collapsed', state.pinsOnly);
+  }
+  if (els.togglePinsOnlyIcon) {
+    els.togglePinsOnlyIcon.textContent = state.pinsOnly ? '▸' : '▾';
+    els.togglePinsOnlyIcon.title = state.pinsOnly ? 'ウォッチリストを展開' : 'ウォッチリストを折りたたむ';
+  }
+}
+
+function formatRecentTime(value) {
+  const ts = Number(value);
+  if (!Number.isFinite(ts)) return '';
+  try {
+    const date = new Date(ts);
+    return date.toLocaleString([], {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (_err) {
+    return '';
+  }
+}
+
+function getRecentAppLabel(entry) {
+  const appName = String(entry?.appName || '').trim();
+  if (appName) return appName;
+  const appId = String(entry?.appId || '').trim();
+  return appId ? `App ${appId}` : 'App';
+}
+
+function normalizeRecentHost(host) {
+  const raw = String(host || '').trim();
+  if (!raw) return '';
+  try {
+    return new URL(raw).origin.toLowerCase().replace(/\/$/, '');
+  } catch (_err) {
+    return raw.toLowerCase().replace(/\/$/, '');
+  }
+}
+
+function cssEscapeValue(value) {
+  const raw = String(value || '');
+  if (globalThis.CSS?.escape) return globalThis.CSS.escape(raw);
+  return raw.replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch}`);
+}
+
+function setRecentAppNameInState(host, appId, appName) {
+  const safeHost = normalizeRecentHost(host);
+  const safeAppId = String(appId || '').trim();
+  const safeName = String(appName || '').trim();
+  if (!safeHost || !safeAppId || !safeName) return;
+  state.recentRecords.forEach((item) => {
+    if (normalizeRecentHost(item.host) === safeHost && String(item.appId || '').trim() === safeAppId) {
+      item.appName = safeName;
+    }
+  });
+}
+
+function updateRecentAppNameDom(host, appId, appName) {
+  const safeHost = normalizeRecentHost(host);
+  const safeAppId = String(appId || '').trim();
+  const safeName = String(appName || '').trim();
+  if (!safeHost || !safeAppId || !safeName) return 0;
+  const selector = `.recent-item[data-host="${cssEscapeValue(safeHost)}"][data-app-id="${cssEscapeValue(safeAppId)}"] .recent-item-app`;
+  const nodes = doc.querySelectorAll(selector);
+  nodes.forEach((el) => {
+    el.textContent = safeName;
+  });
+  return nodes.length;
+}
+
+async function fillRecentAppNamesFromCache() {
+  const list = Array.isArray(state.recentRecords) ? state.recentRecords : [];
+  if (!list.length) return;
+  const hosts = new Set();
+  list.forEach((entry) => {
+    const host = normalizeRecentHost(entry.host);
+    if (host) hosts.add(host);
+  });
+  for (const host of hosts.values()) {
+    try {
+      const { map } = await loadAppNameMap(host);
+      Object.entries(map).forEach(([appId, appName]) => {
+        setRecentAppNameInState(host, appId, appName);
+      });
+    } catch (_err) {
+      // ignore
+    }
+  }
+}
+
+async function hydrateRecentAppNames() {
+  const seq = ++state.recentHydrationSeq;
+  const list = Array.isArray(state.recentRecords) ? state.recentRecords.slice() : [];
+  if (!list.length) return;
+
+  const appIdsByHost = new Map();
+  list.forEach((entry) => {
+    const host = normalizeRecentHost(entry.host);
+    const appId = String(entry.appId || '').trim();
+    if (!host || !appId) return;
+    if (!appIdsByHost.has(host)) appIdsByHost.set(host, new Set());
+    appIdsByHost.get(host).add(appId);
+  });
+
+  let updatedCount = 0;
+  for (const [host, set] of appIdsByHost.entries()) {
+    if (seq !== state.recentHydrationSeq) return;
+    const appIds = Array.from(set).filter(Boolean);
+    if (!appIds.length) continue;
+
+    let cache = { savedAt: 0, map: {}, fresh: false };
+    try {
+      cache = await loadAppNameMap(host);
+    } catch (_err) {
+      // ignore
+    }
+    if (seq !== state.recentHydrationSeq) return;
+
+    if (cache.fresh) {
+      for (const appId of appIds) {
+        const appName = String(cache.map[appId] || '').trim();
+        if (!appName) continue;
+        setRecentAppNameInState(host, appId, appName);
+        updatedCount += updateRecentAppNameDom(host, appId, appName);
+      }
+      continue;
+    }
+
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'GET_APPS_MAP', host, appIds });
+      if (seq !== state.recentHydrationSeq) return;
+      if (!res?.ok || !res?.map || typeof res.map !== 'object') {
+        console.debug('[kfav] recent app names hydrate skipped', { host, reason: res?.error || 'no map' });
+        continue;
+      }
+      const hostMap = res.map;
+      await saveAppNameMap(host, hostMap);
+      for (const appId of appIds) {
+        const appName = String(hostMap[appId] || '').trim();
+        if (!appName) continue;
+        setRecentAppNameInState(host, appId, appName);
+        updatedCount += updateRecentAppNameDom(host, appId, appName);
+      }
+    } catch (_err) {
+      console.debug('[kfav] recent app names hydrate failed', { host });
+    }
+  }
+  console.debug('[kfav] recent app names updated', { updatedCount });
+}
+
+function renderRecentRecords() {
+  if (!els.recentSection || !els.recentList) return;
+  const list = Array.isArray(state.recentRecords) ? state.recentRecords : [];
+  els.recentList.textContent = '';
+  if (els.recentClear) {
+    els.recentClear.disabled = list.length === 0;
+  }
+  if (!list.length) {
+    els.recentSection.classList.add('hidden');
+    return;
+  }
+  list.forEach((item) => {
+    const li = doc.createElement('li');
+    const btn = doc.createElement('button');
+    btn.type = 'button';
+    btn.className = 'recent-item';
+    btn.dataset.host = normalizeRecentHost(item.host);
+    btn.dataset.appId = String(item.appId || '').trim();
+    btn.title = item.url || '';
+    btn.addEventListener('click', () => openRecentRecord(item));
+
+    const icon = doc.createElement('span');
+    icon.className = 'recent-item-icon lc';
+    icon.dataset.icon = 'history';
+    icon.setAttribute('aria-hidden', 'true');
+
+    const text = doc.createElement('div');
+    text.className = 'recent-item-text';
+    const title = doc.createElement('div');
+    title.className = 'recent-title recent-item-title';
+    const appLabel = getRecentAppLabel(item);
+    const app = doc.createElement('span');
+    app.className = 'recent-item-app';
+    app.textContent = appLabel;
+    title.appendChild(app);
+    const sub = doc.createElement('div');
+    sub.className = 'recent-sub recent-item-meta';
+    sub.textContent = `#${item.recordId}`;
+    text.appendChild(title);
+    text.appendChild(sub);
+
+    const time = doc.createElement('span');
+    time.className = 'recent-item-time';
+    time.textContent = formatRecentTime(item.visitedAt || item.lastSeenAt);
+
+    btn.appendChild(icon);
+    btn.appendChild(text);
+    btn.appendChild(time);
+    li.appendChild(btn);
+    els.recentList.appendChild(li);
+  });
+  els.recentSection.classList.remove('hidden');
+  renderLucideIcons(els.recentSection);
+}
+
+async function loadRecentAndRender() {
+  try {
+    state.recentRecords = await loadRecentRecords();
+    await fillRecentAppNamesFromCache();
+  } catch (error) {
+    console.error('Failed to load recent records', error);
+    state.recentRecords = [];
+  }
+  renderRecentRecords();
+  hydrateRecentAppNames().catch((error) => {
+    console.error('Failed to hydrate recent app names', error);
+  });
+}
+
+async function clearRecentRecords() {
+  try {
+    state.recentHydrationSeq += 1;
+    await saveRecentRecords([]);
+    state.recentRecords = [];
+    renderRecentRecords();
+  } catch (error) {
+    console.error('Failed to clear recent records', error);
+  }
+}
+
+async function openRecentRecord(entry) {
+  if (!entry?.url) return;
+  try {
+    if (chrome?.tabs?.create) {
+      await chrome.tabs.create({ url: entry.url, active: true });
+    } else {
+      window.open(entry.url, '_blank', 'noopener');
+    }
+  } catch (_err) {
+    window.open(entry.url, '_blank', 'noopener');
   }
 }
 
@@ -162,74 +515,103 @@ function normalizeFavorites(list) {
       query: item.query || '',
       pinned: Boolean(item.pinned),
       order: typeof item.order === 'number' ? item.order : index,
-      icon: typeof item.icon === 'string' && item.icon ? item.icon : DEFAULT_ICON,
-      category: typeof item.category === 'string' && item.category.trim() ? item.category.trim() : DEFAULT_CATEGORY
+      icon: normalizeIconName(item.icon),
+      iconColor: normalizeIconColor(item.iconColor),
+      category: normalizeCategoryName(item.category)
     }))
   );
 }
 
 function applyFilterText(value) {
+  // #filter is local filter only (pinned/watchlist visibility).
   state.filterText = value || '';
   renderLists();
 }
 
-function currentFilteredLists() {
-  const keyword = state.filterText.trim().toLowerCase();
-  const matches = (item) => {
-    if (!keyword) return true;
-    const fields = [item.label, item.url, item.host, item.viewIdOrName, item.query];
-    return fields.some((field) => typeof field === 'string' && field.toLowerCase().includes(keyword));
-  };
+function splitFavoritesByPin() {
   const pinned = [];
   const normal = [];
   state.favorites.forEach((item) => {
-    if (!matches(item)) return;
     if (item.pinned) pinned.push(item);
     else normal.push(item);
   });
   pinned.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   normal.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  return {
-    pinned,
-    normal: state.pinsOnly ? [] : normal
-  };
+  return { pinned, normal };
+}
+
+function applySearchVisibility() {
+  const keyword = state.filterText.trim().toLowerCase();
+  const allEntries = Array.from(doc.querySelectorAll('.entry[data-id]'));
+  allEntries.forEach((entryEl) => {
+    const haystack = entryEl.dataset.search || '';
+    const matched = !keyword || haystack.includes(keyword);
+    entryEl.classList.toggle('entry-filter-hidden', !matched);
+  });
+
+  if (els.favCategories) {
+    const blocks = els.favCategories.querySelectorAll('.category-block');
+    blocks.forEach((block) => {
+      const hasVisible = Array.from(block.querySelectorAll('.entry')).some((entryEl) => !entryEl.classList.contains('entry-filter-hidden'));
+      block.classList.toggle('hidden-by-filter', !hasVisible);
+    });
+  }
+
+  if (els.pinSection) {
+    const hasPinned = Boolean(els.pinnedList?.querySelector('.entry'));
+    const hasPinnedVisible = Boolean(els.pinnedList?.querySelector('.entry:not(.entry-filter-hidden)'));
+    const hidePinned = !hasPinned || (keyword.length > 0 && !hasPinnedVisible);
+    els.pinSection.classList.toggle('hidden', hidePinned);
+  }
+}
+
+function isSelectableEntry(entryEl) {
+  if (!entryEl?.dataset?.id) return false;
+  if (entryEl.classList.contains('entry-filter-hidden')) return false;
+  if (entryEl.closest('.category-block.hidden-by-filter')) return false;
+  if (entryEl.closest('.hidden')) return false;
+  if (entryEl.closest('#favCategories.is-collapsed')) return false;
+  return true;
+}
+
+function syncSelectionState() {
+  const previousId = state.selectionIds[state.selectionIndex] || null;
+  const visibleEntries = Array.from(doc.querySelectorAll('.entry[data-id]')).filter(isSelectableEntry);
+  state.selectionIds = visibleEntries.map((item) => item.dataset.id);
+  if (!state.selectionIds.length) {
+    state.selectionIndex = -1;
+    return;
+  }
+  const keepIndex = previousId ? state.selectionIds.indexOf(previousId) : -1;
+  state.selectionIndex = keepIndex >= 0 ? keepIndex : 0;
 }
 
 function renderLists() {
-  const { pinned, normal } = currentFilteredLists();
-  const pinnedOrder = renderPinnedList(pinned);
-  const normalOrder = renderCategorySections(normal);
-  if (els.pinSection) {
-    els.pinSection.classList.toggle('hidden', pinned.length === 0);
-  }
-  if (els.favSection) {
-    els.favSection.classList.remove('hidden');
-  }
-  const combined = pinnedOrder.concat(normalOrder);
-  state.selectionIds = combined.map((item) => item.id);
-  if (combined.length === 0) {
-    state.selectionIndex = -1;
-  } else if (state.selectionIndex < 0 || state.selectionIndex >= combined.length) {
-    state.selectionIndex = 0;
-  }
+  const { pinned, normal } = splitFavoritesByPin();
+  renderPinnedList(pinned);
+  renderCategorySections(normal);
+  setWatchlistCollapsed(state.pinsOnly);
+  applySearchVisibility();
+  renderLucideIcons();
+  syncSelectionState();
   highlightSelection();
 }
 
 function renderPinnedList(items) {
-  if (!els.pinList) return [];
-  els.pinList.textContent = '';
+  if (!els.pinnedList) return [];
+  els.pinnedList.textContent = '';
   if (!items.length) {
     const empty = doc.createElement('li');
     empty.className = 'empty-message';
     const hasFilter = state.filterText.trim().length > 0;
     empty.textContent = hasFilter
-      ? '検索条件に一致するピンはありません'
-      : 'ピンはまだありません';
-    els.pinList.appendChild(empty);
+      ? 'No pinned items matched your search'
+      : 'No pinned items yet';
+    els.pinnedList.appendChild(empty);
     return [];
   }
   items.forEach((item) => {
-    els.pinList.appendChild(createEntryElement(item, true));
+    els.pinnedList.appendChild(createEntryElement(item, true));
   });
   return items.slice();
 }
@@ -237,7 +619,7 @@ function renderPinnedList(items) {
 function groupByCategory(items) {
   const map = new Map();
   items.forEach((item) => {
-    const key = item.category || DEFAULT_CATEGORY;
+    const key = getCategoryLabel(item.category);
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(item);
   });
@@ -253,8 +635,8 @@ function renderCategorySections(items) {
     message.className = 'empty-message';
     const hasFilter = state.filterText.trim().length > 0;
     message.textContent = hasFilter
-      ? '検索条件に一致するウォッチリストはありません'
-      : 'ウォッチリストはまだ登録されていません';
+      ? 'No favorites matched your search'
+      : 'No favorites yet';
     container.appendChild(message);
     return [];
   }
@@ -285,11 +667,13 @@ function renderCategorySections(items) {
 }
 
 function createEntryElement(entry, pinned) {
+  const iconName = normalizeIconName(entry.icon);
+  const categoryLabel = getCategoryLabel(entry.category);
   const li = doc.createElement('li');
   li.className = 'entry';
   li.dataset.id = entry.id;
   li.dataset.pinned = String(pinned);
-  li.dataset.category = entry.category || DEFAULT_CATEGORY;
+  li.dataset.category = categoryLabel;
   li.draggable = true;
   li.addEventListener('dragstart', handleDragStart);
   li.addEventListener('dragover', handleDragOver);
@@ -309,8 +693,10 @@ function createEntryElement(entry, pinned) {
   left.className = 'entry-left';
 
   const icon = doc.createElement('span');
-  icon.className = 'entry-icon';
-  icon.innerHTML = renderIconSvg(entry.icon || DEFAULT_ICON);
+  icon.className = 'entry-icon kp-ico lc';
+  icon.dataset.icon = iconName;
+  icon.dataset.icoColor = normalizeIconColor(entry.iconColor);
+  icon.setAttribute('aria-hidden', 'true');
 
   const text = doc.createElement('div');
   text.className = 'entry-text';
@@ -319,14 +705,17 @@ function createEntryElement(entry, pinned) {
   title.textContent = entry.label || '(no label)';
   const sub = doc.createElement('div');
   sub.className = 'entry-sub';
-  let host = '';
-  try {
-    host = entry.host ? new URL(entry.host).hostname : new URL(entry.url).hostname;
-  } catch (_err) {
-    host = entry.host || '';
-  }
   const view = entry.viewIdOrName ? `view:${entry.viewIdOrName}` : '';
-  sub.textContent = [host, view].filter(Boolean).join(' · ') || entry.url;
+  sub.textContent = view;
+  sub.classList.toggle('hidden', !view);
+  li.dataset.search = [
+    entry.label || '',
+    entry.url || '',
+    entry.host || '',
+    categoryLabel,
+    entry.viewIdOrName || '',
+    entry.query || ''
+  ].join('\n').toLowerCase();
   text.appendChild(title);
   text.appendChild(sub);
   left.appendChild(icon);
@@ -344,18 +733,7 @@ function createEntryElement(entry, pinned) {
   button.appendChild(left);
   button.appendChild(right);
 
-  const menuBtn = doc.createElement('button');
-  menuBtn.type = 'button';
-  menuBtn.className = 'entry-menu-btn';
-  menuBtn.textContent = '⋯';
-  menuBtn.title = 'メニュー';
-  menuBtn.addEventListener('click', (event) => {
-    event.stopPropagation();
-    openMenu(entry, menuBtn);
-  });
-
   li.appendChild(button);
-  li.appendChild(menuBtn);
   return li;
 }
 
@@ -404,7 +782,6 @@ function openSelection() {
 
 async function openEntry(entry) {
   if (!entry?.url) return;
-  closeMenu();
   try {
     if (chrome?.tabs?.create) {
       await chrome.tabs.create({ url: entry.url, active: true });
@@ -418,7 +795,7 @@ async function openEntry(entry) {
 }
 
 function syncBadgeToElement(id, el) {
-  const stateItem = state.badgeStatus.get(id) || { text: '-', title: '未取得', loading: false };
+  const stateItem = state.badgeStatus.get(id) || { text: '-', title: 'Not fetched', loading: false };
   el.textContent = stateItem.text ?? '-';
   el.title = stateItem.title || '';
   el.classList.toggle('loading', Boolean(stateItem.loading));
@@ -430,13 +807,13 @@ function updateBadgeDom(id) {
 }
 
 function setBadgeLoading(id, loading) {
-  const prev = state.badgeStatus.get(id) || { text: '-', title: '未取得', loading: false };
+  const prev = state.badgeStatus.get(id) || { text: '-', title: 'Not fetched', loading: false };
   state.badgeStatus.set(id, { ...prev, loading: Boolean(loading) });
   updateBadgeDom(id);
 }
 
 function setBadgeValue(id, value, title = '') {
-  const text = value == null ? '—' : String(value);
+  const text = value == null ? '-' : String(value);
   state.badgeStatus.set(id, { text, title: title || '', loading: false });
   updateBadgeDom(id);
 }
@@ -449,6 +826,7 @@ async function loadFavoritesAndRender() {
     if (!validIds.has(key)) state.badgeStatus.delete(key);
   }
   renderLists();
+  renderShortcuts();
   const hosts = new Set(state.favorites.map((item) => item.host).filter(Boolean));
   for (const host of hosts) {
     try {
@@ -480,7 +858,7 @@ async function refreshCounts() {
     try {
       const permitted = await hasHostPermission(host);
       if (!permitted) {
-        items.forEach((item) => setBadgeValue(item.id, null, 'ホストの権限が必要です（設定）'));
+        items.forEach((item) => setBadgeValue(item.id, null, 'Host permission required'));
         missingPerm.add(host);
         continue;
       }
@@ -506,12 +884,12 @@ async function refreshCounts() {
           } else if (Object.prototype.hasOwnProperty.call(counts, item.id)) {
             setBadgeValue(item.id, counts[item.id]);
           } else {
-            setBadgeValue(item.id, null, '件数を取得できませんでした');
+            setBadgeValue(item.id, null, 'Count was not returned for this item');
             failedHosts.add(host);
           }
         }
       } else {
-        const message = res?.error || '件数取得に失敗しました';
+        const message = res?.error || 'Failed to fetch counts';
         items.forEach((item) => setBadgeValue(item.id, null, message));
         failedHosts.add(host);
       }
@@ -522,9 +900,9 @@ async function refreshCounts() {
     }
   }
   if (missingPerm.size) {
-    setNotice(`⚠️ 次のドメインの権限が必要です: ${Array.from(missingPerm).join(', ')}`);
+    setNotice(`Permission is missing for hosts: ${Array.from(missingPerm).join(', ')}`);
   } else if (failedHosts.size) {
-    setNotice('⚠️ 一部の件数取得に失敗しました。ログイン状態を確認してください。');
+    setNotice('Some hosts failed to fetch counts. Check the log for details.');
   }
 }
 
@@ -542,11 +920,39 @@ function attachStorageListener() {
         console.error('Failed to reload shortcuts', error);
       });
     }
+    if (Object.prototype.hasOwnProperty.call(changes, 'kfavRecentRecords')) {
+      loadRecentAndRender().catch((error) => {
+        console.error('Failed to reload recent records', error);
+      });
+    }
+    if (Object.prototype.hasOwnProperty.call(changes, 'kfavPins')) {
+      try {
+        if (recordPinState.visible) {
+          if (recordPinState.controller?.reload) {
+            const task = recordPinState.controller.reload();
+            if (task?.catch) {
+              task.catch((error) => console.error('Failed to reload record pins', error));
+            }
+          } else {
+            disposeRecordPins();
+            recordPinState.controller = initPins();
+          }
+        }
+      } catch (error) {
+        console.error('Failed to reload record pins', error);
+      }
+    }
     if (Object.prototype.hasOwnProperty.call(changes, 'kfavShortcutsVisible')) {
       const next = typeof changes.kfavShortcutsVisible.newValue === 'boolean'
         ? changes.kfavShortcutsVisible.newValue
         : true;
       applyShortcutVisibility(next);
+    }
+    if (Object.prototype.hasOwnProperty.call(changes, 'kfavRecordPinsVisible')) {
+      const nextRecordPins = typeof changes.kfavRecordPinsVisible.newValue === 'boolean'
+        ? changes.kfavRecordPinsVisible.newValue
+        : true;
+      applyRecordPinVisibility(nextRecordPins);
     }
   };
   chrome.storage.onChanged.addListener(listener);
@@ -574,59 +980,6 @@ function stopCountTimer() {
   }
 }
 
-function closeMenu() {
-  if (!els.menuLayer) return;
-  els.menuLayer.classList.add('hidden');
-  els.menuLayer.classList.remove('active');
-  els.menuLayer.textContent = '';
-  state.menu = null;
-}
-
-function openMenu(entry, anchor) {
-  if (!els.menuLayer) return;
-  closeMenu();
-  const menu = doc.createElement('div');
-  menu.className = 'context-menu';
-  const actions = [
-    { key: 'open', label: '開く', handler: () => openEntry(entry) },
-    { key: 'edit', label: '編集', handler: () => editEntry(entry) },
-    { key: 'icon', label: 'アイコンを変更', handler: () => changeEntryIcon(entry) },
-    { key: 'category', label: 'カテゴリを変更', handler: () => changeEntryCategory(entry) },
-    { key: 'pin', label: entry.pinned ? 'ピン解除' : '📌 ピン留め', handler: () => togglePin(entry.id, !entry.pinned) },
-    { key: 'delete', label: '削除', handler: () => deleteEntry(entry.id), danger: true }
-  ];
-  actions.forEach((action) => {
-    const btn = doc.createElement('button');
-    btn.type = 'button';
-    btn.textContent = action.label;
-    if (action.danger) btn.classList.add('danger');
-    btn.addEventListener('click', () => {
-      closeMenu();
-      action.handler();
-    });
-    menu.appendChild(btn);
-  });
-  els.menuLayer.appendChild(menu);
-  els.menuLayer.classList.remove('hidden');
-  els.menuLayer.classList.add('active');
-  state.menu = { entryId: entry.id, menu };
-  positionMenu(menu, anchor);
-}
-
-function positionMenu(menu, anchor) {
-  const anchorRect = anchor.getBoundingClientRect();
-  const menuRect = menu.getBoundingClientRect();
-  let left = anchorRect.right - menuRect.width;
-  if (left < 12) left = 12;
-  let top = anchorRect.bottom + 6;
-  if (top + menuRect.height > window.innerHeight - 12) {
-    top = anchorRect.top - menuRect.height - 6;
-  }
-  if (top < 12) top = 12;
-  menu.style.left = `${left}px`;
-  menu.style.top = `${top}px`;
-}
-
 function applyShortcutVisibility(visible) {
   shortcutState.visible = visible;
   if (els.shortcutPanel) {
@@ -634,8 +987,8 @@ function applyShortcutVisibility(visible) {
   }
   if (els.toggleShortcuts) {
     els.toggleShortcuts.setAttribute('aria-pressed', visible ? 'true' : 'false');
-    els.toggleShortcuts.textContent = visible ? '━' : '＋';
-    els.toggleShortcuts.title = visible ? 'ショートカットを隠す' : 'ショートカットを表示';
+    els.toggleShortcuts.textContent = visible ? '▾' : '▸';
+    els.toggleShortcuts.title = visible ? 'ショートカットを折りたたむ' : 'ショートカットを展開';
   }
 }
 
@@ -648,7 +1001,7 @@ function renderShortcuts() {
     empty.type = 'button';
     empty.className = 'shortcut-button shortcut-empty';
     empty.textContent = '+';
-    empty.title = 'ショートカットを設定';
+    empty.title = 'Configure shortcuts';
     empty.addEventListener('click', () => {
       if (chrome?.runtime?.openOptionsPage) {
         chrome.runtime.openOptionsPage();
@@ -663,27 +1016,36 @@ function renderShortcuts() {
     const btn = doc.createElement('button');
     btn.type = 'button';
     const type = entry.type || 'appTop';
+    const label = (entry.label || '').trim();
+    const iconColor = resolveShortcutIconColor(entry);
     btn.className = `shortcut-button shortcut-${type}`;
-    btn.title = entry.label || '';
-    btn.setAttribute('aria-label', entry.label || 'ショートカット');
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+    btn.dataset.tooltip = label;
+    btn.dataset.icoColor = iconColor;
     const url = buildShortcutUrl(entry);
     if (!url) {
       btn.disabled = true;
       btn.classList.add('disabled');
     }
-    btn.textContent = Array.from(shortcutInitial(entry)).slice(0, MAX_SHORTCUT_INITIAL_LENGTH).join('') || '?';
+    const icon = doc.createElement('span');
+    icon.className = 'shortcut-icon lc';
+    icon.dataset.icon = resolveShortcutIcon(entry);
+    icon.dataset.icoColor = iconColor;
+    icon.setAttribute('aria-hidden', 'true');
+
+    btn.appendChild(icon);
     btn.addEventListener('click', () => openShortcut(entry));
     els.shortcutRow.appendChild(btn);
   });
+  renderLucideIcons(els.shortcutRow);
 }
-
 async function openShortcut(entry) {
   const url = buildShortcutUrl(entry);
   if (!url) {
-    setNotice('ショートカットのURLが設定されていません');
+    setNotice('Shortcut URL is not configured');
     return;
   }
-  closeMenu();
   if (entry.host) {
     try {
       await chrome.runtime.sendMessage({ type: 'WARMUP_CONNECTOR', host: entry.host });
@@ -734,17 +1096,17 @@ async function quickAddFromActiveTab() {
   try {
     const tab = await getActiveTab();
     if (!tab || !isKintoneUrl(tab.url || '')) {
-      setNotice('kintoneのタブで実行してください');
+      setNotice('Open a kintone tab first');
       return;
     }
     const parsed = parseKintoneUrl(tab.url);
     if (!parsed.host) {
-      setNotice('URLを解析できませんでした');
+      setNotice('Could not parse the URL');
       return;
     }
     const existing = await loadFavorites();
     if (existing.some((item) => item.url === parsed.url)) {
-      setNotice('このビューは既に登録済みです');
+      setNotice('This view is already registered');
       return;
     }
     const label = (tab.title || '').replace(/ - kintone.*/, '') || '(no label)';
@@ -763,29 +1125,29 @@ async function quickAddFromActiveTab() {
     const next = [...existing, entry];
     await saveFavorites(next);
     state.favorites = normalizeFavorites(next);
-    state.badgeStatus.set(entry.id, { text: '-', title: '未取得', loading: false });
+    state.badgeStatus.set(entry.id, { text: '-', title: 'Not fetched', loading: false });
     renderLists();
-    setNotice('ウォッチリストに追加しました。件数を取得しています…');
+    setNotice('Added to favorites. Fetching counts...');
     refreshCounts().catch(() => {});
   } catch (error) {
     console.error('Failed to add favorite', error);
-    setNotice('追加に失敗しました');
+    setNotice('Failed to add favorite');
   }
 }
 
 async function editEntry(entry) {
   const currentLabel = entry.label || '';
-  const nextLabel = window.prompt('表示名を編集', currentLabel);
+  const nextLabel = window.prompt('Edit label', currentLabel);
   if (nextLabel == null) return;
   const currentUrl = entry.url || '';
-  const nextUrl = window.prompt('URLを編集', currentUrl);
+  const nextUrl = window.prompt('Edit URL', currentUrl);
   if (nextUrl == null) return;
   if (!nextUrl.trim()) {
-    setNotice('URLは必須です');
+    setNotice('URL is required');
     return;
   }
   if (!isKintoneUrl(nextUrl.trim())) {
-    setNotice('kintoneのURLのみ登録できます');
+    setNotice('Please enter a kintone URL');
     return;
   }
   const parsed = parseKintoneUrl(nextUrl.trim());
@@ -795,32 +1157,31 @@ async function editEntry(entry) {
   entry.appId = parsed.appId;
   entry.viewIdOrName = parsed.viewIdOrName;
   await persistFavorites();
-  setNotice('更新しました');
+  setNotice('Updated');
 }
 
 async function changeEntryIcon(entry) {
-  const current = entry.icon || DEFAULT_ICON;
-  const promptText = `アイコン名を入力してください。\n利用可能: ${ICON_OPTIONS.join(', ')}`;
+  const current = normalizeIconName(entry.icon);
+  const promptText = `Enter icon name\nChoices: ${ICON_OPTIONS.join(', ')}`;
   const input = window.prompt(promptText, current);
   if (input == null) return;
   const value = input.trim();
-  entry.icon = ICON_OPTIONS.includes(value) ? value : DEFAULT_ICON;
+  entry.icon = normalizeIconName(value);
   await persistFavorites();
-  setNotice('アイコンを更新しました');
+  setNotice('Icon updated');
 }
 
 async function changeEntryCategory(entry) {
-  const current = entry.category && entry.category !== DEFAULT_CATEGORY ? entry.category : '';
-  const input = window.prompt('カテゴリ名を入力してください（空欄でその他）', current);
+  const current = normalizeCategoryName(entry.category);
+  const input = window.prompt('Enter category (empty = Other)', current);
   if (input == null) return;
-  const value = input.trim();
-  entry.category = value || DEFAULT_CATEGORY;
+  entry.category = normalizeCategoryName(input);
   await persistFavorites();
-  setNotice('カテゴリを更新しました');
+  setNotice('Category updated');
 }
 
 async function deleteEntry(id) {
-  if (!window.confirm('このショートカットを削除しますか？')) return;
+  if (!window.confirm('Delete this shortcut?')) return;
   const next = state.favorites.filter((item) => item.id !== id);
   state.favorites = next;
   reindexOrders();
@@ -930,20 +1291,42 @@ function handleFilterKeydown(event) {
   }
 }
 
-function handleMenuLayerClick(event) {
-  if (event.target === els.menuLayer) {
-    closeMenu();
+function disposeRecordPins() {
+  if (recordPinState.controller?.dispose) {
+    recordPinState.controller.dispose();
+  }
+  recordPinState.controller = null;
+}
+
+function applyRecordPinVisibility(visible) {
+  const flag = Boolean(visible);
+  recordPinState.visible = flag;
+  if (els.recordPinSection) {
+    els.recordPinSection.classList.toggle('hidden', !flag);
+  }
+  if (!els.recordPinSection) return;
+  if (flag) {
+    if (!recordPinState.controller) {
+      recordPinState.controller = initPins();
+    }
+  } else {
+    disposeRecordPins();
   }
 }
 
-function handleGlobalKeydown(event) {
-  if (event.key === 'Escape' && state.menu) {
-    closeMenu();
+async function initializeRecordPins() {
+  if (!els.recordPinSection) return;
+  try {
+    const visible = await loadRecordPinVisibility();
+    applyRecordPinVisibility(visible);
+  } catch (error) {
+    console.error('Failed to load record pin visibility', error);
+    applyRecordPinVisibility(true);
   }
 }
 
 function focusFilterSoon() {
-  if (!els.filter) return;
+  if (!els.filter || !state.filterPanelVisible) return;
   setTimeout(() => {
     try {
       els.filter.focus();
@@ -955,6 +1338,13 @@ function focusFilterSoon() {
 }
 
 function wireEvents() {
+  setFilterPanelVisible(false);
+  setRecordPinsCollapsed(false);
+  setWatchlistCollapsed(Boolean(els.togglePinsOnly?.checked));
+  els.toggleFilterPanel?.addEventListener('click', () => {
+    const next = !state.filterPanelVisible;
+    setFilterPanelVisible(next, { focus: next });
+  });
   els.filter?.addEventListener('input', (event) => applyFilterText(event.target.value));
   els.filter?.addEventListener('keydown', handleFilterKeydown);
   els.clearFilter?.addEventListener('click', () => {
@@ -965,11 +1355,15 @@ function wireEvents() {
     }
   });
   els.togglePinsOnly?.addEventListener('change', (event) => {
-    state.pinsOnly = Boolean(event.target.checked);
-    renderLists();
+    setWatchlistCollapsed(Boolean(event.target.checked));
+    syncSelectionState();
+    highlightSelection();
   });
   els.refreshCounts?.addEventListener('click', () => refreshCounts().catch(() => {}));
   els.quickAdd?.addEventListener('click', () => quickAddFromActiveTab());
+  els.toggleRecordPins?.addEventListener('click', () => {
+    setRecordPinsCollapsed(!state.recordPinsCollapsed);
+  });
   els.openOptions?.addEventListener('click', () => {
     if (chrome?.runtime?.openOptionsPage) {
       chrome.runtime.openOptionsPage();
@@ -977,9 +1371,9 @@ function wireEvents() {
       window.open(chrome.runtime.getURL('options.html'), '_blank');
     }
   });
-  els.menuLayer?.addEventListener('mousedown', handleMenuLayerClick);
-  document.addEventListener('keydown', handleGlobalKeydown);
-  window.addEventListener('blur', boundCloseMenuOnBlur);
+  els.recentClear?.addEventListener('click', () => {
+    clearRecentRecords().catch(() => {});
+  });
   if (els.toggleShortcuts) {
     const handler = () => {
       toggleShortcutVisibility().catch(() => {});
@@ -992,8 +1386,7 @@ function wireEvents() {
 function dispose() {
   stopCountTimer();
   detachStorageListener();
-  document.removeEventListener('keydown', handleGlobalKeydown);
-  window.removeEventListener('blur', boundCloseMenuOnBlur);
+  disposeRecordPins();
   if (els.toggleShortcuts && state.shortcutToggleHandler) {
     els.toggleShortcuts.removeEventListener('click', state.shortcutToggleHandler);
     state.shortcutToggleHandler = null;
@@ -1003,7 +1396,9 @@ function dispose() {
 async function init() {
   wireEvents();
   attachStorageListener();
+  await initializeRecordPins();
   await refreshShortcutEntries();
+  await loadRecentAndRender();
   await loadFavoritesAndRender();
   refreshCounts().catch(() => {});
   startCountTimer();
@@ -1012,7 +1407,7 @@ async function init() {
 
 init().catch((error) => {
   console.error('Failed to initialize launcher', error);
-  setNotice('初期化に失敗しました');
+  setNotice('Initialization failed');
 });
 
 window.addEventListener('beforeunload', dispose);
