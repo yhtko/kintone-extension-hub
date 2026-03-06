@@ -432,6 +432,7 @@
       this.saving = false;
       this.handleScroll = this.syncScroll.bind(this);
       this.handleKeyOnOverlay = this.handleOverlayKeydown.bind(this);
+      this.handleGlobalArrowKeyCapture = this.handleOverlayGlobalArrowKeydown.bind(this);
       this.handleCompositionStart = () => { this.isComposing = true; };
       this.handleCompositionEnd = () => { this.isComposing = false; };
       this.requireReload = false;
@@ -776,6 +777,7 @@
       this.nextPageButton?.addEventListener('click', () => { this.nextPage(); });
       this.closeButton.addEventListener('click', () => { this.tryClose(); });
       this.root.addEventListener('keydown', this.handleKeyOnOverlay, true);
+      document.addEventListener('keydown', this.handleGlobalArrowKeyCapture, true);
       document.addEventListener('mouseup', this.handleMouseUp, true);
     }
 
@@ -785,6 +787,7 @@
         this.bodyScroll.removeEventListener('scroll', this.handleScroll);
       }
       this.root.removeEventListener('keydown', this.handleKeyOnOverlay, true);
+      document.removeEventListener('keydown', this.handleGlobalArrowKeyCapture, true);
       document.removeEventListener('mouseup', this.handleMouseUp, true);
     }
 
@@ -2923,21 +2926,112 @@
       return rowInputs[colIndex] || null;
     }
 
-    focusCell(rowIndex, colIndex) {
+    focusCell(rowIndex, colIndex, options = {}) {
+      const ensureVisible = options?.ensureVisible !== false;
       const maxRow = Math.max(0, this.getVisibleRowCount() - 1);
       const maxCol = Math.max(0, this.fields.length - 1);
       if (maxRow < 0 || maxCol < 0) return;
       const r = Math.max(0, Math.min(maxRow, rowIndex));
       const c = Math.max(0, Math.min(maxCol, colIndex));
+      if (ensureVisible) {
+        this.ensureCellVisible(r, c);
+      }
       this.pendingFocus = { rowIndex: r, colIndex: c };
       if (r < this.virtualStart || r >= this.virtualEnd) {
         if (this.bodyScroll) {
-          this.bodyScroll.scrollTop = r * this.rowHeight;
           this.updateVirtualRows(true);
         }
         return;
       }
       this.restorePendingFocus();
+    }
+
+    getColumnWidth(colIndex) {
+      const field = this.fields[colIndex];
+      return Number(field?.width || DEFAULT_COLUMN_WIDTH);
+    }
+
+    getColumnLeft(colIndex) {
+      let left = 0;
+      for (let i = 0; i < colIndex; i += 1) {
+        left += this.getColumnWidth(i);
+      }
+      return left;
+    }
+
+    ensureCellVisible(rowIndex, colIndex) {
+      if (!this.bodyScroll) return;
+      const rowTop = rowIndex * this.rowHeight;
+      const rowBottom = rowTop + this.rowHeight;
+      const viewTop = this.bodyScroll.scrollTop;
+      const viewBottom = viewTop + this.bodyScroll.clientHeight;
+      if (rowTop < viewTop) {
+        this.bodyScroll.scrollTop = rowTop;
+      } else if (rowBottom > viewBottom) {
+        this.bodyScroll.scrollTop = rowBottom - this.bodyScroll.clientHeight;
+      }
+
+      const colLeft = this.getColumnLeft(colIndex);
+      const colRight = colLeft + this.getColumnWidth(colIndex);
+      const viewLeft = this.bodyScroll.scrollLeft;
+      const viewRight = viewLeft + this.bodyScroll.clientWidth;
+      if (colLeft < viewLeft) {
+        this.bodyScroll.scrollLeft = colLeft;
+      } else if (colRight > viewRight) {
+        this.bodyScroll.scrollLeft = colRight - this.bodyScroll.clientWidth;
+      }
+    }
+
+    getGridScrollElement() {
+      return this.bodyScroll || null;
+    }
+
+    syncSelectionScroll(options = {}) {
+      const scroller = this.getGridScrollElement();
+      if (!scroller) return;
+      const rowIndex = Number(options.rowIndex ?? this.selection?.endRow ?? 0);
+      const colIndex = Number(options.colIndex ?? this.selection?.endCol ?? 0);
+      const rowHeight = Number(this.rowHeight || 32);
+      const verticalMargin = Number.isFinite(options.verticalMargin) ? Number(options.verticalMargin) : rowHeight;
+      const horizontalMargin = Number.isFinite(options.horizontalMargin) ? Number(options.horizontalMargin) : 24;
+
+      const rowTop = rowIndex * rowHeight;
+      const rowBottom = rowTop + rowHeight;
+      const viewTop = scroller.scrollTop;
+      const viewBottom = viewTop + scroller.clientHeight;
+
+      let nextScrollTop = viewTop;
+      if (rowTop < viewTop + verticalMargin) {
+        nextScrollTop = Math.max(0, rowTop - verticalMargin);
+      } else if (rowBottom > viewBottom - verticalMargin) {
+        nextScrollTop = Math.max(0, rowBottom - scroller.clientHeight + verticalMargin);
+      }
+
+      const colLeft = this.getColumnLeft(colIndex);
+      const colWidth = this.getColumnWidth(colIndex);
+      const colRight = colLeft + colWidth;
+      const viewLeft = scroller.scrollLeft;
+      const viewRight = viewLeft + scroller.clientWidth;
+
+      let nextScrollLeft = viewLeft;
+      if (colLeft < viewLeft + horizontalMargin) {
+        nextScrollLeft = Math.max(0, colLeft - horizontalMargin);
+      } else if (colRight > viewRight - horizontalMargin) {
+        nextScrollLeft = Math.max(0, colRight - scroller.clientWidth + horizontalMargin);
+      }
+
+      let changed = false;
+      if (nextScrollTop !== scroller.scrollTop) {
+        scroller.scrollTop = nextScrollTop;
+        changed = true;
+      }
+      if (nextScrollLeft !== scroller.scrollLeft) {
+        scroller.scrollLeft = nextScrollLeft;
+        changed = true;
+      }
+      if (changed) {
+        this.syncScroll();
+      }
     }
 
     restorePendingFocus() {
@@ -3746,6 +3840,60 @@
       this.dragSelecting = false;
       this.repaintSelection();
       this.updateStats();
+    }
+
+    setSelection(rowIndex, colIndex, options = {}) {
+      const maxRow = Math.max(0, this.getVisibleRowCount() - 1);
+      const maxCol = Math.max(0, this.fields.length - 1);
+      if (maxRow < 0 || maxCol < 0) {
+        this.selection = null;
+        this.armedCell = null;
+        this.repaintSelection();
+        this.updateStats();
+        return null;
+      }
+      const r = Math.max(0, Math.min(maxRow, rowIndex));
+      const c = Math.max(0, Math.min(maxCol, colIndex));
+      const extend = options?.extend === true;
+
+      if (extend) {
+        if (!this.selection) {
+          this.selection = {
+            anchorRow: r,
+            anchorCol: c,
+            startRow: r,
+            endRow: r,
+            startCol: c,
+            endCol: c
+          };
+        } else {
+          const anchorRow = typeof this.selection.anchorRow === 'number' ? this.selection.anchorRow : this.selection.startRow;
+          const anchorCol = typeof this.selection.anchorCol === 'number' ? this.selection.anchorCol : this.selection.startCol;
+          this.selection.startRow = Math.min(anchorRow, r);
+          this.selection.endRow = Math.max(anchorRow, r);
+          this.selection.startCol = Math.min(anchorCol, c);
+          this.selection.endCol = Math.max(anchorCol, c);
+        }
+      } else {
+        this.selection = {
+          anchorRow: r,
+          anchorCol: c,
+          startRow: r,
+          endRow: r,
+          startCol: c,
+          endCol: c
+        };
+      }
+
+      this.armedCell = { rowIndex: r, colIndex: c };
+      this.dragSelecting = false;
+      this.repaintSelection();
+      this.updateStats();
+      this.syncSelectionScroll({ rowIndex: r, colIndex: c });
+      if (options?.focus !== false) {
+        this.focusCell(r, c, { ensureVisible: false });
+      }
+      return { row: r, col: c };
     }
 
     startSelection(rowIndex, colIndex, extend = false) {
@@ -4614,6 +4762,10 @@
         || event.key === 'ArrowLeft'
         || event.key === 'ArrowRight';
 
+      if (this.handleOverlayArrowNavigation(event, targetInput instanceof HTMLInputElement ? targetInput : null)) {
+        return;
+      }
+
       if (targetInput && targetInput.readOnly && (event.key === 'Enter' || event.key === 'F2')) {
         if (event.key === 'Enter' && this.isComposing) return;
         event.preventDefault();
@@ -4728,13 +4880,6 @@
       }
 
       if (!targetInput) {
-        if (isArrowKey) {
-          event.preventDefault();
-          event.stopPropagation();
-          event.stopImmediatePropagation();
-          this.navigateSelectionByArrow(event.key, event.shiftKey, null);
-          return;
-        }
         if ((event.key === 'Enter' || event.key === 'F2') && this.armedCell) {
           event.preventDefault();
           event.stopPropagation();
@@ -4752,13 +4897,6 @@
           event.stopImmediatePropagation();
           this.save();
         }
-        return;
-      }
-      if (isArrowKey) {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        this.navigateSelectionByArrow(event.key, event.shiftKey, targetInput);
         return;
       }
       if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey) {
@@ -4793,6 +4931,71 @@
         this.save();
         return;
       }
+    }
+
+    isOverlayArrowKey(event) {
+      const key = String(event?.key || '');
+      return key === 'ArrowUp'
+        || key === 'ArrowDown'
+        || key === 'ArrowLeft'
+        || key === 'ArrowRight';
+    }
+
+    isFocusInsideOverlay(target = null) {
+      if (!this.root) return false;
+      const active = document.activeElement;
+      if (active && this.root.contains(active)) return true;
+      if (target instanceof Node && this.root.contains(target)) return true;
+      if (
+        this.selection
+        && (target === document.body || target === document.documentElement || target === document)
+      ) {
+        return true;
+      }
+      return false;
+    }
+
+    handleOverlayGlobalArrowKeydown(event) {
+      if (!this.isOpen) return;
+      if (event.defaultPrevented) return;
+      const input = event.target instanceof HTMLInputElement ? event.target : null;
+      this.handleOverlayArrowNavigation(event, input);
+    }
+
+    handleOverlayArrowNavigation(event, input = null) {
+      if (!this.isOpen) return false;
+      if (!this.isOverlayArrowKey(event)) return false;
+      if (!this.isFocusInsideOverlay(event.target)) return false;
+
+      const target = event.target;
+      if (this.columnPanelLayer && this.columnPanelLayer.contains(target)) return false;
+      if (this.filterPanel?.panel && this.filterPanel.panel.contains(target)) return false;
+      if (this.subtableEditor?.panel && this.subtableEditor.panel.contains(target)) return false;
+      if (this.radioPicker?.panel && this.radioPicker.panel.contains(target)) return false;
+      if (this.editingCell) return false;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      const delta = this.getArrowDelta(event.key);
+      if (!delta) return true;
+      const origin = this.getNavigationOrigin(input);
+      if (!origin) return true;
+      const next = this.computeNextCoords(origin.row, origin.col, delta.rowDelta, delta.colDelta);
+      if (!next) return true;
+      if (event.shiftKey && !this.selection) {
+        this.selection = {
+          anchorRow: origin.row,
+          anchorCol: origin.col,
+          startRow: origin.row,
+          endRow: origin.row,
+          startCol: origin.col,
+          endCol: origin.col
+        };
+      }
+      this.setSelection(next.row, next.col, { extend: event.shiftKey, focus: true });
+      return true;
     }
 
     computeNextCoords(rowIndex, colIndex, rowDelta, colDelta) {
@@ -4909,24 +5112,7 @@
         this.exitEditMode();
       }
 
-      if (extend) {
-        if (!this.selection) {
-          this.selection = {
-            anchorRow: origin.row,
-            anchorCol: origin.col,
-            startRow: origin.row,
-            endRow: origin.row,
-            startCol: origin.col,
-            endCol: origin.col
-          };
-        }
-        this.updateSelectionRange(next.row, next.col, false);
-        this.armedCell = { rowIndex: next.row, colIndex: next.col };
-      } else {
-        this.setSelectionSingle(next.row, next.col);
-      }
-
-      this.focusCell(next.row, next.col);
+      this.setSelection(next.row, next.col, { extend, focus: true });
       return next;
     }
 
