@@ -1,7 +1,7 @@
 ﻿<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>kintone Base 設定</title>
   <link rel="stylesheet" href="options.css" />
@@ -10,7 +10,7 @@
   <div class="layout">
     <aside class="sidebar">
       <h1 data-i18n="settings_title">kintone Base 設定</h1>
-      <nav class="menu" aria-label="設定メニュー">
+      <nav class="menu" aria-label="設定メニュー" data-i18n-aria-label="settings_menu_aria">
         <button type="button" class="menu-item is-active" data-pane-target="general" data-i18n="nav_general">全般</button>
         <button type="button" class="menu-item" data-pane-target="shortcuts" data-i18n="nav_shortcuts">ショートカット</button>
         <button type="button" class="menu-item" data-pane-target="watchlist" data-i18n="nav_watchlist">ウォッチリスト</button>
@@ -22,8 +22,8 @@
       <section class="pane is-active" data-pane="general" aria-labelledby="pane-general-title">
         <section class="card">
           <h2 id="pane-general-title" data-i18n="general_section_title">全般</h2>
-          <p>kintone Base は、kintone を横断的に閲覧・操作するための Chrome 拡張機能です。各機能は左メニューから切り替えて設定できます。</p>
-          <p class="hint">設定は自動で保存され、同期が有効になっている場合は同じ Google アカウントで Chrome を使用する他端末にも共有されます。</p>
+          <p data-i18n="general_intro_1">kintone Base は、kintone を横断的に閲覧・操作するための Chrome 拡張機能です。各機能は左メニューから切り替えて設定できます。</p>
+          <p class="hint" data-i18n="general_intro_2">設定は自動で保存され、同期が有効になっている場合は同じ Google アカウントで Chrome を使用する他端末にも共有されます。</p>
           <div class="kp-setting-row general-language-row">
             <label class="general-language-label" for="ui_language">
               <span data-i18n="general_language_label">言語</span>
@@ -37,26 +37,26 @@
           <p class="hint" data-i18n="general_language_help">Auto はPCまたはブラウザの表示言語に合わせます。</p>
         </section>
         <section class="card">
-          <h2>使い方のヒント</h2>
+          <h2 data-i18n="general_tips_title">使い方のヒント</h2>
           <ul class="general-tips">
-            <li>ウォッチリストに登録したアプリはサイドパネルから素早く開けます。</li>
-            <li>ピン止めは重要レコードをメモ付きで保存できます。</li>
-            <li>ショートカットはよく使う画面を Chrome から直接開くためのリンクです。</li>
+            <li data-i18n="general_tip_watchlist">ウォッチリストに登録したアプリはサイドパネルから素早く開けます。</li>
+            <li data-i18n="general_tip_pins">ピン止めは重要レコードをメモ付きで保存できます。</li>
+            <li data-i18n="general_tip_shortcuts">ショートカットはよく使う画面を Chrome から直接開くためのリンクです。</li>
           </ul>
         </section>
 
         <section class="card">
-          <h2>ホストアクセス許可</h2>
-          <p class="hint">kintone の URL（例：https://xxx.cybozu.com/k/）を入力して「このホストを許可」を押すと、件数取得やショートカットが自動的に動作できるようになります。</p>
-          <label>kintone URL またはホスト<br/>
-            <input id="perm_host_input" placeholder="例：https://example.cybozu.com/k/" />
+          <h2 data-i18n="host_perm_title">ホストアクセス許可</h2>
+          <p class="hint" data-i18n="host_perm_desc">kintone の URL（例：https://xxx.cybozu.com/k/）を入力して「このホストを許可」を押すと、件数取得やショートカットが自動的に動作できるようになります。</p>
+          <label><span data-i18n="host_perm_input_label">kintone URL またはホスト</span><br/>
+            <input id="perm_host_input" placeholder="例：https://example.cybozu.com/k/" data-i18n-placeholder="host_perm_input_placeholder" />
           </label>
           <div class="actions" style="gap:8px; flex-wrap: wrap;">
-            <button id="perm_request" type="button">このホストを許可</button>
-            <button id="perm_check" type="button">状態を確認</button>
-            <span id="perm_status" class="hint">権限: 未確認</span>
+            <button id="perm_request" type="button" data-i18n="host_perm_request_btn">このホストを許可</button>
+            <button id="perm_check" type="button" data-i18n="host_perm_check_btn">状態を確認</button>
+            <span id="perm_status" class="hint" data-i18n="host_perm_status_unknown">権限: 未確認</span>
           </div>
-          <p class="hint">InPrivate で利用する場合は拡張機能の「InPrivate で許可」をオンにしてから実行してください。</p>
+          <p class="hint" data-i18n="host_perm_hint">InPrivate で利用する場合は拡張機能の「InPrivate で許可」をオンにしてから実行してください。</p>
         </section>
       </section>
 
@@ -95,8 +95,8 @@
         </section>
 
         <section class="card">
-          <h2>補足</h2>
-          <p class="hint">今後、列表示設定や固定列などもこのセクションに追加予定です。</p>
+          <h2 data-i18n="overlay_note_title">補足</h2>
+          <p class="hint" data-i18n="overlay_note_desc">今後、列表示設定や固定列などもこのセクションに追加予定です。</p>
         </section>
       </section>
 
@@ -105,50 +105,50 @@
           <h2 id="pane-watchlist-title" data-i18n="watchlist_section_title">ウォッチリスト</h2>
           <div class="watch-form-grid">
             <div class="watch-form-col">
-              <label>表示名（任意）<br/>
-                <input id="label" placeholder="例：受注一覧（未出荷）"/>
+              <label><span data-i18n="watch_label_optional">表示名（任意）</span><br/>
+                <input id="label" placeholder="例：受注一覧（未出荷）" data-i18n-placeholder="watch_placeholder_label"/>
               </label>
 
-              <label>kintone URL（アプリ／ビュー）<br/>
-                <input id="url" placeholder="例：https://xxx.cybozu.com/k/45/?view=123"/>
+              <label><span data-i18n="watch_url_label">kintone URL（アプリ／ビュー）</span><br/>
+                <input id="url" placeholder="例：https://xxx.cybozu.com/k/45/?view=123" data-i18n-placeholder="watch_placeholder_url"/>
               </label>
             </div>
 
             <div class="watch-form-col">
               <div class="grid icon-cat-grid watch-meta-grid">
-                <label>カテゴリ（任意）<br/>
-                  <input id="category" list="categorySuggestions" placeholder="例：営業" />
+                <label><span data-i18n="watch_category_optional">カテゴリ（任意）</span><br/>
+                  <input id="category" list="categorySuggestions" placeholder="例：営業" data-i18n-placeholder="watch_placeholder_category" />
                 </label>
-                <label>アイコン<br/>
+                <label><span data-i18n="watch_icon_label">アイコン</span><br/>
                   <select id="icon"></select>
                   <span id="iconPreview" class="icon-preview lc" data-icon="file-text" aria-hidden="true"></span>
                 </label>
-                <label>アイコン色<br/>
+                <label><span data-i18n="watch_icon_color_label">アイコン色</span><br/>
                   <select id="iconColor"></select>
                 </label>
               </div>
             </div>
           </div>
-          <p class="hint">※ アイコンと色はショートカット/ウォッチ行に反映されます。カテゴリはサイドパネルのグループ分けに利用されます。</p>
+          <p class="hint" data-i18n="watch_icon_hint">※ アイコンと色はショートカット/ウォッチ行に反映されます。カテゴリはサイドパネルのグループ分けに利用されます。</p>
 
           <details>
-            <summary>高度な設定（手動指定）</summary>
+            <summary data-i18n="common_advanced_settings_manual">高度な設定（手動指定）</summary>
             <div class="grid">
-              <label>App ID<br/><input id="appId" placeholder="45"/></label>
-              <label>View ID/Name<br/><input id="viewIdOrName" placeholder="123 または ビュー名"/></label>
-              <label>Query（任意）<br/><input id="query" placeholder="ステータス in (\"未出荷\")"/></label>
+              <label><span data-i18n="watch_app_id_label">App ID</span><br/><input id="appId" placeholder="45" data-i18n-placeholder="watch_placeholder_app_id"/></label>
+              <label><span data-i18n="watch_view_label">View ID/Name</span><br/><input id="viewIdOrName" placeholder="123 または ビュー名" data-i18n-placeholder="watch_placeholder_view"/></label>
+              <label><span data-i18n="watch_query_optional_label">Query（任意）</span><br/><input id="query" placeholder="ステータス in (\"未出荷\")" data-i18n-placeholder="watch_placeholder_query"/></label>
             </div>
-            <p class="hint">※ View を指定するとそのフィルタ条件で件数カウント。Query を指定した場合は View より優先します。</p>
+            <p class="hint" data-i18n="watch_view_query_hint">※ View を指定するとそのフィルタ条件で件数カウント。Query を指定した場合は View より優先します。</p>
           </details>
 
           <div class="actions actions--end">
-            <button id="add">追加</button>
+            <button id="add" data-i18n="common_add">追加</button>
           </div>
         </section>
 
         <section class="card">
-          <h2>登録済みウォッチリスト</h2>
-          <p class="hint">ドラッグで並び替え。右上のアイコンで固定・開く・編集・削除ができます。詳細は各カードの「詳細」を展開してください。</p>
+          <h2 data-i18n="watch_registered_title">登録済みウォッチリスト</h2>
+          <p class="hint" data-i18n="watch_registered_hint">ドラッグで並び替え。右上のアイコンで固定・開く・編集・削除ができます。詳細は各カードの「詳細」を展開してください。</p>
           <ul id="list"></ul>
         </section>
       </section>
@@ -156,47 +156,47 @@
       <section class="pane" data-pane="pins" aria-labelledby="pane-pins-title">
         <section class="card">
           <h2 id="pane-pins-title" data-i18n="pins_section_title">ピン止め</h2>
-          <p class="hint">※ 気になるレコードを登録すると、サイドパネルの専用タブでメモ付きで表示できます。</p>
+          <p class="hint" data-i18n="pins_intro_hint">※ 気になるレコードを登録すると、サイドパネルの専用タブでメモ付きで表示できます。</p>
           <label class="shortcut-toggle">
             <input id="pin_visible" type="checkbox" />
-            <span>サイドパネルにレコードピンを表示する</span>
+            <span data-i18n="pins_visible_label">サイドパネルにレコードピンを表示する</span>
           </label>
-          <p class="hint">この設定をオフにするとサイドパネルからレコードピンカード全体が非表示になります。</p>
+          <p class="hint" data-i18n="pins_visible_hint">この設定をオフにするとサイドパネルからレコードピンカード全体が非表示になります。</p>
 
-          <h3>ピン留めレコードを追加</h3>
+          <h3 data-i18n="pins_add_title">ピン留めレコードを追加</h3>
           <div class="pin-form-grid">
             <div class="pin-form-col">
-              <label>表示名（任意）<br/>
-                <input id="pin_label" placeholder="例：重要案件A" />
+              <label><span data-i18n="pins_label_optional">表示名（任意）</span><br/>
+                <input id="pin_label" placeholder="例：重要案件A" data-i18n-placeholder="pins_placeholder_label" />
               </label>
-              <label>kintone レコード URL<br/>
-                <input id="pin_url" placeholder="例：https://xxx.cybozu.com/k/45/show#record=12" />
+              <label><span data-i18n="pins_url_label">kintone レコード URL</span><br/>
+                <input id="pin_url" placeholder="例：https://xxx.cybozu.com/k/45/show#record=12" data-i18n-placeholder="pins_placeholder_url" />
               </label>
               <div class="grid pin-inline-grid">
-                <label>App ID<br/><input id="pin_appId" placeholder="45"/></label>
-                <label>レコードID<br/><input id="pin_recordId" placeholder="12"/></label>
+                <label><span data-i18n="pins_app_id_label">App ID</span><br/><input id="pin_appId" placeholder="45" data-i18n-placeholder="pins_placeholder_app_id"/></label>
+                <label><span data-i18n="pins_record_id_label">レコードID</span><br/><input id="pin_recordId" placeholder="12" data-i18n-placeholder="pins_placeholder_record_id"/></label>
               </div>
             </div>
             <div class="pin-form-col">
-              <label>初期メモ（任意）<br/>
-                <textarea id="pin_note" rows="5" placeholder="サイドパネルで編集できます"></textarea>
+              <label><span data-i18n="pins_note_optional">初期メモ（任意）</span><br/>
+                <textarea id="pin_note" rows="5" placeholder="サイドパネルで編集できます" data-i18n-placeholder="pins_placeholder_note"></textarea>
               </label>
               <details class="pin-titlefield-details">
-                <summary>高度な設定（手動指定）</summary>
-                <label>タイトル用フィールドコード（任意）<br/><input id="pin_titleField" placeholder="例：件名"/></label>
+                <summary data-i18n="common_advanced_settings_manual">高度な設定（手動指定）</summary>
+                <label><span data-i18n="pins_title_field_optional">タイトル用フィールドコード（任意）</span><br/><input id="pin_titleField" placeholder="例：件名" data-i18n-placeholder="pins_placeholder_title_field"/></label>
               </details>
             </div>
           </div>
 
           <div class="actions actions--end">
-            <button id="pin_save" type="button">追加</button>
-            <button id="pin_reset" type="button">入力をクリア</button>
+            <button id="pin_save" type="button" data-i18n="common_add">追加</button>
+            <button id="pin_reset" type="button" data-i18n="pins_reset_btn">入力をクリア</button>
           </div>
         </section>
 
         <section class="card">
-          <h3>登録済みピン</h3>
-          <p class="hint">カード右上のアイコンで開く・編集・削除ができます。詳細情報は「詳細」を展開してください。</p>
+          <h3 data-i18n="pins_registered_title">登録済みピン</h3>
+          <p class="hint" data-i18n="pins_registered_hint">カード右上のアイコンで開く・編集・削除ができます。詳細情報は「詳細」を展開してください。</p>
           <ul id="pin_list" class="pin-list"></ul>
         </section>
       </section>
@@ -204,26 +204,26 @@
       <section class="pane" data-pane="shortcuts" aria-labelledby="pane-shortcuts-title">
         <section class="card">
           <h2 id="pane-shortcuts-title" data-i18n="shortcuts_section_title">ショートカット</h2>
-          <p class="hint">サイドパネル右端のショートカットボタンを管理します。右クリックメニューから追加できます。</p>
+          <p class="hint" data-i18n="shortcuts_hint">サイドパネル右端のショートカットボタンを管理します。右クリックメニューから追加できます。</p>
           <label class="shortcut-toggle">
             <input id="shortcut_visible" type="checkbox" />
-            <span>ショートカットを表示する</span>
+            <span data-i18n="shortcuts_visible_label">ショートカットを表示する</span>
           </label>
-          <div class="kp-setting-row shortcut-search-mode-group" role="group" aria-label="ショートカット検索の開き方">
-            <div class="kp-setting-label">ショートカット検索の開き方</div>
+          <div class="kp-setting-row shortcut-search-mode-group" role="group" aria-label="ショートカット検索の開き方" data-i18n-aria-label="shortcuts_search_mode_label">
+            <div class="kp-setting-label" data-i18n="shortcuts_search_mode_label">ショートカット検索の開き方</div>
             <div class="kp-inline-radio">
               <label>
                 <input type="radio" name="shortcut_search_open_mode" value="current_tab" />
-                <span>現在のタブ</span>
+                <span data-i18n="shortcuts_open_current_tab">現在のタブ</span>
               </label>
               <label>
                 <input type="radio" name="shortcut_search_open_mode" value="new_tab" />
-                <span>新しいタブ</span>
+                <span data-i18n="shortcuts_open_new_tab">新しいタブ</span>
               </label>
             </div>
           </div>
           <ul id="shortcut_list" class="shortcut-list"></ul>
-          <p class="hint">並び順はドラッグで変更できます。削除は各行の削除ボタンから行えます。</p>
+          <p class="hint" data-i18n="shortcuts_list_hint">並び順はドラッグで変更できます。削除は各行の削除ボタンから行えます。</p>
         </section>
       </section>
     </main>
@@ -232,52 +232,52 @@
   <dialog id="editDialog" class="edit-modal" role="dialog" aria-modal="true" aria-labelledby="editDialogTitle">
     <form id="editForm" class="edit-modal-form">
       <header class="edit-modal-head">
-        <h3 id="editDialogTitle">ウォッチリストを編集</h3>
-        <button id="editCloseX" type="button" class="modal-close-btn" aria-label="閉じる" title="閉じる">✕</button>
+        <h3 id="editDialogTitle" data-i18n="dialog_watch_edit_title">ウォッチリストを編集</h3>
+        <button id="editCloseX" type="button" class="modal-close-btn" aria-label="閉じる" title="閉じる" data-i18n-aria-label="dialog_close" data-i18n-title="dialog_close">✕</button>
       </header>
 
       <div class="edit-modal-body">
         <div class="edit-modal-grid">
           <div class="edit-modal-col">
-            <label>表示名<br/>
-              <input id="edit_label" placeholder="例：受注一覧（未出荷）"/>
+            <label><span data-i18n="watch_label_label">表示名</span><br/>
+              <input id="edit_label" placeholder="例：受注一覧（未出荷）" data-i18n-placeholder="watch_placeholder_label"/>
             </label>
-            <label>kintone URL（アプリ／ビュー）<br/>
-              <input id="edit_url" placeholder="例：https://xxx.cybozu.com/k/45/?view=123"/>
+            <label><span data-i18n="watch_url_label">kintone URL（アプリ／ビュー）</span><br/>
+              <input id="edit_url" placeholder="例：https://xxx.cybozu.com/k/45/?view=123" data-i18n-placeholder="watch_placeholder_url"/>
             </label>
           </div>
           <div class="edit-modal-col">
             <div class="grid icon-cat-grid watch-meta-grid">
-              <label>カテゴリ（任意）<br/>
-                <input id="edit_category" list="categorySuggestions" placeholder="例：営業" />
+              <label><span data-i18n="watch_category_optional">カテゴリ（任意）</span><br/>
+                <input id="edit_category" list="categorySuggestions" placeholder="例：営業" data-i18n-placeholder="watch_placeholder_category" />
               </label>
-              <label>アイコン<br/>
+              <label><span data-i18n="watch_icon_label">アイコン</span><br/>
                 <select id="edit_icon"></select>
                 <span id="editIconPreview" class="icon-preview lc" data-icon="file-text" aria-hidden="true"></span>
               </label>
-              <label>アイコン色<br/>
+              <label><span data-i18n="watch_icon_color_label">アイコン色</span><br/>
                 <select id="edit_iconColor"></select>
               </label>
             </div>
           </div>
         </div>
-        <p class="hint">※ アイコンと色、カテゴリはショートカット／サイドパネルでそのまま利用されます。</p>
+        <p class="hint" data-i18n="watch_edit_hint">※ アイコンと色、カテゴリはショートカット／サイドパネルでそのまま利用されます。</p>
         <details>
-          <summary>高度な設定（手動指定）</summary>
+          <summary data-i18n="common_advanced_settings_manual">高度な設定（手動指定）</summary>
           <div class="grid">
-            <label>App ID<br/><input id="edit_appId" placeholder="45"/></label>
-            <label>View ID/Name<br/><input id="edit_viewIdOrName" placeholder="123 または ビュー名"/></label>
-            <label>Query（任意）<br/><input id="edit_query" placeholder="ステータス in (&quot;未出荷&quot;)"/></label>
+            <label><span data-i18n="watch_app_id_label">App ID</span><br/><input id="edit_appId" placeholder="45" data-i18n-placeholder="watch_placeholder_app_id"/></label>
+            <label><span data-i18n="watch_view_label">View ID/Name</span><br/><input id="edit_viewIdOrName" placeholder="123 または ビュー名" data-i18n-placeholder="watch_placeholder_view"/></label>
+            <label><span data-i18n="watch_query_optional_label">Query（任意）</span><br/><input id="edit_query" placeholder="ステータス in (&quot;未出荷&quot;)" data-i18n-placeholder="watch_placeholder_query"/></label>
           </div>
-          <p class="hint">※ Query を指定した場合は View より優先します。</p>
+          <p class="hint" data-i18n="watch_edit_query_hint">※ Query を指定した場合は View より優先します。</p>
         </details>
       </div>
 
       <footer class="edit-modal-foot">
-        <p class="hint">変更内容は保存時のみ反映されます。</p>
+        <p class="hint" data-i18n="dialog_apply_hint">変更内容は保存時のみ反映されます。</p>
         <menu class="dialog-actions">
-          <button id="editCancel" type="button">キャンセル</button>
-          <button id="editSave" type="button">保存</button>
+          <button id="editCancel" type="button" data-i18n="common_cancel">キャンセル</button>
+          <button id="editSave" type="button" data-i18n="common_save">保存</button>
         </menu>
       </footer>
     </form>
@@ -285,41 +285,41 @@
   <dialog id="pinEditDialog" class="edit-modal" role="dialog" aria-modal="true" aria-labelledby="pinEditDialogTitle">
     <form id="pinEditForm" class="edit-modal-form">
       <header class="edit-modal-head">
-        <h3 id="pinEditDialogTitle">ピン止めを編集</h3>
-        <button id="pinEditCloseX" type="button" class="modal-close-btn" aria-label="閉じる" title="閉じる">✕</button>
+        <h3 id="pinEditDialogTitle" data-i18n="dialog_pin_edit_title">ピン止めを編集</h3>
+        <button id="pinEditCloseX" type="button" class="modal-close-btn" aria-label="閉じる" title="閉じる" data-i18n-aria-label="dialog_close" data-i18n-title="dialog_close">✕</button>
       </header>
 
       <div class="edit-modal-body">
         <div class="edit-modal-grid">
           <div class="edit-modal-col">
-            <label>表示名（任意）<br/>
-              <input id="pin_edit_label" placeholder="例：重要案件A"/>
+            <label><span data-i18n="pins_label_optional">表示名（任意）</span><br/>
+              <input id="pin_edit_label" placeholder="例：重要案件A" data-i18n-placeholder="pins_placeholder_label"/>
             </label>
-            <label>kintone レコード URL<br/>
-              <input id="pin_edit_url" placeholder="例：https://xxx.cybozu.com/k/45/show#record=12"/>
+            <label><span data-i18n="pins_url_label">kintone レコード URL</span><br/>
+              <input id="pin_edit_url" placeholder="例：https://xxx.cybozu.com/k/45/show#record=12" data-i18n-placeholder="pins_placeholder_url"/>
             </label>
-            <label>初期メモ（任意）<br/>
-              <textarea id="pin_edit_note" rows="4" placeholder="サイドパネルで編集できます"></textarea>
+            <label><span data-i18n="pins_note_optional">初期メモ（任意）</span><br/>
+              <textarea id="pin_edit_note" rows="4" placeholder="サイドパネルで編集できます" data-i18n-placeholder="pins_placeholder_note"></textarea>
             </label>
           </div>
           <div class="edit-modal-col">
             <div class="grid">
-              <label>App ID<br/><input id="pin_edit_appId" placeholder="45"/></label>
-              <label>レコードID<br/><input id="pin_edit_recordId" placeholder="12"/></label>
+              <label><span data-i18n="pins_app_id_label">App ID</span><br/><input id="pin_edit_appId" placeholder="45" data-i18n-placeholder="pins_placeholder_app_id"/></label>
+              <label><span data-i18n="pins_record_id_label">レコードID</span><br/><input id="pin_edit_recordId" placeholder="12" data-i18n-placeholder="pins_placeholder_record_id"/></label>
             </div>
             <details>
-              <summary>高度な設定（手動指定）</summary>
-              <label>タイトル用フィールドコード（任意）<br/><input id="pin_edit_titleField" placeholder="例：件名"/></label>
+              <summary data-i18n="common_advanced_settings_manual">高度な設定（手動指定）</summary>
+              <label><span data-i18n="pins_title_field_optional">タイトル用フィールドコード（任意）</span><br/><input id="pin_edit_titleField" placeholder="例：件名" data-i18n-placeholder="pins_placeholder_title_field"/></label>
             </details>
           </div>
         </div>
       </div>
 
       <footer class="edit-modal-foot">
-        <p class="hint">変更内容は保存時のみ反映されます。</p>
+        <p class="hint" data-i18n="dialog_apply_hint">変更内容は保存時のみ反映されます。</p>
         <menu class="dialog-actions">
-          <button id="pinEditCancel" type="button">キャンセル</button>
-          <button id="pinEditSave" type="button">保存</button>
+          <button id="pinEditCancel" type="button" data-i18n="common_cancel">キャンセル</button>
+          <button id="pinEditSave" type="button" data-i18n="common_save">保存</button>
         </menu>
       </footer>
     </form>

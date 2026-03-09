@@ -50,12 +50,19 @@ activatePane(window.location.hash.slice(1) || DEFAULT_PANE, { updateHash: false 
 const I18N_MESSAGES = {
   ja: {
     settings_title: 'kintone Base 設定',
+    settings_menu_aria: '設定メニュー',
     nav_general: '全般',
     nav_shortcuts: 'ショートカット',
     nav_watchlist: 'ウォッチリスト',
     nav_pins: 'ピン止め',
     nav_excel_overlay: 'Excel Overlay',
     general_section_title: '全般',
+    general_intro_1: 'kintone Base は、kintone を横断的に閲覧・操作するための Chrome 拡張機能です。各機能は左メニューから切り替えて設定できます。',
+    general_intro_2: '設定は自動で保存され、同期が有効になっている場合は同じ Google アカウントで Chrome を使用する他端末にも共有されます。',
+    general_tips_title: '使い方のヒント',
+    general_tip_watchlist: 'ウォッチリストに登録したアプリはサイドパネルから素早く開けます。',
+    general_tip_pins: 'ピン止めは重要レコードをメモ付きで保存できます。',
+    general_tip_shortcuts: 'ショートカットはよく使う画面を Chrome から直接開くためのリンクです。',
     general_language_label: '言語',
     general_language_auto: 'Auto',
     general_language_ja: '日本語',
@@ -76,13 +83,144 @@ const I18N_MESSAGES = {
     overlay_mode_pro_notice: 'Proモードは近日公開予定です。現在はStandardをご利用ください。',
     overlay_layout_title: '列レイアウト設定',
     overlay_layout_desc: '一覧画面で保存された列並び・列幅を管理します。Standard モードでも列レイアウト保存は利用できます。',
+    overlay_note_title: '補足',
+    overlay_note_desc: '今後、列表示設定や固定列などもこのセクションに追加予定です。',
+    host_perm_title: 'ホストアクセス許可',
+    host_perm_desc: 'kintone の URL（例：https://xxx.cybozu.com/k/）を入力して「このホストを許可」を押すと、件数取得やショートカットが自動的に動作できるようになります。',
+    host_perm_input_label: 'kintone URL またはホスト',
+    host_perm_input_placeholder: '例：https://example.cybozu.com/k/',
+    host_perm_request_btn: 'このホストを許可',
+    host_perm_check_btn: '状態を確認',
+    host_perm_status_unknown: '権限: 未確認',
+    host_perm_status_granted: '権限: 許可済み',
+    host_perm_status_denied: '権限: 未許可',
+    host_perm_hint: 'InPrivate で利用する場合は拡張機能の「InPrivate で許可」をオンにしてから実行してください。',
+    watch_label_optional: '表示名（任意）',
+    watch_label_label: '表示名',
+    watch_url_label: 'kintone URL（アプリ／ビュー）',
+    watch_category_optional: 'カテゴリ（任意）',
+    watch_icon_label: 'アイコン',
+    watch_icon_color_label: 'アイコン色',
+    watch_icon_hint: '※ アイコンと色はショートカット/ウォッチ行に反映されます。カテゴリはサイドパネルのグループ分けに利用されます。',
+    common_advanced_settings_manual: '高度な設定（手動指定）',
+    watch_app_id_label: 'App ID',
+    watch_view_label: 'View ID/Name',
+    watch_query_optional_label: 'Query（任意）',
+    watch_view_query_hint: '※ View を指定するとそのフィルタ条件で件数カウント。Query を指定した場合は View より優先します。',
+    watch_edit_hint: '※ アイコンと色、カテゴリはショートカット／サイドパネルでそのまま利用されます。',
+    watch_edit_query_hint: '※ Query を指定した場合は View より優先します。',
+    watch_placeholder_label: '例：受注一覧（未出荷）',
+    watch_placeholder_url: '例：https://xxx.cybozu.com/k/45/?view=123',
+    watch_placeholder_category: '例：営業',
+    watch_placeholder_app_id: '45',
+    watch_placeholder_view: '123 または ビュー名',
+    watch_placeholder_query: 'ステータス in ("未出荷")',
+    common_add: '追加',
+    watch_registered_title: '登録済みウォッチリスト',
+    watch_registered_hint: 'ドラッグで並び替え。右上のアイコンで固定・開く・編集・削除ができます。詳細は各カードの「詳細」を展開してください。',
+    pins_intro_hint: '※ 気になるレコードを登録すると、サイドパネルの専用タブでメモ付きで表示できます。',
+    pins_visible_label: 'サイドパネルにレコードピンを表示する',
+    pins_visible_hint: 'この設定をオフにするとサイドパネルからレコードピンカード全体が非表示になります。',
+    pins_add_title: 'ピン留めレコードを追加',
+    pins_label_optional: '表示名（任意）',
+    pins_url_label: 'kintone レコード URL',
+    pins_app_id_label: 'App ID',
+    pins_record_id_label: 'レコードID',
+    pins_note_optional: '初期メモ（任意）',
+    pins_title_field_optional: 'タイトル用フィールドコード（任意）',
+    pins_placeholder_label: '例：重要案件A',
+    pins_placeholder_url: '例：https://xxx.cybozu.com/k/45/show#record=12',
+    pins_placeholder_app_id: '45',
+    pins_placeholder_record_id: '12',
+    pins_placeholder_note: 'サイドパネルで編集できます',
+    pins_placeholder_title_field: '例：件名',
+    pins_reset_btn: '入力をクリア',
+    pins_registered_title: '登録済みピン',
+    pins_registered_hint: 'カード右上のアイコンで開く・編集・削除ができます。詳細情報は「詳細」を展開してください。',
+    shortcuts_hint: 'サイドパネル右端のショートカットボタンを管理します。右クリックメニューから追加できます。',
+    shortcuts_visible_label: 'ショートカットを表示する',
+    shortcuts_search_mode_label: 'ショートカット検索の開き方',
+    shortcuts_open_current_tab: '現在のタブ',
+    shortcuts_open_new_tab: '新しいタブ',
+    shortcuts_list_hint: '並び順はドラッグで変更できます。削除は各行の削除ボタンから行えます。',
+    dialog_watch_edit_title: 'ウォッチリストを編集',
+    dialog_pin_edit_title: 'ピン止めを編集',
+    dialog_close: '閉じる',
+    dialog_apply_hint: '変更内容は保存時のみ反映されます。',
+    common_cancel: 'キャンセル',
+    common_save: '保存',
     reset_all: 'すべてリセット',
     clear_sort: '並びを解除',
     clear_width: '幅を解除',
     delete: '削除',
+    confirm_clear_layouts: '保存済みの列レイアウトをすべて削除します。よろしいですか？',
+    alert_invalid_kintone_url: '有効な kintone URL を入力してください',
+    alert_host_permission_denied: 'このドメインへのアクセス権限が許可されませんでした',
+    alert_duplicate_url: 'このURLは既に登録済みです',
+    alert_required_pin_fields: 'host / App ID / レコードID は必須です',
+    alert_dialog_not_supported: 'このブラウザはdialog要素に対応していません',
+    alert_invalid_kintone_url_or_host: '有効な kintone URL またはホストを入力してください',
+    alert_permission_cancelled: '許可がキャンセルされました',
+    alert_permission_granted: '許可が完了しました',
     app_unspecified: 'App 未指定',
     view_unspecified: 'ビュー未指定',
     app_prefix: 'App',
+    record_prefix: 'Record',
+    record_unspecified: 'Record 未指定',
+    category_other: 'その他',
+    no_label: '(no label)',
+    icon_color_gray: 'グレー',
+    icon_color_blue: 'ブルー',
+    icon_color_green: 'グリーン',
+    icon_color_orange: 'オレンジ',
+    icon_color_red: 'レッド',
+    icon_color_purple: 'パープル',
+    shortcut_type_appTop: 'アプリトップ',
+    shortcut_type_view: 'ビュー',
+    shortcut_type_create: 'レコード新規',
+    shortcut_meta_type: '種別',
+    shortcut_meta_host: 'Host',
+    shortcut_meta_app: 'App',
+    shortcut_meta_icon: 'Icon',
+    shortcut_meta_color: '色',
+    shortcut_meta_view: 'View',
+    shortcut_empty: 'ショートカットはまだありません。',
+    shortcut_drag_handle_title: 'ドラッグで並び替え',
+    shortcut_editor_label: '表示名',
+    shortcut_editor_icon: 'アイコン',
+    shortcut_editor_icon_color: 'アイコン色',
+    shortcut_save: '保存',
+    shortcut_cancel: 'キャンセル',
+    shortcut_open: '開く',
+    shortcut_open_url_unavailable: '対象URLを生成できません',
+    shortcut_edit: '編集',
+    shortcut_close: '閉じる',
+    shortcut_delete: '削除',
+    pins_empty: '登録済みのピンはありません。',
+    pins_open: '開く',
+    pins_edit: '編集',
+    pins_delete: '削除',
+    pins_details: '詳細',
+    pins_detail_host: 'Host',
+    pins_detail_url: 'URL',
+    pins_detail_app_id: 'App ID',
+    pins_detail_record_id: 'Record ID',
+    pins_detail_title_field: 'Title field',
+    watch_empty: '登録済みのウォッチリストはまだありません。',
+    watch_badge_target_title: 'このウォッチリストをバッジ対象にする',
+    watch_pin_set: '固定する',
+    watch_pin_remove: '固定を解除',
+    watch_open: '開く',
+    watch_edit: '編集',
+    watch_delete: '削除',
+    watch_details: '詳細',
+    watch_detail_host: 'Host',
+    watch_detail_url: 'URL',
+    watch_detail_app: 'App',
+    watch_detail_view: 'View',
+    watch_detail_query: 'Query',
+    watch_detail_color: '色',
+    watch_detail_category: 'カテゴリ',
     layout_empty_title: '保存済みの列レイアウトはありません。',
     layout_empty_desc: '一覧画面で列並びや列幅を変更すると、ここに保存されます。',
     layout_meta_order: '列順',
@@ -91,12 +229,19 @@ const I18N_MESSAGES = {
   },
   en: {
     settings_title: 'kintone Base Settings',
+    settings_menu_aria: 'Settings menu',
     nav_general: 'General',
     nav_shortcuts: 'Shortcuts',
     nav_watchlist: 'Watchlist',
     nav_pins: 'Pins',
     nav_excel_overlay: 'Excel Overlay',
     general_section_title: 'General',
+    general_intro_1: 'kintone Base is a Chrome extension for browsing and operating kintone more efficiently across apps.',
+    general_intro_2: 'Settings are saved automatically and synced across devices signed in with the same Google account when sync is enabled.',
+    general_tips_title: 'Tips',
+    general_tip_watchlist: 'Apps in your watchlist can be opened quickly from the side panel.',
+    general_tip_pins: 'Pin records with notes to keep important items close.',
+    general_tip_shortcuts: 'Shortcuts let you open frequent screens directly from Chrome.',
     general_language_label: 'Language',
     general_language_auto: 'Auto',
     general_language_ja: 'Japanese',
@@ -117,13 +262,144 @@ const I18N_MESSAGES = {
     overlay_mode_pro_notice: 'Pro mode is coming soon. Please use Standard for now.',
     overlay_layout_title: 'Column Layout Settings',
     overlay_layout_desc: 'Manage saved column order and widths for list pages. Layout saving is available in Standard mode as well.',
+    overlay_note_title: 'Notes',
+    overlay_note_desc: 'Column visibility and fixed columns are planned to be added here in future updates.',
+    host_perm_title: 'Host Access Permission',
+    host_perm_desc: 'Enter a kintone URL (example: https://xxx.cybozu.com/k/) and click "Allow this host" to enable counts and shortcut actions.',
+    host_perm_input_label: 'kintone URL or host',
+    host_perm_input_placeholder: 'Example: https://example.cybozu.com/k/',
+    host_perm_request_btn: 'Allow this host',
+    host_perm_check_btn: 'Check status',
+    host_perm_status_unknown: 'Permission: Unknown',
+    host_perm_status_granted: 'Permission: Granted',
+    host_perm_status_denied: 'Permission: Not granted',
+    host_perm_hint: 'For InPrivate use, turn on "Allow in InPrivate" in extension settings before running.',
+    watch_label_optional: 'Display name (optional)',
+    watch_label_label: 'Display name',
+    watch_url_label: 'kintone URL (app/view)',
+    watch_category_optional: 'Category (optional)',
+    watch_icon_label: 'Icon',
+    watch_icon_color_label: 'Icon color',
+    watch_icon_hint: 'Icon, color, and category are reflected in shortcut/watchlist rows in the side panel.',
+    common_advanced_settings_manual: 'Advanced settings (manual)',
+    watch_app_id_label: 'App ID',
+    watch_view_label: 'View ID/Name',
+    watch_query_optional_label: 'Query (optional)',
+    watch_view_query_hint: 'If View is set, counts use that filter. If Query is set, Query takes priority.',
+    watch_edit_hint: 'Icon, color, and category are used directly in shortcuts and the side panel.',
+    watch_edit_query_hint: 'If Query is set, Query takes priority over View.',
+    watch_placeholder_label: 'Example: Orders (Unshipped)',
+    watch_placeholder_url: 'Example: https://xxx.cybozu.com/k/45/?view=123',
+    watch_placeholder_category: 'Example: Sales',
+    watch_placeholder_app_id: '45',
+    watch_placeholder_view: '123 or view name',
+    watch_placeholder_query: 'Status in ("Unshipped")',
+    common_add: 'Add',
+    watch_registered_title: 'Saved Watchlist',
+    watch_registered_hint: 'Drag to reorder. Use top-right icons to pin, open, edit, or delete. Expand "Details" on each card for more info.',
+    pins_intro_hint: 'Pinned records are shown with notes in the side panel record pin section.',
+    pins_visible_label: 'Show record pins in side panel',
+    pins_visible_hint: 'When off, record pin cards are hidden in the side panel.',
+    pins_add_title: 'Add pinned record',
+    pins_label_optional: 'Display name (optional)',
+    pins_url_label: 'kintone record URL',
+    pins_app_id_label: 'App ID',
+    pins_record_id_label: 'Record ID',
+    pins_note_optional: 'Initial note (optional)',
+    pins_title_field_optional: 'Title field code (optional)',
+    pins_placeholder_label: 'Example: Important deal A',
+    pins_placeholder_url: 'Example: https://xxx.cybozu.com/k/45/show#record=12',
+    pins_placeholder_app_id: '45',
+    pins_placeholder_record_id: '12',
+    pins_placeholder_note: 'Editable from side panel',
+    pins_placeholder_title_field: 'Example: subject',
+    pins_reset_btn: 'Clear input',
+    pins_registered_title: 'Saved pins',
+    pins_registered_hint: 'Use top-right icons to open, edit, or delete. Expand "Details" for more info.',
+    shortcuts_hint: 'Manage shortcut buttons shown at the right edge of the side panel. Add from context menu.',
+    shortcuts_visible_label: 'Show shortcuts',
+    shortcuts_search_mode_label: 'Shortcut search open behavior',
+    shortcuts_open_current_tab: 'Current tab',
+    shortcuts_open_new_tab: 'New tab',
+    shortcuts_list_hint: 'Drag to reorder. Delete each row from its delete button.',
+    dialog_watch_edit_title: 'Edit watchlist',
+    dialog_pin_edit_title: 'Edit pin',
+    dialog_close: 'Close',
+    dialog_apply_hint: 'Changes are applied only when saved.',
+    common_cancel: 'Cancel',
+    common_save: 'Save',
     reset_all: 'Reset All',
     clear_sort: 'Clear Sort',
     clear_width: 'Clear Width',
     delete: 'Delete',
+    confirm_clear_layouts: 'Delete all saved column layouts. Continue?',
+    alert_invalid_kintone_url: 'Please enter a valid kintone URL.',
+    alert_host_permission_denied: 'Host access permission was not granted for this domain.',
+    alert_duplicate_url: 'This URL is already registered.',
+    alert_required_pin_fields: 'host / App ID / Record ID are required.',
+    alert_dialog_not_supported: 'This browser does not support the dialog element.',
+    alert_invalid_kintone_url_or_host: 'Please enter a valid kintone URL or host.',
+    alert_permission_cancelled: 'Permission request was cancelled.',
+    alert_permission_granted: 'Permission granted.',
     app_unspecified: 'App unspecified',
     view_unspecified: 'View unspecified',
     app_prefix: 'App',
+    record_prefix: 'Record',
+    record_unspecified: 'Record unspecified',
+    category_other: 'Other',
+    no_label: '(no label)',
+    icon_color_gray: 'Gray',
+    icon_color_blue: 'Blue',
+    icon_color_green: 'Green',
+    icon_color_orange: 'Orange',
+    icon_color_red: 'Red',
+    icon_color_purple: 'Purple',
+    shortcut_type_appTop: 'App top',
+    shortcut_type_view: 'View',
+    shortcut_type_create: 'Create record',
+    shortcut_meta_type: 'Type',
+    shortcut_meta_host: 'Host',
+    shortcut_meta_app: 'App',
+    shortcut_meta_icon: 'Icon',
+    shortcut_meta_color: 'Color',
+    shortcut_meta_view: 'View',
+    shortcut_empty: 'No shortcuts yet.',
+    shortcut_drag_handle_title: 'Drag to reorder',
+    shortcut_editor_label: 'Label',
+    shortcut_editor_icon: 'Icon',
+    shortcut_editor_icon_color: 'Icon color',
+    shortcut_save: 'Save',
+    shortcut_cancel: 'Cancel',
+    shortcut_open: 'Open',
+    shortcut_open_url_unavailable: 'Target URL cannot be generated.',
+    shortcut_edit: 'Edit',
+    shortcut_close: 'Close',
+    shortcut_delete: 'Delete',
+    pins_empty: 'No saved pins.',
+    pins_open: 'Open',
+    pins_edit: 'Edit',
+    pins_delete: 'Delete',
+    pins_details: 'Details',
+    pins_detail_host: 'Host',
+    pins_detail_url: 'URL',
+    pins_detail_app_id: 'App ID',
+    pins_detail_record_id: 'Record ID',
+    pins_detail_title_field: 'Title field',
+    watch_empty: 'No watchlist items yet.',
+    watch_badge_target_title: 'Set this watchlist as badge target',
+    watch_pin_set: 'Pin',
+    watch_pin_remove: 'Unpin',
+    watch_open: 'Open',
+    watch_edit: 'Edit',
+    watch_delete: 'Delete',
+    watch_details: 'Details',
+    watch_detail_host: 'Host',
+    watch_detail_url: 'URL',
+    watch_detail_app: 'App',
+    watch_detail_view: 'View',
+    watch_detail_query: 'Query',
+    watch_detail_color: 'Color',
+    watch_detail_category: 'Category',
     layout_empty_title: 'No saved column layouts.',
     layout_empty_desc: 'Saved column order and widths from list pages will appear here.',
     layout_meta_order: 'Order',
@@ -189,6 +465,11 @@ function applyI18n(root = document) {
     const key = el.getAttribute('data-i18n-placeholder');
     if (!key) return;
     el.setAttribute('placeholder', t(key));
+  });
+  root.querySelectorAll('[data-i18n-aria-label]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-aria-label');
+    if (!key) return;
+    el.setAttribute('aria-label', t(key));
   });
 }
 
@@ -292,14 +573,6 @@ const ICON_CHOICES = [
 ];
 const DEFAULT_ICON = 'file-text';
 const ICON_COLOR_CHOICES = ['gray', 'blue', 'green', 'orange', 'red', 'purple'];
-const ICON_COLOR_LABELS = {
-  gray: 'グレー',
-  blue: 'ブルー',
-  green: 'グリーン',
-  orange: 'オレンジ',
-  red: 'レッド',
-  purple: 'パープル'
-};
 const DEFAULT_ICON_COLOR = 'gray';
 const DEFAULT_CATEGORY = 'その他';
 const MAX_SHORTCUT_INITIAL_LENGTH = 2;
@@ -336,7 +609,17 @@ function sanitizeCategory(value) {
 
 function getCategoryLabel(value) {
   const name = sanitizeCategory(value);
-  return name || DEFAULT_CATEGORY;
+  return name || t('category_other');
+}
+
+function isDefaultCategoryName(value) {
+  const normalized = sanitizeCategory(value);
+  if (!normalized) return true;
+  return normalized === DEFAULT_CATEGORY || normalized === t('category_other');
+}
+
+function getIconColorLabel(value) {
+  return t(`icon_color_${sanitizeIconColor(value)}`);
 }
 
 function normalizeFavoriteEntryLocal(item, fallbackOrder) {
@@ -402,7 +685,7 @@ function updateCategorySuggestions(items = []) {
     new Set(
       (items || [])
         .map((item) => sanitizeCategory(item.category))
-        .filter((name) => name && name !== DEFAULT_CATEGORY)
+        .filter((name) => name && !isDefaultCategoryName(name))
     )
   ).sort((a, b) => a.localeCompare(b, 'ja'));
   categorySuggestionsEl.innerHTML = '';
@@ -467,7 +750,7 @@ function populateIconColorSelect(selectEl) {
   ICON_COLOR_CHOICES.forEach((name) => {
     const option = document.createElement('option');
     option.value = name;
-    option.textContent = ICON_COLOR_LABELS[name] || name;
+    option.textContent = getIconColorLabel(name);
     selectEl.appendChild(option);
   });
   selectEl.value = DEFAULT_ICON_COLOR;
@@ -493,7 +776,7 @@ function populateShortcutIconColorSelect(selectEl, currentValue = '') {
   ICON_COLOR_CHOICES.forEach((name) => {
     const option = document.createElement('option');
     option.value = name;
-    option.textContent = ICON_COLOR_LABELS[name] || name;
+    option.textContent = getIconColorLabel(name);
     selectEl.appendChild(option);
   });
   selectEl.value = normalized;
@@ -630,9 +913,9 @@ function parseKintoneUrl(u) {
 
 const SHORTCUT_TYPES = ['appTop', 'view', 'create'];
 const SHORTCUT_TYPE_LABELS = {
-  appTop: 'アプリトップ',
-  view: 'ビュー',
-  create: 'レコード新規'
+  appTop: 'shortcut_type_appTop',
+  view: 'shortcut_type_view',
+  create: 'shortcut_type_create'
 };
 
 function normalizeShortcutEntryLocal(entry, fallbackOrder = 0) {
@@ -665,7 +948,7 @@ function sortShortcutEntriesLocal(list) {
 }
 
 function shortcutTypeLabel(type) {
-  return SHORTCUT_TYPE_LABELS[type] || SHORTCUT_TYPE_LABELS.appTop;
+  return t(SHORTCUT_TYPE_LABELS[type] || SHORTCUT_TYPE_LABELS.appTop);
 }
 
 function buildShortcutUrl(entry) {
@@ -687,14 +970,14 @@ function buildShortcutUrl(entry) {
 
 function shortcutMetaText(entry) {
   const parts = [
-    `種別: ${shortcutTypeLabel(entry.type)}`,
-    `Host: ${entry.host || '-'}`,
-    `App: ${entry.appId || '-'}`,
-    `Icon: ${sanitizeShortcutIcon(entry.icon)}`,
-    `色: ${sanitizeShortcutIconColor(entry.iconColor)}`
+    `${t('shortcut_meta_type')}: ${shortcutTypeLabel(entry.type)}`,
+    `${t('shortcut_meta_host')}: ${entry.host || '-'}`,
+    `${t('shortcut_meta_app')}: ${entry.appId || '-'}`,
+    `${t('shortcut_meta_icon')}: ${sanitizeShortcutIcon(entry.icon)}`,
+    `${t('shortcut_meta_color')}: ${sanitizeShortcutIconColor(entry.iconColor)}`
   ];
   if (entry.type === 'view') {
-    parts.push(`View: ${entry.viewIdOrName || '-'}`);
+    parts.push(`${t('shortcut_meta_view')}: ${entry.viewIdOrName || '-'}`);
   }
   return parts.join(' / ');
 }
@@ -718,7 +1001,7 @@ function renderShortcutEntries() {
   if (!shortcutEntries.length) {
     const empty = document.createElement('li');
     empty.className = 'shortcut-empty';
-    empty.textContent = 'ショートカットはまだありません。';
+    empty.textContent = t('shortcut_empty');
     shortcutListEl.appendChild(empty);
     return;
   }
@@ -737,7 +1020,7 @@ function renderShortcutEntries() {
     const handle = document.createElement('span');
     handle.className = 'shortcut-handle';
     handle.textContent = '::';
-    handle.title = 'ドラッグで並び替え';
+    handle.title = t('shortcut_drag_handle_title');
 
     const info = document.createElement('div');
     info.className = 'shortcut-info';
@@ -766,14 +1049,14 @@ function renderShortcutEntries() {
     editorGrid.className = 'grid icon-cat-grid shortcut-editor-grid';
 
     const labelWrap = document.createElement('label');
-    labelWrap.textContent = '表示名';
+    labelWrap.textContent = t('shortcut_editor_label');
     labelWrap.appendChild(document.createElement('br'));
     const labelInput = document.createElement('input');
     labelInput.value = entry.label || '';
     labelWrap.appendChild(labelInput);
 
     const iconWrap = document.createElement('label');
-    iconWrap.textContent = 'アイコン';
+    iconWrap.textContent = t('shortcut_editor_icon');
     iconWrap.appendChild(document.createElement('br'));
     const iconSelect = document.createElement('select');
     populateShortcutIconSelect(iconSelect, entry.icon);
@@ -784,7 +1067,7 @@ function renderShortcutEntries() {
     iconWrap.appendChild(iconPreview);
 
     const colorWrap = document.createElement('label');
-    colorWrap.textContent = 'アイコン色';
+    colorWrap.textContent = t('shortcut_editor_icon_color');
     colorWrap.appendChild(document.createElement('br'));
     const colorSelect = document.createElement('select');
     populateShortcutIconColorSelect(colorSelect, entry.iconColor);
@@ -798,10 +1081,10 @@ function renderShortcutEntries() {
     editorActions.className = 'shortcut-editor-actions';
     const saveBtn = document.createElement('button');
     saveBtn.type = 'button';
-    saveBtn.textContent = '保存';
+    saveBtn.textContent = t('shortcut_save');
     const cancelBtn = document.createElement('button');
     cancelBtn.type = 'button';
-    cancelBtn.textContent = 'キャンセル';
+    cancelBtn.textContent = t('shortcut_cancel');
 
     editorActions.appendChild(saveBtn);
     editorActions.appendChild(cancelBtn);
@@ -821,7 +1104,7 @@ function renderShortcutEntries() {
     ops.className = 'shortcut-ops';
     const url = buildShortcutUrl(entry);
     const openA = document.createElement('a');
-        openA.textContent = '開く';
+        openA.textContent = t('shortcut_open');
     openA.className = 'btn';
     if (url) {
       openA.href = url;
@@ -832,16 +1115,16 @@ function renderShortcutEntries() {
       openA.href = '#';
       openA.setAttribute('aria-disabled', 'true');
       openA.classList.add('disabled');
-      openA.title = '対象URLを生成できません';
+      openA.title = t('shortcut_open_url_unavailable');
       openA.addEventListener('click', (ev) => ev.preventDefault());
     }
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
-    editBtn.textContent = '編集';
+    editBtn.textContent = t('shortcut_edit');
     editBtn.addEventListener('click', () => {
       const opening = !editor.classList.contains('is-open');
       editor.classList.toggle('is-open', opening);
-      editBtn.textContent = opening ? '閉じる' : '編集';
+      editBtn.textContent = opening ? t('shortcut_close') : t('shortcut_edit');
       if (opening) {
         labelInput.focus();
         labelInput.select();
@@ -849,7 +1132,7 @@ function renderShortcutEntries() {
     });
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
-    delBtn.textContent = '削除';
+    delBtn.textContent = t('shortcut_delete');
     delBtn.addEventListener('click', async () => {
       shortcutEntries = shortcutEntries.filter((item) => item.id !== entry.id);
       await persistShortcutEntries();
@@ -870,7 +1153,7 @@ function renderShortcutEntries() {
       populateShortcutIconColorSelect(colorSelect, entry.iconColor);
       updateEditorPreview();
       editor.classList.remove('is-open');
-      editBtn.textContent = '編集';
+      editBtn.textContent = t('shortcut_edit');
     });
     ops.appendChild(openA);
     ops.appendChild(editBtn);
@@ -925,8 +1208,8 @@ function normalizePinnedEntry(entry) {
 function pinnedEntryLabel(entry) {
   const label = entry.label?.trim();
   if (label) return label;
-  const app = entry.appId ? `App ${entry.appId}` : 'App 未指定';
-  const record = entry.recordId ? `Record ${entry.recordId}` : 'Record 未指定';
+  const app = entry.appId ? `${t('app_prefix')} ${entry.appId}` : t('app_unspecified');
+  const record = entry.recordId ? `${t('record_prefix')} ${entry.recordId}` : t('record_unspecified');
   return `${app} / ${record}`;
 }
 
@@ -948,7 +1231,7 @@ function renderPinnedEntries() {
   if (!pinnedEntries.length) {
     const empty = document.createElement('li');
     empty.className = 'muted';
-    empty.textContent = '登録済みのピンはありません。';
+    empty.textContent = t('pins_empty');
     pinListEl.appendChild(empty);
     return;
   }
@@ -981,8 +1264,8 @@ function renderPinnedEntries() {
     const openBtn = document.createElement('a');
     openBtn.className = 'watch-icon-btn pin-icon-btn pin-open-btn';
     openBtn.textContent = '↗';
-    openBtn.title = '開く';
-    openBtn.setAttribute('aria-label', '開く');
+    openBtn.title = t('pins_open');
+    openBtn.setAttribute('aria-label', t('pins_open'));
     if (entry.host && entry.appId && entry.recordId) {
       openBtn.href = `${entry.host}/k/${entry.appId}/show#record=${entry.recordId}`;
       openBtn.target = '_blank';
@@ -997,15 +1280,15 @@ function renderPinnedEntries() {
     editBtn.type = 'button';
     editBtn.className = 'watch-icon-btn pin-icon-btn pin-edit-btn';
     editBtn.textContent = '✎';
-    editBtn.title = '編集';
-    editBtn.setAttribute('aria-label', '編集');
+    editBtn.title = t('pins_edit');
+    editBtn.setAttribute('aria-label', t('pins_edit'));
     editBtn.addEventListener('click', () => openPinEditModal(entry, editBtn));
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = 'watch-icon-btn pin-icon-btn pin-del-btn';
     delBtn.textContent = '×';
-    delBtn.title = '削除';
-    delBtn.setAttribute('aria-label', '削除');
+    delBtn.title = t('pins_delete');
+    delBtn.setAttribute('aria-label', t('pins_delete'));
     delBtn.addEventListener('click', async () => {
       pinnedEntries = pinnedEntries.filter((item) => item.id !== entry.id);
       await savePinnedEntries();
@@ -1022,10 +1305,10 @@ function renderPinnedEntries() {
     summary.className = 'watch-summary pin-summary';
     const appChip = document.createElement('span');
     appChip.className = 'watch-chip pin-chip';
-    appChip.textContent = `App ${entry.appId || '-'}`;
+    appChip.textContent = `${t('app_prefix')} ${entry.appId || '-'}`;
     const recordChip = document.createElement('span');
     recordChip.className = 'watch-chip pin-chip';
-    recordChip.textContent = `Record ${entry.recordId || '-'}`;
+    recordChip.textContent = `${t('record_prefix')} ${entry.recordId || '-'}`;
     summary.appendChild(appChip);
     summary.appendChild(recordChip);
 
@@ -1041,18 +1324,18 @@ function renderPinnedEntries() {
     const details = document.createElement('details');
     details.className = 'watch-details pin-details';
     const detailSummary = document.createElement('summary');
-    detailSummary.textContent = '詳細';
+    detailSummary.textContent = t('pins_details');
     const detailBody = document.createElement('div');
     detailBody.className = 'watch-details-body pin-details-body';
     const fullUrl = entry.host && entry.appId && entry.recordId
       ? `${entry.host}/k/${entry.appId}/show#record=${entry.recordId}`
       : '-';
     [
-      ['Host', entry.host || '-'],
-      ['URL', fullUrl],
-      ['App ID', entry.appId || '-'],
-      ['Record ID', entry.recordId || '-'],
-      ['Title field', entry.titleField || '-']
+      [t('pins_detail_host'), entry.host || '-'],
+      [t('pins_detail_url'), fullUrl],
+      [t('pins_detail_app_id'), entry.appId || '-'],
+      [t('pins_detail_record_id'), entry.recordId || '-'],
+      [t('pins_detail_title_field'), entry.titleField || '-']
     ].forEach(([label, value]) => {
       const row = document.createElement('div');
       row.className = 'watch-detail-row pin-detail-row';
@@ -1079,7 +1362,7 @@ function resetPinnedForm() {
   pinRecordIdEl.value = '';
   pinTitleFieldEl.value = '';
   pinNoteEl.value = '';
-  if (pinSaveBtn) pinSaveBtn.textContent = '追加';
+  if (pinSaveBtn) pinSaveBtn.textContent = t('common_add');
 }
 async function loadFavorites() {
   const { kintoneFavorites = [] } = await chrome.storage.sync.get('kintoneFavorites');
@@ -1113,7 +1396,7 @@ async function render(items) {
   if (!sorted.length) {
     const empty = document.createElement('li');
     empty.className = 'item item-empty';
-    empty.textContent = '登録済みのウォッチリストはまだありません。';
+    empty.textContent = t('watch_empty');
     listEl.appendChild(empty);
     return;
   }
@@ -1129,7 +1412,7 @@ async function render(items) {
     const handle = document.createElement('div');
     handle.className = 'drag-handle watch-drag-handle';
     handle.textContent = '⋮⋮';
-    handle.title = 'ドラッグで並び替え';
+    handle.title = t('shortcut_drag_handle_title');
 
     const body = document.createElement('div');
     body.className = 'watch-main';
@@ -1144,7 +1427,7 @@ async function render(items) {
     iconPreview.setAttribute('aria-hidden', 'true');
     const titleText = document.createElement('span');
     titleText.className = 'watch-title-text';
-    titleText.textContent = it.label || '(no label)';
+    titleText.textContent = it.label || t('no_label');
     title.appendChild(iconPreview);
     title.appendChild(titleText);
     top.appendChild(title);
@@ -1155,8 +1438,8 @@ async function render(items) {
     // バッジ対象ラジオ
     const badgeWrap = document.createElement('label');
     badgeWrap.className = 'watch-icon-btn watch-badge-btn';
-    badgeWrap.title = 'このウォッチリストをバッジ対象にする';
-    badgeWrap.setAttribute('aria-label', 'このウォッチリストをバッジ対象にする');
+    badgeWrap.title = t('watch_badge_target_title');
+    badgeWrap.setAttribute('aria-label', t('watch_badge_target_title'));
     const radio = document.createElement('input');
     radio.type = 'radio';
     radio.name = 'badgeTarget';
@@ -1180,8 +1463,8 @@ async function render(items) {
     pinBtn.className = 'pin watch-icon-btn watch-pin-btn';
     pinBtn.type = 'button';
     pinBtn.textContent = '📌';
-    pinBtn.title = it.pinned ? '固定を解除' : '固定する';
-    pinBtn.setAttribute('aria-label', it.pinned ? '固定を解除' : '固定する');
+    pinBtn.title = it.pinned ? t('watch_pin_remove') : t('watch_pin_set');
+    pinBtn.setAttribute('aria-label', it.pinned ? t('watch_pin_remove') : t('watch_pin_set'));
     pinBtn.classList.toggle('is-active', Boolean(it.pinned));
     pinBtn.addEventListener('click', async () => {
       const all = await loadFavorites();
@@ -1195,8 +1478,8 @@ async function render(items) {
     const openA = document.createElement('a');
     openA.textContent = '↗';
     openA.className = 'btn watch-icon-btn watch-open-btn';
-    openA.title = '開く';
-    openA.setAttribute('aria-label', '開く');
+    openA.title = t('watch_open');
+    openA.setAttribute('aria-label', t('watch_open'));
     openA.href = it.url;
     openA.target = '_blank';
     openA.rel = 'noopener';
@@ -1205,16 +1488,16 @@ async function render(items) {
     editBtn.type = 'button';
     editBtn.textContent = '✎';
     editBtn.className = 'watch-icon-btn watch-edit-btn';
-    editBtn.title = '編集';
-    editBtn.setAttribute('aria-label', '編集');
+    editBtn.title = t('watch_edit');
+    editBtn.setAttribute('aria-label', t('watch_edit'));
     editBtn.addEventListener('click', () => openEdit(it, editBtn));
 
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.textContent = '✕';
     delBtn.className = 'watch-icon-btn watch-del-btn';
-    delBtn.title = '削除';
-    delBtn.setAttribute('aria-label', '削除');
+    delBtn.title = t('watch_delete');
+    delBtn.setAttribute('aria-label', t('watch_delete'));
     delBtn.addEventListener('click', async () => {
       const next = (await loadFavorites()).filter(x => x.id !== it.id);
       await saveFavorites(next);
@@ -1236,8 +1519,8 @@ async function render(items) {
       chip.textContent = text;
       summary.appendChild(chip);
     };
-    if (it.appId) addChip(`App ${it.appId}`);
-    if (it.viewIdOrName) addChip(`View ${it.viewIdOrName}`);
+    if (it.appId) addChip(`${t('app_prefix')} ${it.appId}`);
+    if (it.viewIdOrName) addChip(`${t('watch_detail_view')} ${it.viewIdOrName}`);
     addChip(getCategoryLabel(it.category));
 
     const urlLine = document.createElement('div');
@@ -1248,25 +1531,25 @@ async function render(items) {
     const queryLine = document.createElement('div');
     queryLine.className = 'watch-query';
     if (it.query) {
-      queryLine.textContent = `Query: ${it.query}`;
+      queryLine.textContent = `${t('watch_detail_query')}: ${it.query}`;
       queryLine.title = it.query;
     }
 
     const details = document.createElement('details');
     details.className = 'watch-details';
     const detailsSummary = document.createElement('summary');
-    detailsSummary.textContent = '詳細';
+    detailsSummary.textContent = t('watch_details');
     const detailsBody = document.createElement('div');
     detailsBody.className = 'watch-details-body';
     const metaRows = [
-      ['Host', it.host || '-'],
-      ['URL', it.url || '-'],
-      ['App', it.appId || '-'],
-      ['View', it.viewIdOrName || '-'],
-      ['Query', it.query || '-'],
-      ['Icon', sanitizeIcon(it.icon)],
-      ['色', sanitizeIconColor(it.iconColor)],
-      ['カテゴリ', getCategoryLabel(it.category)]
+      [t('watch_detail_host'), it.host || '-'],
+      [t('watch_detail_url'), it.url || '-'],
+      [t('watch_detail_app'), it.appId || '-'],
+      [t('watch_detail_view'), it.viewIdOrName || '-'],
+      [t('watch_detail_query'), it.query || '-'],
+      [t('shortcut_meta_icon'), sanitizeIcon(it.icon)],
+      [t('watch_detail_color'), sanitizeIconColor(it.iconColor)],
+      [t('watch_detail_category'), getCategoryLabel(it.category)]
     ];
     metaRows.forEach(([label, value]) => {
       const row = document.createElement('div');
@@ -1448,7 +1731,7 @@ function openEdit(item, triggerEl = null) {
       }
     }, 0);
   } else {
-    alert('このブラウザはdialog要素に対応していません');
+    alert(t('alert_dialog_not_supported'));
   }
 }
 
@@ -1467,16 +1750,16 @@ editSaveBtn.addEventListener('click', async (e) => {
   const newIcon = sanitizeIcon(editIconEl?.value);
   const newIconColor = sanitizeIconColor(editIconColorEl?.value);
   const newCategory = sanitizeCategory(editCategoryEl?.value);
-  if (!newUrl || !host) { alert('有効な kintone URL を入力してください'); return; }
+  if (!newUrl || !host) { alert(t('alert_invalid_kintone_url')); return; }
   if (!(await ensureHostPermissionFor(host))) {
-    alert('このドメインへのアクセス権限が許可されませんでした');
+    alert(t('alert_host_permission_denied'));
     return;
   }
   const all = await loadFavorites();
   const idx = all.findIndex(x => x.id === editingId);
   if (idx === -1) { closeEditDialog(); return; }
   if (all.some((x, i) => i !== idx && x.url === newUrl)) {
-    alert('このURLは既に登録済みです'); return;
+    alert(t('alert_duplicate_url')); return;
   }
   const old = all[idx];
   all[idx] = {
@@ -1625,7 +1908,7 @@ function openPinEditModal(entry, triggerEl = null) {
       }
     }, 0);
   } else {
-    alert('このブラウザはdialog要素に対応していません');
+    alert(t('alert_dialog_not_supported'));
   }
 }
 
@@ -1648,7 +1931,7 @@ pinEditSaveBtn?.addEventListener('click', async (event) => {
   const note = pinEditNoteEl?.value.trim() || '';
 
   if (!host || !appId || !recordId) {
-    alert('host / App ID / レコードID は必須です');
+    alert(t('alert_required_pin_fields'));
     return;
   }
 
@@ -1684,17 +1967,17 @@ addBtn.addEventListener('click', async () => {
   const category = sanitizeCategory(categoryEl?.value);
 
   if (!url || !host) {
-    alert('有効な kintone URL を入力してください');
+    alert(t('alert_invalid_kintone_url'));
     return;
   }
   if (!(await ensureHostPermissionFor(host))) {
-    alert('このドメインへのアクセス権限が許可されませんでした');
+    alert(t('alert_host_permission_denied'));
     return;
   }
 
   const list = await loadFavorites();
   if (list.some(x => x.url === url)) {
-    alert('このURLは既に登録済みです');
+    alert(t('alert_duplicate_url'));
     return;
   }
 
@@ -1852,6 +2135,30 @@ async function rerenderLocalizedDynamicSections() {
   renderExcelColumnPrefs();
 }
 
+async function refreshLocalizedFormControls() {
+  const mainColor = sanitizeIconColor(iconColorEl?.value);
+  const editColor = sanitizeIconColor(editIconColorEl?.value);
+  populateIconColorSelect(iconColorEl);
+  populateIconColorSelect(editIconColorEl);
+  if (iconColorEl) iconColorEl.value = mainColor;
+  if (editIconColorEl) editIconColorEl.value = editColor;
+  renderIconPreview(iconPreviewEl, sanitizeIcon(iconEl?.value), mainColor);
+  renderIconPreview(editIconPreviewEl, sanitizeIcon(editIconEl?.value), editColor);
+
+  if (pinSaveBtn && !pinModalEditingId) {
+    pinSaveBtn.textContent = t('common_add');
+  }
+
+  const host = hostFromUrl(hostPermInputEl?.value?.trim() || '');
+  if (hostPermStatusEl) {
+    if (host) {
+      await updatePermStatus(host);
+    } else {
+      hostPermStatusEl.textContent = t('host_perm_status_unknown');
+    }
+  }
+}
+
 async function applyUiLanguageSetting(settingValue, { persist = false } = {}) {
   const setting = normalizeUiLanguageSetting(settingValue);
   currentUiLanguageSetting = setting;
@@ -1871,6 +2178,7 @@ async function applyUiLanguageSetting(settingValue, { persist = false } = {}) {
   if (noticeVisible) {
     setExcelModeNotice(t(EXCEL_OVERLAY_MODE_PRO_NOTICE_KEY));
   }
+  await refreshLocalizedFormControls();
   await rerenderLocalizedDynamicSections();
 }
 
@@ -2121,7 +2429,7 @@ async function removeExcelPref(key) {
 
 excelClearBtn?.addEventListener('click', async () => {
   if (!Object.keys(excelColumnPrefs).length) return;
-  if (!window.confirm('保存済みの列レイアウトをすべて削除します。よろしいですか？')) return;
+  if (!window.confirm(t('confirm_clear_layouts'))) return;
   excelColumnPrefs = {};
   await chrome.storage.sync.remove(EXCEL_COLUMN_PREF_KEY);
   renderExcelColumnPrefs();
@@ -2159,11 +2467,11 @@ async function updatePermStatus(origin, statusEl = hostPermStatusEl) {
   if (!el) return false;
   const normalized = normalizeOrigin(origin);
   if (!normalized) {
-    el.textContent = '権限: 未確認';
+    el.textContent = t('host_perm_status_unknown');
     return false;
   }
   const granted = await hasHostPermission(normalized);
-  el.textContent = granted ? '権限: 許可済み' : '権限: 未許可';
+  el.textContent = granted ? t('host_perm_status_granted') : t('host_perm_status_denied');
   return granted;
 }
 
@@ -2171,25 +2479,25 @@ hostPermRequestBtn?.addEventListener('click', async () => {
   const raw = hostPermInputEl?.value?.trim() || '';
   const host = hostFromUrl(raw);
   if (!host) {
-    alert('有効な kintone URL またはホストを入力してください');
+    alert(t('alert_invalid_kintone_url_or_host'));
     await updatePermStatus('');
     return;
   }
   const ok = await requestHostPermission(host);
   await updatePermStatus(host);
   if (!ok) {
-    alert('許可がキャンセルされました');
+    alert(t('alert_permission_cancelled'));
     return;
   }
   if (hostPermInputEl) hostPermInputEl.value = host;
-  alert('許可が完了しました');
+  alert(t('alert_permission_granted'));
 });
 
 hostPermCheckBtn?.addEventListener('click', async () => {
   const raw = hostPermInputEl?.value?.trim() || '';
   const host = hostFromUrl(raw);
   if (!host) {
-    alert('有効な kintone URL またはホストを入力してください');
+    alert(t('alert_invalid_kintone_url_or_host'));
     await updatePermStatus('');
     return;
   }
@@ -2216,7 +2524,7 @@ pinSaveBtn?.addEventListener('click', async () => {
   const note = pinNoteEl.value.trim();
 
   if (!host || !appId || !recordId) {
-    alert('host / App ID / レコードID は必須です');
+    alert(t('alert_required_pin_fields'));
     return;
   }
 
