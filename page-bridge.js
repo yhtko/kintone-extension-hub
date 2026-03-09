@@ -255,6 +255,41 @@ function markLookupAutoFields(properties, metas) {
     return labels;
   }
 
+  function collectViewColumnsFromDom() {
+    const columns = [];
+    const selectors = [
+      'thead th[data-field-code]',
+      '[role="columnheader"][data-field-code]',
+      'th[data-field-code]'
+    ];
+    const seen = new Set();
+    for (const selector of selectors) {
+      try {
+        const nodes = document.querySelectorAll(selector);
+        nodes.forEach((node) => {
+          const code = String(node?.getAttribute?.('data-field-code') || '').trim();
+          if (!code) return;
+          const rawIndex = typeof node.cellIndex === 'number'
+            ? node.cellIndex
+            : Array.from(node.parentElement?.children || []).indexOf(node);
+          const key = `${rawIndex}:${code}`;
+          if (seen.has(key)) return;
+          const label = String(node.textContent || '').trim();
+          columns.push({
+            index: rawIndex >= 0 ? rawIndex : columns.length,
+            fieldCode: code,
+            label
+          });
+          seen.add(key);
+        });
+        if (columns.length) break;
+      } catch (_e) {
+        // ignore selector errors
+      }
+    }
+    return columns;
+  }
+
   async function fetchFieldsFromRecords(appId) {
     const sdk = window.kintone;
     if (!sdk?.api) return [];
@@ -393,6 +428,78 @@ function markLookupAutoFields(properties, metas) {
       });
     }
     return order;
+  }
+
+  function getCurrentViewIdFromUrl() {
+    try {
+      const url = new URL(location.href);
+      return String(url.searchParams.get('view') || '').trim();
+    } catch (_err) {
+      return '';
+    }
+  }
+
+  function pickCurrentViewFromViews(viewsObj, preferredViewId = '') {
+    const entries = Object.entries(viewsObj || {});
+    let selectedView = null;
+    let selectedViewName = '';
+    const viewId = String(preferredViewId || '').trim();
+    if (viewId) {
+      const found = entries.find(([, v]) => String(v?.id || '') === viewId);
+      if (found) {
+        selectedView = found[1];
+        selectedViewName = found[0];
+      }
+    }
+    if (!selectedView) {
+      const currentName = typeof window.kintone?.app?.getViewName === 'function'
+        ? String(window.kintone.app.getViewName() || '').trim()
+        : '';
+      if (currentName && viewsObj?.[currentName]) {
+        selectedView = viewsObj[currentName];
+        selectedViewName = currentName;
+      }
+    }
+    if (!selectedView && entries.length) {
+      selectedView = entries[0][1];
+      selectedViewName = entries[0][0];
+    }
+    return { selectedView, selectedViewName };
+  }
+
+  async function buildDevViewMeta(appId, viewId = '') {
+    const app = String(appId || '').trim();
+    if (!app) return { viewId: '', viewName: '', columns: [] };
+    const views = await getViewsCached(app);
+    const chosen = pickCurrentViewFromViews(views, viewId || getCurrentViewIdFromUrl());
+    const selectedView = chosen.selectedView;
+    const selectedViewName = chosen.selectedViewName;
+    const domColumns = collectViewColumnsFromDom();
+    const fieldOrder = extractColumnOrder(selectedView);
+
+    let fieldLabelMap = new Map();
+    try {
+      const fields = await getFields(app);
+      fieldLabelMap = new Map(fields.map((field) => [field.code, field.label || '']));
+    } catch (_err) {
+      // ignore
+    }
+    const columns = domColumns.length
+      ? domColumns.map((column, index) => ({
+          index: Number.isInteger(column.index) ? column.index : index,
+          fieldCode: String(column.fieldCode || ''),
+          label: String(column.label || fieldLabelMap.get(column.fieldCode) || '')
+        }))
+      : fieldOrder.map((code, index) => ({
+          index,
+          fieldCode: String(code || ''),
+          label: String(fieldLabelMap.get(code) || '')
+        }));
+    return {
+      viewId: selectedView?.id ? String(selectedView.id) : '',
+      viewName: selectedViewName || '',
+      columns
+    };
   }
 
   async function countRecords(appId, query) {
@@ -668,6 +775,71 @@ function markLookupAutoFields(properties, metas) {
           ready,
           appId,
           language
+        }, ORIGIN);
+        return;
+      }
+
+      if (type === 'DEV_GET_LIST_CONTEXT') {
+        const appId = typeof window.kintone?.app?.getId === 'function'
+          ? String(window.kintone.app.getId() || '')
+          : '';
+        const viewId = getCurrentViewIdFromUrl();
+        const viewName = typeof window.kintone?.app?.getViewName === 'function'
+          ? String(window.kintone.app.getViewName() || '')
+          : '';
+        let query = '';
+        try {
+          query = typeof window.kintone?.app?.getQuery === 'function'
+            ? String(window.kintone.app.getQuery() || '').trim()
+            : '';
+        } catch (_err) {
+          query = '';
+        }
+        if (!query && appId) {
+          try {
+            const views = await getViewsCached(appId);
+            const fallbackQuery = extractQueryFromViews(views, viewId || viewName);
+            query = String(fallbackQuery || '').trim();
+          } catch (_err) {
+            // ignore
+          }
+        }
+        if (!query) {
+          try {
+            const url = new URL(location.href);
+            query = String(url.searchParams.get('query') || '').trim();
+          } catch (_err) {
+            // ignore
+          }
+        }
+        window.postMessage({
+          __kfav__: true,
+          replyTo: id,
+          ok: true,
+          appId,
+          viewId,
+          viewName,
+          query,
+          url: location.href,
+          title: document.title || ''
+        }, ORIGIN);
+        return;
+      }
+
+      if (type === 'DEV_GET_VIEW_META') {
+        const appId = String(
+          payload?.appId
+          || (typeof window.kintone?.app?.getId === 'function' ? window.kintone.app.getId() : '')
+          || ''
+        ).trim();
+        const viewId = String(payload?.viewId || '').trim();
+        const meta = await buildDevViewMeta(appId, viewId);
+        window.postMessage({
+          __kfav__: true,
+          replyTo: id,
+          ok: true,
+          appId,
+          ...meta
         }, ORIGIN);
         return;
       }
@@ -991,8 +1163,5 @@ function markLookupAutoFields(properties, metas) {
     }
   });
 })();
-
-
-
 
 

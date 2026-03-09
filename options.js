@@ -47,6 +47,162 @@ window.addEventListener('hashchange', () => {
 
 activatePane(window.location.hash.slice(1) || DEFAULT_PANE, { updateHash: false });
 
+const I18N_MESSAGES = {
+  ja: {
+    settings_title: 'kintone Base 設定',
+    nav_general: '全般',
+    nav_shortcuts: 'ショートカット',
+    nav_watchlist: 'ウォッチリスト',
+    nav_pins: 'ピン止め',
+    nav_excel_overlay: 'Excel Overlay',
+    general_section_title: '全般',
+    general_language_label: '言語',
+    general_language_auto: 'Auto',
+    general_language_ja: '日本語',
+    general_language_en: 'English',
+    general_language_help: 'Auto はPCまたはブラウザの表示言語に合わせます。',
+    shortcuts_section_title: 'ショートカット',
+    watchlist_section_title: 'ウォッチリスト',
+    pins_section_title: 'ピン止め',
+    overlay_section_title: 'Excel Overlay',
+    overlay_section_desc: 'kintone 一覧画面で Excel風 Overlay を利用します。利用モードに応じて、無効・Standard・Pro を切り替えます。',
+    overlay_mode_label: '利用モード',
+    overlay_mode_disabled: '無効',
+    overlay_mode_disabled_desc: 'Overlay を起動しません。標準の kintone 一覧を使用します。',
+    overlay_mode_standard: 'Standard',
+    overlay_mode_standard_desc: 'フィルタ・ソート・コピー・列レイアウト変更は可能です。編集と保存は利用できません。',
+    overlay_mode_pro: 'Pro',
+    overlay_mode_pro_desc: '編集機能を利用できる上位モードです。近日公開予定。',
+    overlay_mode_pro_notice: 'Proモードは近日公開予定です。現在はStandardをご利用ください。',
+    overlay_layout_title: '列レイアウト設定',
+    overlay_layout_desc: '一覧画面で保存された列並び・列幅を管理します。Standard モードでも列レイアウト保存は利用できます。',
+    reset_all: 'すべてリセット',
+    clear_sort: '並びを解除',
+    clear_width: '幅を解除',
+    delete: '削除',
+    app_unspecified: 'App 未指定',
+    view_unspecified: 'ビュー未指定',
+    app_prefix: 'App',
+    layout_empty_title: '保存済みの列レイアウトはありません。',
+    layout_empty_desc: '一覧画面で列並びや列幅を変更すると、ここに保存されます。',
+    layout_meta_order: '列順',
+    layout_meta_width: '幅設定',
+    layout_meta_saved: '保存'
+  },
+  en: {
+    settings_title: 'kintone Base Settings',
+    nav_general: 'General',
+    nav_shortcuts: 'Shortcuts',
+    nav_watchlist: 'Watchlist',
+    nav_pins: 'Pins',
+    nav_excel_overlay: 'Excel Overlay',
+    general_section_title: 'General',
+    general_language_label: 'Language',
+    general_language_auto: 'Auto',
+    general_language_ja: 'Japanese',
+    general_language_en: 'English',
+    general_language_help: 'Auto follows your PC or browser language.',
+    shortcuts_section_title: 'Shortcuts',
+    watchlist_section_title: 'Watchlist',
+    pins_section_title: 'Pins',
+    overlay_section_title: 'Excel Overlay',
+    overlay_section_desc: 'Use the Excel-style overlay on kintone list pages. Switch between Disabled, Standard, and Pro modes.',
+    overlay_mode_label: 'Mode',
+    overlay_mode_disabled: 'Disabled',
+    overlay_mode_disabled_desc: 'Do not launch the overlay. Use the standard kintone list view.',
+    overlay_mode_standard: 'Standard',
+    overlay_mode_standard_desc: 'Filtering, sorting, copying, and column layout changes are available. Editing and saving are disabled.',
+    overlay_mode_pro: 'Pro',
+    overlay_mode_pro_desc: 'Advanced mode with editing features. Coming soon.',
+    overlay_mode_pro_notice: 'Pro mode is coming soon. Please use Standard for now.',
+    overlay_layout_title: 'Column Layout Settings',
+    overlay_layout_desc: 'Manage saved column order and widths for list pages. Layout saving is available in Standard mode as well.',
+    reset_all: 'Reset All',
+    clear_sort: 'Clear Sort',
+    clear_width: 'Clear Width',
+    delete: 'Delete',
+    app_unspecified: 'App unspecified',
+    view_unspecified: 'View unspecified',
+    app_prefix: 'App',
+    layout_empty_title: 'No saved column layouts.',
+    layout_empty_desc: 'Saved column order and widths from list pages will appear here.',
+    layout_meta_order: 'Order',
+    layout_meta_width: 'Widths',
+    layout_meta_saved: 'Saved'
+  }
+};
+
+const UI_LANGUAGE_KEY = 'uiLanguage';
+const UI_LANGUAGE_VALUES = ['auto', 'ja', 'en'];
+const DEFAULT_UI_LANGUAGE = 'auto';
+
+let currentLang = 'ja';
+let currentUiLanguageSetting = DEFAULT_UI_LANGUAGE;
+let optionsDataReady = false;
+
+function normalizeUiLanguage(raw) {
+  const value = String(raw || '').trim().toLowerCase();
+  if (!value) return 'ja';
+  if (value === 'ja' || value.startsWith('ja-')) return 'ja';
+  return 'en';
+}
+
+function normalizeUiLanguageSetting(raw) {
+  const value = String(raw || '').trim().toLowerCase();
+  if (UI_LANGUAGE_VALUES.includes(value)) return value;
+  return DEFAULT_UI_LANGUAGE;
+}
+
+function getBrowserUiLanguage() {
+  try {
+    const browserLang = navigator.language || (Array.isArray(navigator.languages) ? navigator.languages[0] : '');
+    return normalizeUiLanguage(browserLang);
+  } catch (_err) {
+    return 'ja';
+  }
+}
+
+function resolveEffectiveUiLanguage(setting) {
+  if (setting === 'ja' || setting === 'en') return setting;
+  return getBrowserUiLanguage();
+}
+
+function t(key) {
+  return I18N_MESSAGES[currentLang]?.[key]
+    ?? I18N_MESSAGES.ja?.[key]
+    ?? key;
+}
+
+function applyI18n(root = document) {
+  if (!root) return;
+  root.querySelectorAll('[data-i18n]').forEach((el) => {
+    const key = el.getAttribute('data-i18n');
+    if (!key) return;
+    el.textContent = t(key);
+  });
+  root.querySelectorAll('[data-i18n-title]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-title');
+    if (!key) return;
+    el.setAttribute('title', t(key));
+  });
+  root.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (!key) return;
+    el.setAttribute('placeholder', t(key));
+  });
+}
+
+async function initializeI18n() {
+  let setting = DEFAULT_UI_LANGUAGE;
+  try {
+    const stored = await chrome.storage.local.get(UI_LANGUAGE_KEY);
+    setting = normalizeUiLanguageSetting(stored?.[UI_LANGUAGE_KEY]);
+  } catch (_err) {
+    setting = DEFAULT_UI_LANGUAGE;
+  }
+  await applyUiLanguageSetting(setting, { persist: false });
+}
+
 const labelEl = document.getElementById('label');
 const urlEl = document.getElementById('url');
 const appIdEl = document.getElementById('appId');
@@ -63,13 +219,23 @@ const addBtn = document.getElementById('add');
 const listEl = document.getElementById('list');
 const shortcutToggleEl = document.getElementById('shortcut_visible');
 const shortcutListEl = document.getElementById('shortcut_list');
+const shortcutSearchModeInputs = Array.from(document.querySelectorAll('input[name="shortcut_search_open_mode"]'));
 const excelListEl = document.getElementById('excel_columns_list');
 const excelClearBtn = document.getElementById('excel_columns_clear');
+const uiLanguageEl = document.getElementById('ui_language');
 const excelModeInputs = Array.from(document.querySelectorAll('input[name="excel_overlay_mode"]'));
+const excelModeNoticeEl = document.getElementById('excel_mode_notice');
 const EXCEL_COLUMN_PREF_KEY = 'kfavExcelColumns';
 const EXCEL_OVERLAY_MODE_KEY = 'kfavExcelOverlayMode';
-const DEFAULT_EXCEL_OVERLAY_MODE = 'edit';
-const EXCEL_OVERLAY_MODE_VALUES = ['off', 'view', 'edit'];
+const EXCEL_OVERLAY_MODE_OFF = 'off';
+const EXCEL_OVERLAY_MODE_STANDARD = 'standard';
+const EXCEL_OVERLAY_MODE_PRO = 'pro';
+const DEFAULT_EXCEL_OVERLAY_MODE = EXCEL_OVERLAY_MODE_STANDARD;
+const EXCEL_OVERLAY_MODE_VALUES = [EXCEL_OVERLAY_MODE_OFF, EXCEL_OVERLAY_MODE_STANDARD, EXCEL_OVERLAY_MODE_PRO];
+const EXCEL_OVERLAY_MODE_PRO_NOTICE_KEY = 'overlay_mode_pro_notice';
+const SHORTCUT_SEARCH_OPEN_MODE_KEY = 'shortcutSearchOpenMode';
+const SHORTCUT_SEARCH_OPEN_MODE_VALUES = ['current_tab', 'new_tab'];
+const DEFAULT_SHORTCUT_SEARCH_OPEN_MODE = 'current_tab';
 const PIN_VISIBLE_KEY = 'kfavRecordPinsVisible';
 // ---- pinned record elements ----
 const pinLabelEl = document.getElementById('pin_label');
@@ -1570,6 +1736,7 @@ addBtn.addEventListener('click', async () => {
 
 // 初期表示
 (async () => {
+  await initializeI18n();
   const items = await loadFavorites();
   await warmHostPermissionStatus(items);
   await render(items);
@@ -1599,12 +1766,25 @@ addBtn.addEventListener('click', async () => {
 
   await Promise.all([
     loadExcelColumnPrefs(),
-    loadExcelOverlayMode()
+    loadExcelOverlayMode(),
+    loadShortcutSearchOpenMode()
   ]);
+  optionsDataReady = true;
+  console.log('[options][state] loaded keys', ['kintoneFavorites', 'kfavPins', 'kfavShortcuts', UI_LANGUAGE_KEY]);
+  console.log('[options][state] watchlists count', items.length);
+  console.log('[options][state] pins count', pinnedEntries.length);
+  console.log('[options][render] render start', {
+    lang: currentLang,
+    watchlists: items.length,
+    pins: pinnedEntries.length
+  });
 })();
 
 if (chrome?.storage?.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, UI_LANGUAGE_KEY)) {
+      void applyUiLanguageSetting(changes[UI_LANGUAGE_KEY].newValue, { persist: false });
+    }
     if (area === 'sync' && Object.prototype.hasOwnProperty.call(changes, 'kfavPins')) {
       const next = changes.kfavPins.newValue;
       const arr = Array.isArray(next) ? next : next ? [next] : [];
@@ -1622,8 +1802,20 @@ if (chrome?.storage?.onChanged) {
       renderExcelColumnPrefs();
     }
     if (area === 'sync' && Object.prototype.hasOwnProperty.call(changes, EXCEL_OVERLAY_MODE_KEY)) {
-      const mode = normalizeExcelOverlayMode(changes[EXCEL_OVERLAY_MODE_KEY].newValue);
+      const requestedMode = normalizeExcelOverlayMode(changes[EXCEL_OVERLAY_MODE_KEY].newValue);
+      const mode = getEffectiveExcelOverlayMode(requestedMode);
       excelModeInputs.forEach((input) => {
+        input.checked = input.value === mode;
+      });
+      if (requestedMode === EXCEL_OVERLAY_MODE_PRO) {
+        setExcelModeNotice(t(EXCEL_OVERLAY_MODE_PRO_NOTICE_KEY));
+      } else {
+        setExcelModeNotice('');
+      }
+    }
+    if (area === 'sync' && Object.prototype.hasOwnProperty.call(changes, SHORTCUT_SEARCH_OPEN_MODE_KEY)) {
+      const mode = normalizeShortcutSearchOpenMode(changes[SHORTCUT_SEARCH_OPEN_MODE_KEY].newValue);
+      shortcutSearchModeInputs.forEach((input) => {
         input.checked = input.value === mode;
       });
     }
@@ -1643,29 +1835,135 @@ function hostFromUrl(u){
   }
 }
 
+async function rerenderLocalizedDynamicSections() {
+  if (!optionsDataReady) return;
+  const items = await loadFavorites();
+  console.log('[options][state] loaded keys', ['kintoneFavorites', 'kfavPins', 'kfavShortcuts', UI_LANGUAGE_KEY]);
+  console.log('[options][state] watchlists count', items.length);
+  console.log('[options][state] pins count', pinnedEntries.length);
+  console.log('[options][render] render start', {
+    lang: currentLang,
+    watchlists: items.length,
+    pins: pinnedEntries.length
+  });
+  await render(items);
+  renderShortcutEntries();
+  renderPinnedEntries();
+  renderExcelColumnPrefs();
+}
+
+async function applyUiLanguageSetting(settingValue, { persist = false } = {}) {
+  const setting = normalizeUiLanguageSetting(settingValue);
+  currentUiLanguageSetting = setting;
+  currentLang = resolveEffectiveUiLanguage(setting);
+  document.documentElement.lang = currentLang;
+  document.title = t('settings_title');
+  console.log('[options][i18n] resolved currentLang', currentLang);
+  if (persist) {
+    await chrome.storage.local.set({ [UI_LANGUAGE_KEY]: setting });
+    console.log('[options][i18n] uiLanguage saved', setting);
+  }
+  applyI18n(document);
+  if (uiLanguageEl) {
+    uiLanguageEl.value = setting;
+  }
+  const noticeVisible = Boolean(excelModeNoticeEl && !excelModeNoticeEl.hidden);
+  if (noticeVisible) {
+    setExcelModeNotice(t(EXCEL_OVERLAY_MODE_PRO_NOTICE_KEY));
+  }
+  await rerenderLocalizedDynamicSections();
+}
+
 function normalizeExcelOverlayMode(value) {
-  return EXCEL_OVERLAY_MODE_VALUES.includes(value) ? value : DEFAULT_EXCEL_OVERLAY_MODE;
+  const mode = String(value || '').trim().toLowerCase();
+  if (mode === 'edit') return EXCEL_OVERLAY_MODE_PRO;
+  if (mode === 'view') return EXCEL_OVERLAY_MODE_STANDARD;
+  return EXCEL_OVERLAY_MODE_VALUES.includes(mode) ? mode : DEFAULT_EXCEL_OVERLAY_MODE;
+}
+
+function getEffectiveExcelOverlayMode(value) {
+  const normalized = normalizeExcelOverlayMode(value);
+  if (normalized === EXCEL_OVERLAY_MODE_PRO) return EXCEL_OVERLAY_MODE_STANDARD;
+  return normalized;
+}
+
+function setExcelModeNotice(message) {
+  if (!excelModeNoticeEl) return;
+  const text = String(message || '').trim();
+  if (!text) {
+    excelModeNoticeEl.hidden = true;
+    excelModeNoticeEl.textContent = t(EXCEL_OVERLAY_MODE_PRO_NOTICE_KEY);
+    return;
+  }
+  excelModeNoticeEl.hidden = false;
+  excelModeNoticeEl.textContent = text;
+}
+
+function normalizeShortcutSearchOpenMode(value) {
+  return SHORTCUT_SEARCH_OPEN_MODE_VALUES.includes(value)
+    ? value
+    : DEFAULT_SHORTCUT_SEARCH_OPEN_MODE;
 }
 
 async function loadExcelOverlayMode() {
   if (!excelModeInputs.length) return;
   const stored = await chrome.storage.sync.get(EXCEL_OVERLAY_MODE_KEY);
-  const mode = normalizeExcelOverlayMode(stored[EXCEL_OVERLAY_MODE_KEY]);
+  const requestedMode = normalizeExcelOverlayMode(stored[EXCEL_OVERLAY_MODE_KEY]);
+  const mode = getEffectiveExcelOverlayMode(requestedMode);
   excelModeInputs.forEach((input) => {
+    input.checked = input.value === mode;
+  });
+  if (requestedMode === EXCEL_OVERLAY_MODE_PRO) {
+    await saveExcelOverlayMode(EXCEL_OVERLAY_MODE_STANDARD);
+  }
+  setExcelModeNotice('');
+}
+
+async function loadShortcutSearchOpenMode() {
+  if (!shortcutSearchModeInputs.length) return;
+  const stored = await chrome.storage.sync.get(SHORTCUT_SEARCH_OPEN_MODE_KEY);
+  const mode = normalizeShortcutSearchOpenMode(stored[SHORTCUT_SEARCH_OPEN_MODE_KEY]);
+  shortcutSearchModeInputs.forEach((input) => {
     input.checked = input.value === mode;
   });
 }
 
 async function saveExcelOverlayMode(modeValue) {
-  const mode = normalizeExcelOverlayMode(modeValue);
+  const mode = getEffectiveExcelOverlayMode(modeValue);
   await chrome.storage.sync.set({ [EXCEL_OVERLAY_MODE_KEY]: mode });
+}
+
+async function saveShortcutSearchOpenMode(modeValue) {
+  const mode = normalizeShortcutSearchOpenMode(modeValue);
+  await chrome.storage.sync.set({ [SHORTCUT_SEARCH_OPEN_MODE_KEY]: mode });
 }
 
 excelModeInputs.forEach((input) => {
   input.addEventListener('change', async () => {
     if (!input.checked) return;
-    await saveExcelOverlayMode(input.value);
+    const selectedMode = normalizeExcelOverlayMode(input.value);
+    if (selectedMode === EXCEL_OVERLAY_MODE_PRO) {
+      setExcelModeNotice(t(EXCEL_OVERLAY_MODE_PRO_NOTICE_KEY));
+      const fallback = excelModeInputs.find((node) => node.value === EXCEL_OVERLAY_MODE_STANDARD);
+      if (fallback) fallback.checked = true;
+      await saveExcelOverlayMode(EXCEL_OVERLAY_MODE_STANDARD);
+      return;
+    }
+    setExcelModeNotice('');
+    await saveExcelOverlayMode(selectedMode);
   });
+});
+
+shortcutSearchModeInputs.forEach((input) => {
+  input.addEventListener('change', async () => {
+    if (!input.checked) return;
+    await saveShortcutSearchOpenMode(input.value);
+  });
+});
+
+uiLanguageEl?.addEventListener('change', async () => {
+  const setting = normalizeUiLanguageSetting(uiLanguageEl.value);
+  await applyUiLanguageSetting(setting, { persist: true });
 });
 
 // ---- Excel column prefs ----
@@ -1716,7 +2014,7 @@ function renderExcelColumnPrefs() {
   if (!entries.length) {
     const li = document.createElement('li');
     li.className = 'excel-columns-empty';
-    li.innerHTML = '保存済みの列レイアウトはありません。<br/>一覧画面で列並びや列幅を変更すると、ここに保存されます。';
+    li.innerHTML = `${t('layout_empty_title')}<br/>${t('layout_empty_desc')}`;
     excelListEl.appendChild(li);
     return;
   }
@@ -1729,17 +2027,17 @@ function renderExcelColumnPrefs() {
     info.className = 'excel-columns-info';
     const title = document.createElement('div');
     title.className = 'excel-columns-title';
-    const appLabel = entry.appName || (entry.appId ? `App ${entry.appId}` : 'App 未指定');
-    const viewLabel = entry.viewName || 'ビュー未指定';
+    const appLabel = entry.appName || (entry.appId ? `${t('app_prefix')} ${entry.appId}` : t('app_unspecified'));
+    const viewLabel = entry.viewName || t('view_unspecified');
     title.textContent = `${appLabel} / ${viewLabel}`;
     const meta = document.createElement('div');
     meta.className = 'excel-columns-meta';
     const count = document.createElement('span');
-    count.textContent = `列順: ${entry.count}列`;
+    count.textContent = `${t('layout_meta_order')}: ${entry.count}`;
     const widthInfo = document.createElement('span');
-    widthInfo.textContent = `幅設定: ${entry.widthCount}列`;
+    widthInfo.textContent = `${t('layout_meta_width')}: ${entry.widthCount}`;
     const saved = document.createElement('span');
-    saved.textContent = `保存: ${formatPrefDate(entry.savedAt)}`;
+    saved.textContent = `${t('layout_meta_saved')}: ${formatPrefDate(entry.savedAt)}`;
     meta.appendChild(count);
     meta.appendChild(widthInfo);
     meta.appendChild(saved);
@@ -1750,15 +2048,15 @@ function renderExcelColumnPrefs() {
     actions.className = 'excel-columns-actions';
     const clearOrderBtn = document.createElement('button');
     clearOrderBtn.type = 'button';
-    clearOrderBtn.textContent = '並びを解除';
+    clearOrderBtn.textContent = t('clear_sort');
     clearOrderBtn.addEventListener('click', () => { clearExcelPrefOrder(entry.key); });
     const clearWidthBtn = document.createElement('button');
     clearWidthBtn.type = 'button';
-    clearWidthBtn.textContent = '幅を解除';
+    clearWidthBtn.textContent = t('clear_width');
     clearWidthBtn.addEventListener('click', () => { clearExcelPrefWidths(entry.key); });
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
-    removeBtn.textContent = '削除';
+    removeBtn.textContent = t('delete');
     removeBtn.className = 'btn-danger-subtle';
     removeBtn.addEventListener('click', () => { removeExcelPref(entry.key); });
     actions.appendChild(clearOrderBtn);

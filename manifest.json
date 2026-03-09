@@ -25,7 +25,7 @@
         "https://*.cybozu.com/*",
         "https://*.kintone-dev.com/*"
       ],
-      "js": ["content.js"],
+      "js": ["permission-service.js", "content.js"],
       "run_at": "document_end"
     }
   ],

@@ -24,6 +24,10 @@ import { initPins } from './pins.js';
 
 const REFRESH_INTERVAL = 30000;
 const MAX_SHORTCUT_INITIAL_LENGTH = 2;
+const SHORTCUT_SEARCH_OPEN_MODE_KEY = 'shortcutSearchOpenMode';
+const SHORTCUT_SEARCH_OPEN_MODE_CURRENT_TAB = 'current_tab';
+const SHORTCUT_SEARCH_OPEN_MODE_NEW_TAB = 'new_tab';
+const COLLAPSED_SECTIONS_KEY = 'kfavLauncherCollapsedSections';
 
 const doc = document;
 
@@ -39,6 +43,14 @@ const els = {
   recentSection: doc.getElementById('recentSection'),
   recentList: doc.getElementById('recentList'),
   recentClear: doc.getElementById('recentClear'),
+  toggleRecentRecords: null,
+  appSearchToggle: null,
+  appSearchPopover: null,
+  appSearchInput: null,
+  appSearchResults: null,
+  listsScroll: doc.getElementById('listsScroll'),
+  collapsedTray: null,
+  collapsedTrayRow: null,
   recordPinSection: doc.getElementById('recordPinSection'),
   favSection: doc.getElementById('favSection'),
   favCategories: doc.getElementById('favCategories'),
@@ -67,7 +79,21 @@ const state = {
   recentRecords: [],
   recentHydrationSeq: 0,
   filterPanelVisible: false,
-  recordPinsCollapsed: false
+  recordPinsCollapsed: false,
+  recentRecordsCollapsed: false,
+  appCatalog: [],
+  appCatalogSeq: 0,
+  appCatalogError: false,
+  appSearchOpen: false,
+  appSearchQuery: '',
+  appSearchMatches: [],
+  appSearchActiveIndex: -1,
+  shortcutSearchOpenMode: SHORTCUT_SEARCH_OPEN_MODE_CURRENT_TAB,
+  appSearchToggleHandler: null,
+  appSearchInputHandler: null,
+  appSearchInputKeydownHandler: null,
+  appSearchOutsideHandler: null,
+  pinListObserver: null
 };
 
 const shortcutState = {
@@ -80,13 +106,15 @@ const recordPinState = {
   controller: null
 };
 const DEFAULT_ICON = 'file-text';
-const DEFAULT_CATEGORY = 'その他';
+const DEFAULT_CATEGORY = 'Other';
 const ICON_OPTIONS = [
   'clipboard', 'file-text', 'package', 'box', 'truck', 'factory', 'wrench', 'calendar',
   'list-checks', 'search', 'chart-bar', 'receipt', 'users', 'settings', 'bookmark', 'star', 'history'
 ];
 const DEFAULT_ICON_COLOR = 'gray';
 const ICON_COLOR_OPTIONS = ['gray', 'blue', 'green', 'orange', 'red', 'purple'];
+const APP_CANDIDATE_LIMIT = 10;
+const SHORTCUT_MAX_VISIBLE = 16;
 
 function normalizeIconName(value) {
   const name = typeof value === 'string' ? value.trim() : '';
@@ -224,7 +252,7 @@ function setFilterPanelVisible(visible, { focus = false } = {}) {
   }
   if (els.toggleFilterPanel) {
     els.toggleFilterPanel.setAttribute('aria-pressed', state.filterPanelVisible ? 'true' : 'false');
-    els.toggleFilterPanel.title = state.filterPanelVisible ? '検索を閉じる' : '検索を表示';
+    els.toggleFilterPanel.title = state.filterPanelVisible ? 'Hide search' : 'Show search';
   }
   if (focus && state.filterPanelVisible && els.filter) {
     setTimeout(() => {
@@ -238,19 +266,183 @@ function setFilterPanelVisible(visible, { focus = false } = {}) {
   }
 }
 
-function setRecordPinsCollapsed(collapsed) {
+function ensureRecentCollapseControl() {
+  if (!els.recentSection) return;
+  const head = els.recentSection.querySelector('.section-head');
+  if (!head) return;
+
+  let actions = head.querySelector('.section-actions');
+  if (!actions) {
+    actions = doc.createElement('div');
+    actions.className = 'section-actions section-actions-icons';
+    head.appendChild(actions);
+  } else {
+    actions.classList.add('section-actions-icons');
+  }
+
+  if (els.recentClear && !actions.contains(els.recentClear)) {
+    actions.appendChild(els.recentClear);
+  }
+
+  if (!els.toggleRecentRecords) {
+    const toggle = doc.createElement('button');
+    toggle.id = 'toggleRecentRecords';
+    toggle.type = 'button';
+    toggle.className = 'icon-btn small collapse-btn';
+    toggle.setAttribute('aria-pressed', 'false');
+    actions.appendChild(toggle);
+    els.toggleRecentRecords = toggle;
+  }
+}
+
+function ensureCollapsedSectionsTray() {
+  if (els.collapsedTray && els.collapsedTrayRow) return;
+  if (!els.shortcutPanel) return;
+
+  const tray = doc.createElement('section');
+  tray.id = 'collapsedSectionsTray';
+  tray.className = 'collapsed-sections-tray hidden';
+  tray.setAttribute('aria-label', 'Collapsed sections');
+
+  const row = doc.createElement('div');
+  row.id = 'collapsedSectionsRow';
+  row.className = 'collapsed-sections-row';
+  tray.appendChild(row);
+
+  if (els.notice?.parentElement) {
+    els.notice.parentElement.insertBefore(tray, els.notice);
+  } else if (els.shortcutPanel.parentElement) {
+    els.shortcutPanel.parentElement.insertBefore(tray, els.shortcutPanel.nextSibling);
+  }
+
+  els.collapsedTray = tray;
+  els.collapsedTrayRow = row;
+}
+
+function openCollapsedTrayTooltip(btn) {
+  if (!btn) return;
+  const tooltip = btn.querySelector('.collapsed-tray-tooltip');
+  if (!tooltip || !tooltip.textContent) return;
+  btn.classList.add('tray-tooltip-open');
+  btn.classList.remove('tray-tooltip-align-left', 'tray-tooltip-align-right');
+  const panelRect = (els.collapsedTray || els.shortcutPanel || doc.body).getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+  if (tooltipRect.left < panelRect.left + 4) {
+    btn.classList.add('tray-tooltip-align-left');
+    return;
+  }
+  if (tooltipRect.right > panelRect.right - 4) {
+    btn.classList.add('tray-tooltip-align-right');
+  }
+}
+
+function closeCollapsedTrayTooltip(btn) {
+  if (!btn) return;
+  btn.classList.remove('tray-tooltip-open', 'tray-tooltip-align-left', 'tray-tooltip-align-right');
+}
+
+function createCollapsedTrayItem({ id, icon, label, count, onClick }) {
+  const btn = doc.createElement('button');
+  btn.type = 'button';
+  btn.className = 'collapsed-tray-item';
+  btn.dataset.section = id;
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+  btn.addEventListener('click', onClick);
+  btn.addEventListener('mouseenter', () => openCollapsedTrayTooltip(btn));
+  btn.addEventListener('focus', () => openCollapsedTrayTooltip(btn));
+  btn.addEventListener('mouseleave', () => closeCollapsedTrayTooltip(btn));
+  btn.addEventListener('blur', () => closeCollapsedTrayTooltip(btn));
+
+  const iconEl = doc.createElement('span');
+  iconEl.className = 'collapsed-tray-icon lc';
+  iconEl.dataset.icon = icon;
+  iconEl.setAttribute('aria-hidden', 'true');
+
+  const tooltip = doc.createElement('span');
+  tooltip.className = 'collapsed-tray-tooltip';
+  tooltip.textContent = label;
+  tooltip.setAttribute('aria-hidden', 'true');
+
+  btn.appendChild(iconEl);
+  if (Number(count) > 0) {
+    const badge = doc.createElement('span');
+    badge.className = 'collapsed-tray-badge';
+    badge.textContent = String(count);
+    badge.setAttribute('aria-hidden', 'true');
+    btn.appendChild(badge);
+  }
+  btn.appendChild(tooltip);
+  return btn;
+}
+
+function renderCollapsedSectionsTray() {
+  ensureCollapsedSectionsTray();
+  if (!els.collapsedTray || !els.collapsedTrayRow) return;
+
+  const items = [];
+  if (state.pinsOnly) {
+    items.push({
+      id: 'watchlist',
+      icon: 'bookmark',
+      label: 'ウォッチリスト',
+      count: state.favorites.length,
+      onClick: () => setWatchlistCollapsed(false)
+    });
+  }
+  if (state.recordPinsCollapsed && recordPinState.visible) {
+    const count = els.pinList ? els.pinList.querySelectorAll('li').length : 0;
+    items.push({
+      id: 'record-pins',
+      icon: 'pin',
+      label: 'レコードピン',
+      count,
+      onClick: () => setRecordPinsCollapsed(false)
+    });
+  }
+  if (state.recentRecordsCollapsed && state.recentRecords.length > 0) {
+    items.push({
+      id: 'recent-records',
+      icon: 'history',
+      label: '最近のレコード',
+      count: state.recentRecords.length,
+      onClick: () => setRecentRecordsCollapsed(false)
+    });
+  }
+
+  els.collapsedTrayRow.textContent = '';
+  if (!items.length) {
+    els.collapsedTray.classList.add('hidden');
+    return;
+  }
+  items.forEach((item) => {
+    els.collapsedTrayRow.appendChild(createCollapsedTrayItem(item));
+  });
+  els.collapsedTray.classList.remove('hidden');
+  renderLucideIcons(els.collapsedTray);
+}
+
+function setRecordPinsCollapsed(collapsed, { persist = true } = {}) {
   state.recordPinsCollapsed = Boolean(collapsed);
   if (els.pinList) {
     els.pinList.classList.toggle('hidden', state.recordPinsCollapsed);
   }
-  if (els.toggleRecordPins) {
-    els.toggleRecordPins.textContent = state.recordPinsCollapsed ? '▸' : '▾';
-    els.toggleRecordPins.setAttribute('aria-pressed', state.recordPinsCollapsed ? 'true' : 'false');
-    els.toggleRecordPins.title = state.recordPinsCollapsed ? 'レコードピンを展開' : 'レコードピンを折りたたむ';
+  if (els.recordPinSection) {
+    els.recordPinSection.classList.toggle('tray-collapsed', state.recordPinsCollapsed);
   }
+  if (els.toggleRecordPins) {
+    const isCollapsed = state.recordPinsCollapsed;
+    els.toggleRecordPins.textContent = isCollapsed ? '\u25B6' : '\u25BC';
+    els.toggleRecordPins.setAttribute('aria-pressed', isCollapsed ? 'true' : 'false');
+    els.toggleRecordPins.title = isCollapsed ? 'Expand record pins' : 'Collapse record pins';
+  }
+  if (persist) {
+    persistCollapsedSectionsState().catch(() => {});
+  }
+  renderCollapsedSectionsTray();
 }
 
-function setWatchlistCollapsed(collapsed) {
+function setWatchlistCollapsed(collapsed, { persist = true } = {}) {
   state.pinsOnly = Boolean(collapsed);
   if (els.togglePinsOnly) {
     els.togglePinsOnly.checked = state.pinsOnly;
@@ -259,10 +451,101 @@ function setWatchlistCollapsed(collapsed) {
   if (els.favCategories) {
     els.favCategories.classList.toggle('is-collapsed', state.pinsOnly);
   }
-  if (els.togglePinsOnlyIcon) {
-    els.togglePinsOnlyIcon.textContent = state.pinsOnly ? '▸' : '▾';
-    els.togglePinsOnlyIcon.title = state.pinsOnly ? 'ウォッチリストを展開' : 'ウォッチリストを折りたたむ';
+  if (els.favSection) {
+    els.favSection.classList.toggle('tray-collapsed', state.pinsOnly);
   }
+  if (els.togglePinsOnlyIcon) {
+    const isCollapsed = state.pinsOnly;
+    els.togglePinsOnlyIcon.textContent = isCollapsed ? '\u25B6' : '\u25BC';
+    els.togglePinsOnlyIcon.title = isCollapsed ? 'Expand watchlist' : 'Collapse watchlist';
+  }
+  if (persist) {
+    persistCollapsedSectionsState().catch(() => {});
+  }
+  renderCollapsedSectionsTray();
+}
+
+function setRecentRecordsCollapsed(collapsed, { persist = true } = {}) {
+  state.recentRecordsCollapsed = Boolean(collapsed);
+  if (els.recentSection) {
+    els.recentSection.classList.toggle('tray-collapsed', state.recentRecordsCollapsed);
+  }
+  if (els.toggleRecentRecords) {
+    const isCollapsed = state.recentRecordsCollapsed;
+    els.toggleRecentRecords.textContent = isCollapsed ? '\u25B6' : '\u25BC';
+    els.toggleRecentRecords.setAttribute('aria-pressed', isCollapsed ? 'true' : 'false');
+    els.toggleRecentRecords.title = isCollapsed ? 'Expand recent records' : 'Collapse recent records';
+  }
+  if (persist) {
+    persistCollapsedSectionsState().catch(() => {});
+  }
+  renderCollapsedSectionsTray();
+}
+
+function normalizeShortcutSearchOpenMode(value) {
+  if (value === SHORTCUT_SEARCH_OPEN_MODE_NEW_TAB) return SHORTCUT_SEARCH_OPEN_MODE_NEW_TAB;
+  return SHORTCUT_SEARCH_OPEN_MODE_CURRENT_TAB;
+}
+
+function normalizeCollapsedSections(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    watchlist: Boolean(source.watchlist),
+    recordPins: Boolean(source.recordPins),
+    recentRecords: Boolean(source.recentRecords)
+  };
+}
+
+async function loadCollapsedSectionsState() {
+  try {
+    const stored = await chrome.storage.local.get(COLLAPSED_SECTIONS_KEY);
+    const normalized = normalizeCollapsedSections(stored?.[COLLAPSED_SECTIONS_KEY]);
+    state.pinsOnly = normalized.watchlist;
+    state.recordPinsCollapsed = normalized.recordPins;
+    state.recentRecordsCollapsed = normalized.recentRecords;
+  } catch (_err) {
+    state.pinsOnly = false;
+    state.recordPinsCollapsed = false;
+    state.recentRecordsCollapsed = false;
+  }
+}
+
+async function persistCollapsedSectionsState() {
+  const payload = {
+    watchlist: Boolean(state.pinsOnly),
+    recordPins: Boolean(state.recordPinsCollapsed),
+    recentRecords: Boolean(state.recentRecordsCollapsed)
+  };
+  try {
+    await chrome.storage.local.set({ [COLLAPSED_SECTIONS_KEY]: payload });
+  } catch (_err) {
+    // ignore persistence errors
+  }
+}
+
+async function loadShortcutSearchOpenMode() {
+  try {
+    const stored = await chrome.storage.sync.get(SHORTCUT_SEARCH_OPEN_MODE_KEY);
+    state.shortcutSearchOpenMode = normalizeShortcutSearchOpenMode(stored?.[SHORTCUT_SEARCH_OPEN_MODE_KEY]);
+  } catch (_err) {
+    state.shortcutSearchOpenMode = SHORTCUT_SEARCH_OPEN_MODE_CURRENT_TAB;
+  }
+}
+
+async function openUrlByMode(url, mode) {
+  if (!url) return;
+  const normalizedMode = normalizeShortcutSearchOpenMode(mode);
+  if (normalizedMode === SHORTCUT_SEARCH_OPEN_MODE_NEW_TAB) {
+    await chrome.tabs.create({ url, active: true });
+    return;
+  }
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const activeTab = tabs && tabs[0] ? tabs[0] : null;
+  if (activeTab?.id) {
+    await chrome.tabs.update(activeTab.id, { url });
+    return;
+  }
+  await chrome.tabs.create({ url, active: true });
 }
 
 function formatRecentTime(value) {
@@ -303,6 +586,72 @@ function cssEscapeValue(value) {
   const raw = String(value || '');
   if (globalThis.CSS?.escape) return globalThis.CSS.escape(raw);
   return raw.replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch}`);
+}
+
+function normalizeHostOrigin(host) {
+  const raw = String(host || '').trim();
+  if (!raw) return '';
+  try {
+    return new URL(raw).origin.replace(/\/$/, '');
+  } catch (_err) {
+    return raw.replace(/\/$/, '');
+  }
+}
+
+function buildFavoriteAppKey(host, appId) {
+  const safeHost = normalizeHostOrigin(host);
+  const safeAppId = String(appId || '').trim();
+  if (!safeHost || !safeAppId) return '';
+  return `${safeHost}|${safeAppId}`;
+}
+
+function appSearchText(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function collectFavoriteHostAppIds(host) {
+  const safeHost = normalizeHostOrigin(host);
+  return state.favorites
+    .filter((item) => normalizeHostOrigin(item.host) === safeHost)
+    .map((item) => String(item.appId || '').trim())
+    .filter((appId) => /^\d+$/.test(appId));
+}
+
+function buildFavoriteAppSet() {
+  const set = new Set();
+  state.favorites.forEach((item) => {
+    const key = buildFavoriteAppKey(item.host, item.appId);
+    if (key) set.add(key);
+  });
+  return set;
+}
+
+async function loadHostAppNameMap(host) {
+  const safeHost = normalizeHostOrigin(host);
+  if (!safeHost) return { map: {}, ok: false };
+  let cached = { map: {}, fresh: false };
+  try {
+    cached = await loadAppNameMap(safeHost);
+  } catch (_err) {
+    cached = { map: {}, fresh: false };
+  }
+  const cachedMap = cached?.map && typeof cached.map === 'object' ? cached.map : {};
+  if (cached.fresh && Object.keys(cachedMap).length) {
+    return { map: cachedMap, ok: true };
+  }
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: 'GET_APPS_MAP',
+      host: safeHost,
+      appIds: collectFavoriteHostAppIds(safeHost)
+    });
+    if (res?.ok && res?.map && typeof res.map === 'object') {
+      return { map: res.map, ok: true };
+    }
+  } catch (_err) {
+    // ignore
+  }
+  return { map: cachedMap, ok: false };
 }
 
 function setRecentAppNameInState(host, appId, appName) {
@@ -419,6 +768,7 @@ function renderRecentRecords() {
   }
   if (!list.length) {
     els.recentSection.classList.add('hidden');
+    renderCollapsedSectionsTray();
     return;
   }
   list.forEach((item) => {
@@ -462,6 +812,7 @@ function renderRecentRecords() {
     els.recentList.appendChild(li);
   });
   els.recentSection.classList.remove('hidden');
+  setRecentRecordsCollapsed(state.recentRecordsCollapsed, { persist: false });
   renderLucideIcons(els.recentSection);
 }
 
@@ -503,6 +854,410 @@ async function openRecentRecord(entry) {
   }
 }
 
+function searchAppsByName(query, limit = APP_CANDIDATE_LIMIT) {
+  const keyword = appSearchText(query);
+  if (!keyword) return [];
+  const prefix = [];
+  const partial = [];
+  state.appCatalog.forEach((item) => {
+    const nameText = appSearchText(item.name);
+    if (!nameText) return;
+    if (nameText.startsWith(keyword)) {
+      prefix.push(item);
+      return;
+    }
+    if (nameText.includes(keyword)) {
+      partial.push(item);
+    }
+  });
+  const sorter = (a, b) => {
+    const nameA = String(a.name || '');
+    const nameB = String(b.name || '');
+    return nameA.localeCompare(nameB, 'ja');
+  };
+  return [...prefix.sort(sorter), ...partial.sort(sorter)].slice(0, Math.max(1, Number(limit) || APP_CANDIDATE_LIMIT));
+}
+
+function normalizeAppSearchHost(host) {
+  return String(host || '')
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/+$/, '');
+}
+
+function buildAppSearchUrl(appId, hostHint = '') {
+  const safeAppId = String(appId || '').trim();
+  if (!/^\d+$/.test(safeAppId)) return '';
+
+  let host = normalizeAppSearchHost(hostHint);
+  if (!host && state.appSearchMatches.length) {
+    host = normalizeAppSearchHost(state.appSearchMatches[0]?.host || '');
+  }
+  if (!host && state.appCatalog.length) {
+    host = normalizeAppSearchHost(state.appCatalog[0]?.host || '');
+  }
+  if (!host) {
+    const activeHost = normalizeAppSearchHost(state.favorites[0]?.host || '');
+    host = activeHost || '';
+  }
+  const normalizedHost = host;
+  if (!normalizedHost) return '';
+  return `https://${normalizedHost}/k/${encodeURIComponent(safeAppId)}/`;
+}
+
+async function openAppSearchCandidate(appId, hostHint = '') {
+  try {
+    const safeAppId = String(appId || '').trim();
+    if (!/^\d+$/.test(safeAppId)) return;
+
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const activeTab = tabs && tabs[0] ? tabs[0] : null;
+
+    let normalizedHost = normalizeAppSearchHost(hostHint);
+    const activeUrl = String(activeTab?.url || '').trim();
+    if (!normalizedHost && activeUrl && isKintoneUrl(activeUrl)) {
+      const parsed = parseKintoneUrl(activeUrl);
+      normalizedHost = normalizeAppSearchHost(parsed?.host || '');
+    }
+    if (!normalizedHost) {
+      normalizedHost = normalizeAppSearchHost(location.host);
+    }
+    if (!normalizedHost) {
+      console.warn('No host resolved for app search navigation');
+      return;
+    }
+
+    const url = buildAppSearchUrl(safeAppId, normalizedHost);
+    if (!url) return;
+
+    await openUrlByMode(url, state.shortcutSearchOpenMode);
+  } catch (err) {
+    console.error('Failed to open app search candidate', err);
+  }
+}
+
+function renderAppSearchResults() {
+  if (!els.appSearchResults) return;
+  els.appSearchResults.textContent = '';
+  const query = appSearchText(state.appSearchQuery);
+  if (!query) return;
+
+  if (!state.appSearchMatches.length) {
+    const empty = doc.createElement('li');
+    empty.className = 'kp-app-search-empty';
+    empty.textContent = state.appCatalogError && !state.appCatalog.length
+      ? 'App list could not be loaded'
+      : 'No apps matched';
+    els.appSearchResults.appendChild(empty);
+    return;
+  }
+
+  state.appSearchMatches.forEach((item, index) => {
+    const li = doc.createElement('li');
+    li.className = 'kp-app-search-row';
+
+    const btn = doc.createElement('button');
+    btn.type = 'button';
+    btn.className = 'kp-app-search-item';
+    if (index === state.appSearchActiveIndex) {
+      btn.classList.add('is-active');
+    }
+    btn.title = item.url || '';
+    btn.dataset.index = String(index);
+    btn.dataset.appId = String(item.appId || '');
+    btn.dataset.host = normalizeAppSearchHost(item.host || '');
+    btn.addEventListener('mouseenter', () => {
+      state.appSearchActiveIndex = index;
+      updateAppSearchActiveDom();
+    });
+    btn.addEventListener('click', async () => {
+      const appId = btn.dataset.appId || item.appId;
+      const host = btn.dataset.host || item.host || '';
+      await openAppSearchCandidate(appId, host);
+      setAppSearchPopoverVisible(false);
+    });
+
+    const name = doc.createElement('div');
+    name.className = 'kp-app-search-name';
+    name.textContent = item.name;
+
+    const meta = doc.createElement('div');
+    meta.className = 'kp-app-search-meta';
+    meta.textContent = `app:${item.appId}`;
+
+    btn.appendChild(name);
+    btn.appendChild(meta);
+    li.appendChild(btn);
+    els.appSearchResults.appendChild(li);
+  });
+}
+
+function updateAppSearchActiveDom() {
+  if (!els.appSearchResults) return;
+  const items = els.appSearchResults.querySelectorAll('.kp-app-search-item');
+  items.forEach((node, i) => {
+    node.classList.toggle('is-active', i === state.appSearchActiveIndex);
+  });
+}
+
+function refreshAppSearchMatches() {
+  const query = appSearchText(state.appSearchQuery);
+  if (!query) {
+    state.appSearchMatches = [];
+    state.appSearchActiveIndex = -1;
+    renderAppSearchResults();
+    return;
+  }
+  state.appSearchMatches = searchAppsByName(query, 8);
+  state.appSearchActiveIndex = state.appSearchMatches.length ? 0 : -1;
+  renderAppSearchResults();
+}
+
+function setAppSearchPopoverVisible(visible) {
+  state.appSearchOpen = Boolean(visible);
+  if (els.appSearchPopover) {
+    els.appSearchPopover.classList.toggle('hidden', !state.appSearchOpen);
+  }
+  if (els.appSearchToggle) {
+    els.appSearchToggle.setAttribute('aria-pressed', state.appSearchOpen ? 'true' : 'false');
+  }
+  if (!state.appSearchOpen) {
+    state.appSearchQuery = '';
+    state.appSearchMatches = [];
+    state.appSearchActiveIndex = -1;
+    if (els.appSearchInput) els.appSearchInput.value = '';
+    renderAppSearchResults();
+    return;
+  }
+  refreshAppCatalog().catch(() => {});
+  refreshAppSearchMatches();
+  if (els.appSearchInput) {
+    setTimeout(() => {
+      try {
+        els.appSearchInput.focus();
+      } catch (_err) {
+        // ignore
+      }
+    }, 0);
+  }
+}
+
+function moveAppSearchSelection(delta) {
+  const len = state.appSearchMatches.length;
+  if (!len) return;
+  const base = state.appSearchActiveIndex >= 0 ? state.appSearchActiveIndex : 0;
+  const next = (base + delta + len) % len;
+  state.appSearchActiveIndex = next;
+  updateAppSearchActiveDom();
+  const active = els.appSearchResults?.querySelector('.kp-app-search-item.is-active');
+  if (active) {
+    active.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function openActiveOrFirstAppSearchResult() {
+  if (!state.appSearchMatches.length) return;
+  const index = state.appSearchActiveIndex >= 0 ? state.appSearchActiveIndex : 0;
+  const item = state.appSearchMatches[index];
+  if (!item) return;
+  openAppSearchCandidate(item.appId, item.host).finally(() => {
+    setAppSearchPopoverVisible(false);
+  });
+}
+
+function handleAppSearchInputKeydown(event) {
+  if (event.key === 'Enter' && isImeComposing(event)) {
+    return;
+  }
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    moveAppSearchSelection(1);
+    return;
+  }
+  if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    moveAppSearchSelection(-1);
+    return;
+  }
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    openActiveOrFirstAppSearchResult();
+    return;
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    setAppSearchPopoverVisible(false);
+  }
+}
+
+function isEditableTarget(target) {
+  if (!target) return false;
+  if (target instanceof HTMLTextAreaElement) return true;
+  if (target instanceof HTMLInputElement) return true;
+  if (target.isContentEditable) return true;
+  if (typeof target.closest === 'function') {
+    return Boolean(target.closest('textarea, input, [contenteditable="true"]'));
+  }
+  return false;
+}
+
+function isImeComposing(event) {
+  return Boolean(event?.isComposing) || Number(event?.keyCode) === 229;
+}
+
+function ensureAppSearchUi() {
+  const actions = els.shortcutPanel?.querySelector('.shortcut-head .section-actions');
+  if (!actions || !els.shortcutPanel) return;
+
+  if (!els.appSearchToggle) {
+    const toggle = doc.createElement('button');
+    toggle.id = 'kp-app-search-toggle';
+    toggle.type = 'button';
+    toggle.className = 'icon-btn small';
+    toggle.setAttribute('aria-label', 'App search');
+    toggle.setAttribute('aria-pressed', 'false');
+    toggle.title = 'App search';
+
+    const icon = doc.createElement('span');
+    icon.className = 'lc';
+    icon.dataset.icon = 'search';
+    icon.setAttribute('aria-hidden', 'true');
+    toggle.appendChild(icon);
+
+    const collapseButton = actions.querySelector('#toggleShortcuts');
+    if (collapseButton) {
+      actions.insertBefore(toggle, collapseButton);
+    } else {
+      actions.appendChild(toggle);
+    }
+    els.appSearchToggle = toggle;
+    renderLucideIcons(toggle);
+  }
+
+  if (!els.appSearchPopover) {
+    const popover = doc.createElement('div');
+    popover.id = 'kp-app-search-popover';
+    popover.className = 'kp-app-search-popover hidden';
+
+    const head = doc.createElement('div');
+    head.className = 'kp-app-search-head';
+
+    const input = doc.createElement('input');
+    input.id = 'kp-app-search-input';
+    input.type = 'text';
+    input.placeholder = 'Search app name';
+    input.autocomplete = 'off';
+
+    const results = doc.createElement('ul');
+    results.id = 'kp-app-search-results';
+    results.className = 'kp-app-search-results';
+    results.setAttribute('aria-live', 'polite');
+
+    head.appendChild(input);
+    popover.appendChild(head);
+    popover.appendChild(results);
+    els.shortcutPanel.appendChild(popover);
+
+    els.appSearchPopover = popover;
+    els.appSearchInput = input;
+    els.appSearchResults = results;
+  }
+
+  if (!state.appSearchToggleHandler && els.appSearchToggle) {
+    state.appSearchToggleHandler = () => {
+      setAppSearchPopoverVisible(!state.appSearchOpen);
+    };
+    els.appSearchToggle.addEventListener('click', state.appSearchToggleHandler);
+  }
+  if (!state.appSearchInputHandler && els.appSearchInput) {
+    state.appSearchInputHandler = (event) => {
+      state.appSearchQuery = String(event.target?.value || '');
+      refreshAppSearchMatches();
+    };
+    els.appSearchInput.addEventListener('input', state.appSearchInputHandler);
+  }
+  if (!state.appSearchInputKeydownHandler && els.appSearchInput) {
+    state.appSearchInputKeydownHandler = handleAppSearchInputKeydown;
+    els.appSearchInput.addEventListener('keydown', state.appSearchInputKeydownHandler);
+  }
+  if (!state.appSearchOutsideHandler) {
+    state.appSearchOutsideHandler = (event) => {
+      if (!state.appSearchOpen) return;
+      const target = event.target;
+      if (els.appSearchPopover?.contains(target) || els.appSearchToggle?.contains(target)) return;
+      setAppSearchPopoverVisible(false);
+    };
+    document.addEventListener('mousedown', state.appSearchOutsideHandler);
+  }
+}
+
+async function refreshAppCatalog() {
+  const seq = ++state.appCatalogSeq;
+  const hostSet = new Set(
+    state.favorites
+      .map((item) => normalizeHostOrigin(item.host))
+      .filter(Boolean)
+  );
+  try {
+    const tab = await getActiveTab();
+    const tabUrl = String(tab?.url || '');
+    if (tabUrl && isKintoneUrl(tabUrl)) {
+      const parsed = parseKintoneUrl(tabUrl);
+      const host = normalizeHostOrigin(parsed?.host || '');
+      if (host) hostSet.add(host);
+    }
+  } catch (_err) {
+    // ignore
+  }
+  const hostList = Array.from(hostSet);
+  if (!hostList.length) {
+    state.appCatalog = [];
+    state.appCatalogError = false;
+    if (state.appSearchOpen) {
+      refreshAppSearchMatches();
+    }
+    return;
+  }
+
+  const favoriteSet = buildFavoriteAppSet();
+  const nextCatalog = [];
+  let hasFailure = false;
+
+  for (const host of hostList) {
+    if (seq !== state.appCatalogSeq) return;
+    const { map, ok } = await loadHostAppNameMap(host);
+    if (!ok) hasFailure = true;
+    Object.entries(map || {}).forEach(([appIdRaw, nameRaw]) => {
+      const appId = String(appIdRaw || '').trim();
+      const name = String(nameRaw || '').trim();
+      if (!appId || !name) return;
+      const key = buildFavoriteAppKey(host, appId);
+      nextCatalog.push({
+        host,
+        appId,
+        name,
+        nameLower: appSearchText(name),
+        url: `${host}/k/${encodeURIComponent(appId)}/`,
+        isFavorite: key ? favoriteSet.has(key) : false
+      });
+    });
+  }
+
+  if (seq !== state.appCatalogSeq) return;
+
+  nextCatalog.sort((a, b) => {
+    const byName = String(a.name || '').localeCompare(String(b.name || ''), 'ja');
+    if (byName !== 0) return byName;
+    return String(a.appId || '').localeCompare(String(b.appId || ''), 'ja');
+  });
+
+  state.appCatalog = nextCatalog;
+  state.appCatalogError = hasFailure && nextCatalog.length === 0;
+  if (state.appSearchOpen) {
+    refreshAppSearchMatches();
+  }
+}
+
 function normalizeFavorites(list) {
   return sortFavorites(
     (list || []).map((item, index) => ({
@@ -523,7 +1278,7 @@ function normalizeFavorites(list) {
 }
 
 function applyFilterText(value) {
-  // #filter is local filter only (pinned/watchlist visibility).
+  // #filter is local filter only for sidepanel items.
   state.filterText = value || '';
   renderLists();
 }
@@ -570,6 +1325,7 @@ function isSelectableEntry(entryEl) {
   if (entryEl.classList.contains('entry-filter-hidden')) return false;
   if (entryEl.closest('.category-block.hidden-by-filter')) return false;
   if (entryEl.closest('.hidden')) return false;
+  if (entryEl.closest('.tray-collapsed')) return false;
   if (entryEl.closest('#favCategories.is-collapsed')) return false;
   return true;
 }
@@ -590,8 +1346,9 @@ function renderLists() {
   const { pinned, normal } = splitFavoritesByPin();
   renderPinnedList(pinned);
   renderCategorySections(normal);
-  setWatchlistCollapsed(state.pinsOnly);
+  setWatchlistCollapsed(state.pinsOnly, { persist: false });
   applySearchVisibility();
+  renderCollapsedSectionsTray();
   renderLucideIcons();
   syncSelectionState();
   highlightSelection();
@@ -685,7 +1442,10 @@ function createEntryElement(entry, pinned) {
   button.type = 'button';
   button.className = 'entry-main';
   button.dataset.id = entry.id;
-  button.addEventListener('click', () => openEntry(entry));
+  button.addEventListener('click', () => {
+    const useSearchMode = Boolean(state.filterText.trim());
+    openEntry(entry, { useSearchMode });
+  });
   button.addEventListener('focus', () => setSelectionById(entry.id));
   button.addEventListener('mouseenter', () => setSelectionById(entry.id));
 
@@ -777,20 +1537,18 @@ function openSelection() {
   if (state.selectionIndex < 0 || state.selectionIndex >= state.selectionIds.length) return;
   const id = state.selectionIds[state.selectionIndex];
   const entry = state.favorites.find((item) => item.id === id);
-  if (entry) openEntry(entry);
+  if (entry) openEntry(entry, { useSearchMode: true });
 }
 
-async function openEntry(entry) {
+async function openEntry(entry, options = {}) {
   if (!entry?.url) return;
+  const useSearchMode = Boolean(options.useSearchMode);
+  const openMode = useSearchMode ? state.shortcutSearchOpenMode : SHORTCUT_SEARCH_OPEN_MODE_NEW_TAB;
   try {
-    if (chrome?.tabs?.create) {
-      await chrome.tabs.create({ url: entry.url, active: true });
-    } else {
-      window.open(entry.url, '_blank', 'noopener');
-    }
+    await openUrlByMode(entry.url, openMode);
   } catch (error) {
     console.error('Failed to open entry', error);
-    window.open(entry.url, '_blank', 'noopener');
+    window.open(entry.url, '_blank', 'noopener,noreferrer');
   }
 }
 
@@ -826,6 +1584,7 @@ async function loadFavoritesAndRender() {
     if (!validIds.has(key)) state.badgeStatus.delete(key);
   }
   renderLists();
+  await refreshAppCatalog();
   renderShortcuts();
   const hosts = new Set(state.favorites.map((item) => item.host).filter(Boolean));
   for (const host of hosts) {
@@ -925,23 +1684,8 @@ function attachStorageListener() {
         console.error('Failed to reload recent records', error);
       });
     }
-    if (Object.prototype.hasOwnProperty.call(changes, 'kfavPins')) {
-      try {
-        if (recordPinState.visible) {
-          if (recordPinState.controller?.reload) {
-            const task = recordPinState.controller.reload();
-            if (task?.catch) {
-              task.catch((error) => console.error('Failed to reload record pins', error));
-            }
-          } else {
-            disposeRecordPins();
-            recordPinState.controller = initPins();
-          }
-        }
-      } catch (error) {
-        console.error('Failed to reload record pins', error);
-      }
-    }
+    // kfavPins is handled by pins.js own storage listener to avoid
+    // input-time focus loss caused by duplicated reloads.
     if (Object.prototype.hasOwnProperty.call(changes, 'kfavShortcutsVisible')) {
       const next = typeof changes.kfavShortcutsVisible.newValue === 'boolean'
         ? changes.kfavShortcutsVisible.newValue
@@ -953,6 +1697,11 @@ function attachStorageListener() {
         ? changes.kfavRecordPinsVisible.newValue
         : true;
       applyRecordPinVisibility(nextRecordPins);
+    }
+    if (Object.prototype.hasOwnProperty.call(changes, SHORTCUT_SEARCH_OPEN_MODE_KEY)) {
+      state.shortcutSearchOpenMode = normalizeShortcutSearchOpenMode(
+        changes[SHORTCUT_SEARCH_OPEN_MODE_KEY]?.newValue
+      );
     }
   };
   chrome.storage.onChanged.addListener(listener);
@@ -987,15 +1736,37 @@ function applyShortcutVisibility(visible) {
   }
   if (els.toggleShortcuts) {
     els.toggleShortcuts.setAttribute('aria-pressed', visible ? 'true' : 'false');
-    els.toggleShortcuts.textContent = visible ? '▾' : '▸';
-    els.toggleShortcuts.title = visible ? 'ショートカットを折りたたむ' : 'ショートカットを展開';
+    els.toggleShortcuts.textContent = visible ? '▼' : '▶';
+    els.toggleShortcuts.title = visible ? 'Collapse shortcuts' : 'Expand shortcuts';
   }
+}
+
+function openShortcutTooltip(btn) {
+  if (!btn) return;
+  const tooltip = btn.querySelector('.shortcut-tooltip');
+  if (!tooltip || !tooltip.textContent) return;
+  btn.classList.add('tooltip-open');
+  btn.classList.remove('tooltip-align-left', 'tooltip-align-right');
+  const panelRect = (els.shortcutPanel || els.shortcutRow || doc.body).getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+  if (tooltipRect.left < panelRect.left + 4) {
+    btn.classList.add('tooltip-align-left');
+    return;
+  }
+  if (tooltipRect.right > panelRect.right - 4) {
+    btn.classList.add('tooltip-align-right');
+  }
+}
+
+function closeShortcutTooltip(btn) {
+  if (!btn) return;
+  btn.classList.remove('tooltip-open', 'tooltip-align-left', 'tooltip-align-right');
 }
 
 function renderShortcuts() {
   if (!els.shortcutRow) return;
   els.shortcutRow.textContent = '';
-  const entries = shortcutState.entries;
+  const entries = shortcutState.entries.slice(0, SHORTCUT_MAX_VISIBLE);
   if (!entries.length) {
     const empty = doc.createElement('button');
     empty.type = 'button';
@@ -1019,9 +1790,7 @@ function renderShortcuts() {
     const label = (entry.label || '').trim();
     const iconColor = resolveShortcutIconColor(entry);
     btn.className = `shortcut-button shortcut-${type}`;
-    btn.title = label;
     btn.setAttribute('aria-label', label);
-    btn.dataset.tooltip = label;
     btn.dataset.icoColor = iconColor;
     const url = buildShortcutUrl(entry);
     if (!url) {
@@ -1034,7 +1803,17 @@ function renderShortcuts() {
     icon.dataset.icoColor = iconColor;
     icon.setAttribute('aria-hidden', 'true');
 
+    const tooltip = doc.createElement('span');
+    tooltip.className = 'shortcut-tooltip';
+    tooltip.textContent = label;
+    tooltip.setAttribute('aria-hidden', 'true');
+
     btn.appendChild(icon);
+    btn.appendChild(tooltip);
+    btn.addEventListener('mouseenter', () => openShortcutTooltip(btn));
+    btn.addEventListener('focus', () => openShortcutTooltip(btn));
+    btn.addEventListener('mouseleave', () => closeShortcutTooltip(btn));
+    btn.addEventListener('blur', () => closeShortcutTooltip(btn));
     btn.addEventListener('click', () => openShortcut(entry));
     els.shortcutRow.appendChild(btn);
   });
@@ -1052,9 +1831,10 @@ async function openShortcut(entry) {
     } catch (_err) {}
   }
   try {
-    await chrome.tabs.create({ url, active: true });
-  } catch (_err) {
-    window.open(url, '_blank', 'noopener');
+    await openUrlByMode(url, state.shortcutSearchOpenMode);
+  } catch (error) {
+    console.error('Failed to open shortcut', error);
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 }
 
@@ -1275,6 +2055,12 @@ async function reorderWithinGroup(sourceId, targetId, before, pinned) {
 }
 
 function handleFilterKeydown(event) {
+  if (isEditableTarget(event.target) && event.target !== els.filter) {
+    return;
+  }
+  if (event.key === 'Enter' && isImeComposing(event)) {
+    return;
+  }
   if (event.key === 'Enter') {
     event.preventDefault();
     openSelection();
@@ -1309,8 +2095,10 @@ function applyRecordPinVisibility(visible) {
     if (!recordPinState.controller) {
       recordPinState.controller = initPins();
     }
+    setRecordPinsCollapsed(state.recordPinsCollapsed, { persist: false });
   } else {
     disposeRecordPins();
+    renderCollapsedSectionsTray();
   }
 }
 
@@ -1339,8 +2127,27 @@ function focusFilterSoon() {
 
 function wireEvents() {
   setFilterPanelVisible(false);
-  setRecordPinsCollapsed(false);
-  setWatchlistCollapsed(Boolean(els.togglePinsOnly?.checked));
+  ensureRecentCollapseControl();
+  ensureCollapsedSectionsTray();
+  setRecordPinsCollapsed(state.recordPinsCollapsed, { persist: false });
+  setWatchlistCollapsed(state.pinsOnly, { persist: false });
+  setRecentRecordsCollapsed(state.recentRecordsCollapsed, { persist: false });
+  els.toggleShortcuts?.classList.add('collapse-btn');
+  els.toggleRecordPins?.classList.add('collapse-btn');
+  els.togglePinsOnlyIcon?.classList.add('collapse-btn');
+  els.toggleRecentRecords?.classList.add('collapse-btn');
+  ensureAppSearchUi();
+  if (els.pinList && !state.pinListObserver) {
+    state.pinListObserver = new MutationObserver(() => {
+      if (state.recordPinsCollapsed) {
+        renderCollapsedSectionsTray();
+      }
+    });
+    state.pinListObserver.observe(els.pinList, { childList: true, subtree: false });
+  }
+  if (els.filter) {
+    els.filter.placeholder = 'Search panel';
+  }
   els.toggleFilterPanel?.addEventListener('click', () => {
     const next = !state.filterPanelVisible;
     setFilterPanelVisible(next, { focus: next });
@@ -1363,6 +2170,9 @@ function wireEvents() {
   els.quickAdd?.addEventListener('click', () => quickAddFromActiveTab());
   els.toggleRecordPins?.addEventListener('click', () => {
     setRecordPinsCollapsed(!state.recordPinsCollapsed);
+  });
+  els.toggleRecentRecords?.addEventListener('click', () => {
+    setRecentRecordsCollapsed(!state.recentRecordsCollapsed);
   });
   els.openOptions?.addEventListener('click', () => {
     if (chrome?.runtime?.openOptionsPage) {
@@ -1387,6 +2197,26 @@ function dispose() {
   stopCountTimer();
   detachStorageListener();
   disposeRecordPins();
+  if (state.pinListObserver) {
+    state.pinListObserver.disconnect();
+    state.pinListObserver = null;
+  }
+  if (els.appSearchToggle && state.appSearchToggleHandler) {
+    els.appSearchToggle.removeEventListener('click', state.appSearchToggleHandler);
+    state.appSearchToggleHandler = null;
+  }
+  if (els.appSearchInput && state.appSearchInputHandler) {
+    els.appSearchInput.removeEventListener('input', state.appSearchInputHandler);
+    state.appSearchInputHandler = null;
+  }
+  if (els.appSearchInput && state.appSearchInputKeydownHandler) {
+    els.appSearchInput.removeEventListener('keydown', state.appSearchInputKeydownHandler);
+    state.appSearchInputKeydownHandler = null;
+  }
+  if (state.appSearchOutsideHandler) {
+    document.removeEventListener('mousedown', state.appSearchOutsideHandler);
+    state.appSearchOutsideHandler = null;
+  }
   if (els.toggleShortcuts && state.shortcutToggleHandler) {
     els.toggleShortcuts.removeEventListener('click', state.shortcutToggleHandler);
     state.shortcutToggleHandler = null;
@@ -1394,6 +2224,8 @@ function dispose() {
 }
 
 async function init() {
+  await loadShortcutSearchOpenMode();
+  await loadCollapsedSectionsState();
   wireEvents();
   attachStorageListener();
   await initializeRecordPins();
@@ -1411,3 +2243,5 @@ init().catch((error) => {
 });
 
 window.addEventListener('beforeunload', dispose);
+
+

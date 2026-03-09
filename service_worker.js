@@ -100,6 +100,249 @@ const SHORTCUT_PARENT_ID = 'kfav-shortcut-parent';
 const SHORTCUT_MENU_APP = 'kfav-shortcut-app';
 const SHORTCUT_MENU_VIEW = 'kfav-shortcut-view';
 const SHORTCUT_MENU_CREATE = 'kfav-shortcut-create';
+const DEV_PARENT_MENU_ID = 'kf-dev-root';
+const DEV_COPY_QUERY_MENU_ID = 'kf-dev-copy-query';
+const DEV_COPY_FIELDS_LIST_MENU_ID = 'kf-dev-copy-fields-list';
+const DEV_COPY_APP_ID_MENU_ID = 'kf-dev-copy-app-id';
+const DEV_COPY_VIEW_ID_MENU_ID = 'kf-dev-copy-view-id';
+const latestPageContextByTab = new Map();
+
+async function getActiveTabForDevAction(fallbackTab) {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tabs?.[0]?.id) return tabs[0];
+  } catch (_err) {
+    // ignore
+  }
+  return fallbackTab || null;
+}
+
+async function fetchFieldsListFromMainWorld(tabId) {
+  const injected = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: () => {
+      try {
+        const sdk = window.kintone;
+        if (!sdk || !sdk.app || !sdk.api) {
+          return { ok: false, reason: 'not_kintone_page', url: location.href };
+        }
+        const appId = typeof sdk.app.getId === 'function' ? sdk.app.getId() : '';
+        if (!appId) {
+          return { ok: false, reason: 'app_id_not_found', url: location.href };
+        }
+        return sdk.api(
+          sdk.api.url('/k/v1/app/form/fields', true),
+          'GET',
+          { app: appId }
+        ).then((resp) => {
+          const properties = resp && resp.properties ? resp.properties : {};
+          if (!properties || typeof properties !== 'object' || !Object.keys(properties).length) {
+            return { ok: false, reason: 'empty_properties', appId: String(appId || ''), url: location.href };
+          }
+
+          const rows = [];
+          Object.keys(properties).forEach((code) => {
+            const field = properties[code] || {};
+            const type = String(field.type || '');
+            if (type === 'SUBTABLE') {
+              const subFields = field.fields && typeof field.fields === 'object' ? field.fields : {};
+              Object.keys(subFields).forEach((subCode) => {
+                const sub = subFields[subCode] || {};
+                rows.push({
+                  scope: 'サブテーブル',
+                  parentTableCode: code,
+                  parentTableLabel: String(field.label || ''),
+                  code: String(subCode || ''),
+                  label: String(sub.label || ''),
+                  type: String(sub.type || '')
+                });
+              });
+              return;
+            }
+
+            rows.push({
+              scope: '通常',
+              parentTableCode: '',
+              parentTableLabel: '',
+              code: String(code || ''),
+              label: String(field.label || ''),
+              type: type
+            });
+          });
+
+          if (!rows.length) {
+            return { ok: false, reason: 'empty_properties', appId: String(appId || ''), url: location.href };
+          }
+
+          rows.sort((a, b) => {
+            const aScope = a.scope === '通常' ? 0 : 1;
+            const bScope = b.scope === '通常' ? 0 : 1;
+            if (aScope !== bScope) return aScope - bScope;
+            const parentCmp = String(a.parentTableCode || '').localeCompare(String(b.parentTableCode || ''), 'ja');
+            if (parentCmp !== 0) return parentCmp;
+            return String(a.code || '').localeCompare(String(b.code || ''), 'ja');
+          });
+
+          const lines = [];
+          lines.push('所属\t親テーブルコード\t親テーブル名\tフィールドコード\tフィールド名\tフィールドタイプ');
+          rows.forEach((row) => {
+            lines.push([
+              row.scope,
+              row.parentTableCode,
+              row.parentTableLabel,
+              row.code,
+              row.label,
+              row.type
+            ].join('\t'));
+          });
+
+          return {
+            ok: true,
+            appId: String(appId || ''),
+            url: location.href,
+            rowCount: rows.length,
+            text: lines.join('\n')
+          };
+        }).catch((error) => ({
+          ok: false,
+          reason: 'form_fields_fetch_failed',
+          appId: String(appId || ''),
+          url: location.href,
+          detail: String(error && error.message || error)
+        }));
+      } catch (error) {
+        return {
+          ok: false,
+          reason: 'unexpected_error',
+          url: location.href,
+          detail: String(error && error.message || error)
+        };
+      }
+    }
+  });
+  return injected?.[0]?.result || { ok: false, reason: 'unexpected_error' };
+}
+
+async function copyTextViaInjectedScript(tabId, text) {
+  try {
+    const injected = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: async (value) => {
+        const textValue = String(value || '');
+        if (!textValue) return { ok: false, reason: 'empty_text' };
+        try {
+          if (navigator?.clipboard?.writeText) {
+            await navigator.clipboard.writeText(textValue);
+            return { ok: true };
+          }
+        } catch (_err) {
+          // fallback below
+        }
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = textValue;
+          ta.setAttribute('readonly', 'readonly');
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          ta.style.top = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          ta.setSelectionRange(0, ta.value.length);
+          const ok = document.execCommand('copy');
+          ta.remove();
+          return ok ? { ok: true } : { ok: false, reason: 'clipboard_failed' };
+        } catch (_err) {
+          return { ok: false, reason: 'clipboard_failed' };
+        }
+      },
+      args: [text]
+    });
+    return injected?.[0]?.result || { ok: false, reason: 'copy_fallback_failed' };
+  } catch (error) {
+    return { ok: false, reason: 'copy_fallback_failed', detail: String(error?.message || error) };
+  }
+}
+
+async function fetchAppOrViewIdFromMainWorld(tabId, mode) {
+  const injected = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: async (targetMode) => {
+      try {
+        if (!window.kintone || !kintone.app) {
+          return { ok: false, reason: 'not_kintone_page', value: '', url: location.href };
+        }
+        if (targetMode === 'appId') {
+          const appId = typeof kintone.app.getId === 'function' ? kintone.app.getId() : '';
+          if (!appId) {
+            return { ok: false, reason: 'app_id_not_found', value: '', url: location.href };
+          }
+          return { ok: true, value: String(appId), url: location.href };
+        }
+
+        if (targetMode === 'viewId' || targetMode === 'view') {
+          try {
+            if (typeof kintone.app.getView === 'function') {
+              const view = await Promise.resolve(kintone.app.getView());
+              const id = view && view.id != null ? String(view.id).trim() : '';
+              if (id) {
+                return { ok: true, value: id, source: 'getView', url: location.href };
+              }
+            }
+          } catch (_err) {
+            // continue to URL fallback
+          }
+
+          try {
+            const url = new URL(location.href);
+            const viewParam = String(url.searchParams.get('view') || '').trim();
+            if (viewParam) {
+              return { ok: true, value: viewParam, source: 'url', url: location.href };
+            }
+          } catch (_err) {
+            // ignore
+          }
+
+          return { ok: false, reason: 'view_id_not_available', value: '', source: 'none', url: location.href };
+        }
+        return { ok: false, reason: 'invalid_mode', value: '', url: location.href };
+      } catch (error) {
+        return {
+          ok: false,
+          reason: 'unexpected_error',
+          value: '',
+          url: location.href,
+          detail: String(error?.message || error)
+        };
+      }
+    },
+    args: [mode]
+  });
+  return injected?.[0]?.result || { ok: false, reason: 'unexpected_error', value: '' };
+}
+
+async function copyDevTextToActiveTab(tabId, text, label) {
+  let copied = null;
+  try {
+    copied = await chrome.tabs.sendMessage(tabId, {
+      type: 'DEV_COPY_TEXT',
+      text: String(text || ''),
+      label
+    });
+  } catch (sendError) {
+    copied = {
+      ok: false,
+      reason: 'receiving_end_does_not_exist',
+      detail: String(sendError?.message || sendError)
+    };
+  }
+  if (copied?.ok) return copied;
+  const fallback = await copyTextViaInjectedScript(tabId, String(text || ''));
+  if (fallback?.ok) return fallback;
+  return { ok: false, reason: copied?.reason || fallback?.reason || 'copy_failed' };
+}
 
 async function setupContextMenus() {
   if (!chrome.contextMenus?.create) return;
@@ -167,12 +410,202 @@ async function setupContextMenus() {
       contexts: ['page', 'frame'],
       documentUrlPatterns: patterns
     });
+    chrome.contextMenus.create({
+      id: DEV_PARENT_MENU_ID,
+      title: 'DEV Tools',
+      contexts: ['all'],
+      documentUrlPatterns: patterns
+    });
+    chrome.contextMenus.create({
+      id: DEV_COPY_QUERY_MENU_ID,
+      parentId: DEV_PARENT_MENU_ID,
+      title: '絞り込みクエリをコピー',
+      contexts: ['all'],
+      documentUrlPatterns: patterns
+    });
+    chrome.contextMenus.create({
+      id: DEV_COPY_FIELDS_LIST_MENU_ID,
+      parentId: DEV_PARENT_MENU_ID,
+      title: 'フィールド一覧をコピー',
+      contexts: ['all'],
+      documentUrlPatterns: patterns
+    });
+    chrome.contextMenus.create({
+      id: DEV_COPY_APP_ID_MENU_ID,
+      parentId: DEV_PARENT_MENU_ID,
+      title: 'appId をコピー',
+      contexts: ['all'],
+      documentUrlPatterns: patterns
+    });
+    chrome.contextMenus.create({
+      id: DEV_COPY_VIEW_ID_MENU_ID,
+      parentId: DEV_PARENT_MENU_ID,
+      title: 'viewId をコピー',
+      contexts: ['all'],
+      documentUrlPatterns: patterns
+    });
   } catch (_err) {
     // ignore
   }
 }
 
 chrome.contextMenus?.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === DEV_COPY_QUERY_MENU_ID) {
+    try {
+      const activeTab = await getActiveTabForDevAction(tab);
+      if (!activeTab?.id) {
+        console.debug('[kfav][DEV] no tab for context menu click');
+        return;
+      }
+      const res = await chrome.tabs.sendMessage(activeTab.id, { type: 'DEV_COPY_QUERY' });
+      if (!res?.ok) {
+        console.debug('[kfav][DEV] copy failed', { type: 'DEV_COPY_QUERY', reason: res?.reason || res?.error || 'unknown' });
+      } else {
+        console.debug('[kfav][DEV] copied', { type: 'DEV_COPY_QUERY', value: res?.value || '' });
+      }
+    } catch (error) {
+      console.error('[kfav][DEV] context menu action failed', error);
+    }
+    return;
+  }
+  if (info.menuItemId === DEV_COPY_FIELDS_LIST_MENU_ID) {
+    try {
+      const activeTab = await getActiveTabForDevAction(tab);
+      if (!activeTab?.id) {
+        console.debug('[kfav][DEV] no tab for fields list copy');
+        return;
+      }
+      const tabId = activeTab.id;
+      const tabUrl = activeTab.url || '';
+      console.log('[kfav][DEV] copy fields start', { tabId, url: tabUrl });
+
+      const fetched = await fetchFieldsListFromMainWorld(tabId);
+      console.log('[kfav][DEV] copy fields fetched', {
+        ok: Boolean(fetched?.ok),
+        appId: fetched?.appId || '',
+        url: fetched?.url || tabUrl,
+        rowCount: Number(fetched?.rowCount || 0)
+      });
+      if (!fetched?.ok || !fetched?.text) {
+        console.warn('[kfav][DEV] copy fields failed', {
+          reason: fetched?.reason || 'unknown',
+          tabId,
+          url: fetched?.url || tabUrl
+        });
+        return;
+      }
+      let copied = null;
+      try {
+        copied = await chrome.tabs.sendMessage(tabId, {
+          type: 'DEV_COPY_TEXT',
+          text: fetched.text,
+          label: 'fields-list'
+        });
+      } catch (sendError) {
+        copied = {
+          ok: false,
+          reason: 'receiving_end_does_not_exist',
+          detail: String(sendError?.message || sendError)
+        };
+      }
+      if (!copied?.ok) {
+        const fallback = await copyTextViaInjectedScript(tabId, fetched.text);
+        if (!fallback?.ok) {
+          console.warn('[kfav][DEV] copy fields failed', {
+            reason: copied?.reason || fallback?.reason || 'unknown',
+            tabId,
+            url: fetched?.url || tabUrl
+          });
+          return;
+        }
+      }
+      console.log('[kfav][DEV] copied fields list', {
+        tabId,
+        url: fetched?.url || tabUrl
+      });
+    } catch (error) {
+      console.warn('[kfav][DEV] copy fields failed', {
+        reason: String(error?.message || error),
+        tabId: tab?.id || null,
+        url: tab?.url || ''
+      });
+    }
+    return;
+  }
+  if (info.menuItemId === DEV_COPY_APP_ID_MENU_ID) {
+    try {
+      const activeTab = await getActiveTabForDevAction(tab);
+      if (!activeTab?.id) {
+        console.warn('[kfav][DEV] copy appId failed', { reason: 'no_active_tab' });
+        return;
+      }
+      const result = await fetchAppOrViewIdFromMainWorld(activeTab.id, 'appId');
+      if (!result?.ok || !String(result?.value || '').trim()) {
+        console.warn('[kfav][DEV] copy appId failed', {
+          reason: result?.reason || 'app_id_not_found',
+          tabId: activeTab.id,
+          url: result?.url || activeTab.url || ''
+        });
+        return;
+      }
+      const copied = await copyDevTextToActiveTab(activeTab.id, String(result.value), 'appId');
+      if (!copied?.ok) {
+        console.warn('[kfav][DEV] copy appId failed', {
+          reason: copied?.reason || 'clipboard_failed',
+          tabId: activeTab.id,
+          url: result?.url || activeTab.url || ''
+        });
+        return;
+      }
+      console.log('[kfav][DEV] copied appId');
+    } catch (error) {
+      console.warn('[kfav][DEV] copy appId failed', { reason: String(error?.message || error) });
+    }
+    return;
+  }
+  if (info.menuItemId === DEV_COPY_VIEW_ID_MENU_ID) {
+    try {
+      const activeTab = await getActiveTabForDevAction(tab);
+      if (!activeTab?.id) {
+        console.warn('[kfav][DEV] copy viewId failed', { reason: 'no_active_tab' });
+        return;
+      }
+      const result = await fetchAppOrViewIdFromMainWorld(activeTab.id, 'view');
+      if (!result?.ok) {
+        console.warn('[kfav][DEV] copy viewId failed', {
+          reason: result?.reason || 'not_kintone_page',
+          tabId: activeTab.id,
+          href: result?.url || activeTab.url || ''
+        });
+        return;
+      }
+      const value = String(result?.value || '').trim();
+      if (!value) {
+        console.warn('[kfav][DEV] copy viewId failed', {
+          reason: 'view_id_not_found',
+          tabId: activeTab.id,
+          href: result?.url || activeTab.url || ''
+        });
+        return;
+      }
+      const copied = await copyDevTextToActiveTab(activeTab.id, value, 'viewId');
+      if (!copied?.ok) {
+        console.warn('[kfav][DEV] copy viewId failed', {
+          reason: copied?.reason || 'clipboard_failed',
+          tabId: activeTab.id,
+          href: result?.url || activeTab.url || ''
+        });
+        return;
+      }
+      console.log('[kfav][DEV] copied viewId', { value, source: result?.source || 'unknown' });
+    } catch (error) {
+      console.warn('[kfav][DEV] copy viewId failed', {
+        reason: String(error?.message || error),
+        href: tab?.url || ''
+      });
+    }
+    return;
+  }
   if (info.menuItemId === FAVORITE_MENU_APP || info.menuItemId === FAVORITE_MENU_VIEW) {
     await handleFavoriteContextMenu(info.menuItemId, info, tab);
     return;
@@ -544,6 +977,19 @@ async function fetchAppsMapByAppIds(host, appIds) {
 // ===== UIから「kintoneで実行して結果を返して」の汎用エンドポイント =====
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
+    if (msg?.type === 'PAGE_CONTEXT_UPDATED') {
+      const tabId = sender?.tab?.id;
+      if (tabId) {
+        latestPageContextByTab.set(tabId, {
+          href: String(msg?.payload?.href || sender?.tab?.url || ''),
+          timestamp: Number(msg?.payload?.timestamp || Date.now()),
+          trigger: String(msg?.payload?.trigger || 'unknown')
+        });
+      }
+      sendResponse({ ok: true });
+      return;
+    }
+
     if (msg?.type === 'WARMUP_CONNECTOR') {
       const safeHost = normalizeHostOrigin(msg.host);
       if (!safeHost) { sendResponse({ ok: false, error: 'host required' }); return; }

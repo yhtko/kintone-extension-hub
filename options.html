@@ -9,21 +9,32 @@
 <body>
   <div class="layout">
     <aside class="sidebar">
-      <h1>kintone Base 設定</h1>
+      <h1 data-i18n="settings_title">kintone Base 設定</h1>
       <nav class="menu" aria-label="設定メニュー">
-        <button type="button" class="menu-item is-active" data-pane-target="general">全般</button>
-        <button type="button" class="menu-item" data-pane-target="excel-overlay">Excel Overlay</button>
-        <button type="button" class="menu-item" data-pane-target="watchlist">ウォッチリスト</button>
-        <button type="button" class="menu-item" data-pane-target="pins">ピン止め</button>
-        <button type="button" class="menu-item" data-pane-target="shortcuts">ショートカット</button>
+        <button type="button" class="menu-item is-active" data-pane-target="general" data-i18n="nav_general">全般</button>
+        <button type="button" class="menu-item" data-pane-target="shortcuts" data-i18n="nav_shortcuts">ショートカット</button>
+        <button type="button" class="menu-item" data-pane-target="watchlist" data-i18n="nav_watchlist">ウォッチリスト</button>
+        <button type="button" class="menu-item" data-pane-target="pins" data-i18n="nav_pins">ピン止め</button>
+        <button type="button" class="menu-item" data-pane-target="excel-overlay" data-i18n="nav_excel_overlay">Excel Overlay</button>
       </nav>
     </aside>
     <main class="content" id="content">
       <section class="pane is-active" data-pane="general" aria-labelledby="pane-general-title">
         <section class="card">
-          <h2 id="pane-general-title">概要</h2>
+          <h2 id="pane-general-title" data-i18n="general_section_title">全般</h2>
           <p>kintone Base は、kintone を横断的に閲覧・操作するための Chrome 拡張機能です。各機能は左メニューから切り替えて設定できます。</p>
           <p class="hint">設定は自動で保存され、同期が有効になっている場合は同じ Google アカウントで Chrome を使用する他端末にも共有されます。</p>
+          <div class="kp-setting-row general-language-row">
+            <label class="general-language-label" for="ui_language">
+              <span data-i18n="general_language_label">言語</span>
+            </label>
+            <select id="ui_language" class="general-language-select">
+              <option value="auto" data-i18n="general_language_auto">Auto</option>
+              <option value="ja" data-i18n="general_language_ja">日本語</option>
+              <option value="en" data-i18n="general_language_en">English</option>
+            </select>
+          </div>
+          <p class="hint" data-i18n="general_language_help">Auto はPCまたはブラウザの表示言語に合わせます。</p>
         </section>
         <section class="card">
           <h2>使い方のヒント</h2>
@@ -51,33 +62,34 @@
 
       <section class="pane" data-pane="excel-overlay" aria-labelledby="pane-excel-overlay-title">
         <section class="card">
-          <h2 id="pane-excel-overlay-title">Excel Overlay</h2>
-          <p class="hint">kintone 一覧画面で Excel風 Overlay を利用します。モードに応じて、無効・閲覧専用・編集可能を切り替えます。</p>
+          <h2 id="pane-excel-overlay-title" data-i18n="overlay_section_title">Excel Overlay</h2>
+          <p class="hint" data-i18n="overlay_section_desc">kintone 一覧画面で Excel風 Overlay を利用します。利用モードに応じて、無効・Standard・Pro を切り替えます。</p>
           <fieldset class="excel-mode-group">
-            <legend>利用モード</legend>
+            <legend data-i18n="overlay_mode_label">利用モード</legend>
             <label class="excel-mode-option">
               <input type="radio" name="excel_overlay_mode" value="off" />
-              <span>無効</span>
-              <small class="hint">Overlay を起動しません。標準の kintone 一覧を使います。</small>
+              <span data-i18n="overlay_mode_disabled">無効</span>
+              <small class="hint" data-i18n="overlay_mode_disabled_desc">Overlay を起動しません。標準の kintone 一覧を使用します。</small>
             </label>
             <label class="excel-mode-option">
-              <input type="radio" name="excel_overlay_mode" value="view" />
-              <span>閲覧のみ</span>
-              <small class="hint">フィルタ・ソート・コピー・列レイアウト変更は可能、編集保存は不可です。</small>
+              <input type="radio" name="excel_overlay_mode" value="standard" />
+              <span data-i18n="overlay_mode_standard">Standard</span>
+              <small class="hint" data-i18n="overlay_mode_standard_desc">フィルタ・ソート・コピー・列レイアウト変更は可能です。編集と保存は利用できません。</small>
             </label>
             <label class="excel-mode-option">
-              <input type="radio" name="excel_overlay_mode" value="edit" />
-              <span>編集可能</span>
-              <small class="hint">現在の Excel Overlay 機能をフルに利用できます。</small>
+              <input type="radio" name="excel_overlay_mode" value="pro" />
+              <span data-i18n="overlay_mode_pro">Pro</span>
+              <small class="hint" data-i18n="overlay_mode_pro_desc">編集機能を利用できる上位モードです。近日公開予定。</small>
             </label>
           </fieldset>
+          <p id="excel_mode_notice" class="hint excel-mode-notice" data-i18n="overlay_mode_pro_notice" hidden>Proモードは近日公開予定です。現在はStandardをご利用ください。</p>
         </section>
 
         <section class="card">
-          <h2>列レイアウト設定</h2>
-          <p class="hint">一覧画面で保存された列並び・列幅を管理します。閲覧のみモードでも列レイアウト保存は利用できます。</p>
+          <h2 data-i18n="overlay_layout_title">列レイアウト設定</h2>
+          <p class="hint" data-i18n="overlay_layout_desc">一覧画面で保存された列並び・列幅を管理します。Standard モードでも列レイアウト保存は利用できます。</p>
           <div class="actions actions--end">
-            <button id="excel_columns_clear" type="button">すべてリセット</button>
+            <button id="excel_columns_clear" type="button" data-i18n="reset_all">すべてリセット</button>
           </div>
           <ul id="excel_columns_list" class="excel-columns-list excel-layout-list"></ul>
         </section>
@@ -90,7 +102,7 @@
 
       <section class="pane" data-pane="watchlist" aria-labelledby="pane-watchlist-title">
         <section class="card">
-          <h2 id="pane-watchlist-title">ウォッチリストに追加</h2>
+          <h2 id="pane-watchlist-title" data-i18n="watchlist_section_title">ウォッチリスト</h2>
           <div class="watch-form-grid">
             <div class="watch-form-col">
               <label>表示名（任意）<br/>
@@ -143,7 +155,7 @@
 
       <section class="pane" data-pane="pins" aria-labelledby="pane-pins-title">
         <section class="card">
-          <h2 id="pane-pins-title">ピン留めレコード</h2>
+          <h2 id="pane-pins-title" data-i18n="pins_section_title">ピン止め</h2>
           <p class="hint">※ 気になるレコードを登録すると、サイドパネルの専用タブでメモ付きで表示できます。</p>
           <label class="shortcut-toggle">
             <input id="pin_visible" type="checkbox" />
@@ -191,12 +203,25 @@
 
       <section class="pane" data-pane="shortcuts" aria-labelledby="pane-shortcuts-title">
         <section class="card">
-          <h2 id="pane-shortcuts-title">ショートカット</h2>
+          <h2 id="pane-shortcuts-title" data-i18n="shortcuts_section_title">ショートカット</h2>
           <p class="hint">サイドパネル右端のショートカットボタンを管理します。右クリックメニューから追加できます。</p>
           <label class="shortcut-toggle">
             <input id="shortcut_visible" type="checkbox" />
             <span>ショートカットを表示する</span>
           </label>
+          <div class="kp-setting-row shortcut-search-mode-group" role="group" aria-label="ショートカット検索の開き方">
+            <div class="kp-setting-label">ショートカット検索の開き方</div>
+            <div class="kp-inline-radio">
+              <label>
+                <input type="radio" name="shortcut_search_open_mode" value="current_tab" />
+                <span>現在のタブ</span>
+              </label>
+              <label>
+                <input type="radio" name="shortcut_search_open_mode" value="new_tab" />
+                <span>新しいタブ</span>
+              </label>
+            </div>
+          </div>
           <ul id="shortcut_list" class="shortcut-list"></ul>
           <p class="hint">並び順はドラッグで変更できます。削除は各行の削除ボタンから行えます。</p>
         </section>

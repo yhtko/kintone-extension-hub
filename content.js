@@ -46,9 +46,286 @@
     return p;
   }
 
+  const devContextState = {
+    target: null,
+    lastContextInfo: null
+  };
+
+  function normalizeFieldCode(value) {
+    const code = String(value || '').trim();
+    return code ? code : '';
+  }
+
+  function pickContextTarget(eventTarget) {
+    if (!eventTarget) return null;
+    if (eventTarget instanceof Element) return eventTarget;
+    if (eventTarget.parentElement) return eventTarget.parentElement;
+    return null;
+  }
+
+  function normalizeContextText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  }
+
+  function computeCellLikeIndex(cell) {
+    if (!cell) return null;
+    if (typeof cell.cellIndex === 'number' && cell.cellIndex >= 0) return cell.cellIndex;
+    const row = cell.parentElement;
+    if (!row) return null;
+    const siblings = Array.from(row.children).filter((node) => {
+      if (!(node instanceof Element)) return false;
+      return node.matches('th,td,[role="columnheader"],[role="gridcell"]');
+    });
+    const index = siblings.indexOf(cell);
+    return index >= 0 ? index : null;
+  }
+
+  function createLastContextInfo(target, clientX, clientY) {
+    const overlayNode = target?.closest?.('[data-field-code]') || null;
+    const overlayFieldCode = normalizeFieldCode(overlayNode?.getAttribute?.('data-field-code') || '');
+    const cellNode = target?.closest?.('th,td,[role="columnheader"],[role="gridcell"]') || null;
+    const role = String(cellNode?.getAttribute?.('role') || '').toLowerCase();
+    const tag = String(cellNode?.tagName || '').toUpperCase();
+    const isHeader = tag === 'TH' || role === 'columnheader';
+    const cellIndex = computeCellLikeIndex(cellNode);
+    const targetTag = target?.tagName ? String(target.tagName).toLowerCase() : null;
+    const targetText = normalizeContextText(target?.textContent || '');
+    return {
+      x: Number(clientX || 0),
+      y: Number(clientY || 0),
+      timestamp: Date.now(),
+      targetTag,
+      targetText,
+      overlayFieldCode: overlayFieldCode || null,
+      cellIndex: typeof cellIndex === 'number' ? cellIndex : null,
+      isHeader,
+      isListLike: Boolean(cellNode || overlayFieldCode),
+      hasTarget: Boolean(target)
+    };
+  }
+
+  function debugDevField(stage, payload) {
+    try {
+      console.log(`[kfav][DEV] field resolve ${stage}`, payload);
+    } catch (_err) {
+      // ignore
+    }
+  }
+
+  document.addEventListener('contextmenu', (event) => {
+    const target = pickContextTarget(event.target);
+    devContextState.target = target;
+    devContextState.lastContextInfo = createLastContextInfo(target, event.clientX, event.clientY);
+  }, true);
+
+  let currentPageContext = {
+    href: location.href,
+    timestamp: Date.now()
+  };
+
+  function notifyPageContextUpdated(trigger) {
+    currentPageContext = {
+      href: location.href,
+      timestamp: Date.now()
+    };
+    try {
+      chrome.runtime.sendMessage({
+        type: 'PAGE_CONTEXT_UPDATED',
+        payload: {
+          href: currentPageContext.href,
+          timestamp: currentPageContext.timestamp,
+          trigger: String(trigger || 'unknown')
+        }
+      }).catch(() => {});
+    } catch (_err) {
+      // ignore
+    }
+  }
+
+  document.addEventListener('click', (event) => {
+    if (event.button !== 0) return;
+    notifyPageContextUpdated('click');
+  }, true);
+  window.addEventListener('hashchange', () => notifyPageContextUpdated('hashchange'), true);
+  window.addEventListener('popstate', () => notifyPageContextUpdated('popstate'), true);
+
+  function wrapHistoryMethodForContext(name) {
+    const original = history[name];
+    if (typeof original !== 'function') return;
+    history[name] = function patchedHistoryMethod(...args) {
+      const result = original.apply(this, args);
+      notifyPageContextUpdated(name);
+      return result;
+    };
+  }
+  wrapHistoryMethodForContext('pushState');
+  wrapHistoryMethodForContext('replaceState');
+  notifyPageContextUpdated('init');
+
+  async function writeClipboardText(text) {
+    const value = String(text || '');
+    if (!value) return false;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        return true;
+      }
+    } catch (_err) {
+      // fallback below
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = value;
+      ta.setAttribute('readonly', 'readonly');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return Boolean(ok);
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  async function resolveDevQuery() {
+    const context = await postToPage('DEV_GET_LIST_CONTEXT', {});
+    if (!context?.ok) return { ok: false, reason: context?.error || 'context_unavailable' };
+    const query = String(context.query || '').trim();
+    if (!query) return { ok: false, reason: 'query_not_found' };
+    return { ok: true, value: query };
+  }
+
+  function resolveFieldCodeFromTarget(target) {
+    if (!target || typeof target.closest !== 'function') return '';
+    const direct = target.closest('[data-field-code]');
+    if (direct?.getAttribute) {
+      const code = normalizeFieldCode(direct.getAttribute('data-field-code'));
+      if (code) return code;
+    }
+    return '';
+  }
+
+  async function resolveFieldCodeByViewMeta(lastContextInfo) {
+    const colIndex = Number(lastContextInfo?.cellIndex);
+    if (!Number.isInteger(colIndex) || colIndex < 0) {
+      return { ok: false, reason: 'cell_index_not_found' };
+    }
+    const context = await postToPage('DEV_GET_LIST_CONTEXT', {});
+    if (!context?.ok) {
+      return { ok: false, reason: 'view_meta_missing' };
+    }
+    const meta = await postToPage('DEV_GET_VIEW_META', {
+      appId: context?.appId || '',
+      viewId: context?.viewId || ''
+    });
+    if (!meta?.ok) {
+      return { ok: false, reason: 'view_meta_missing' };
+    }
+    const columns = Array.isArray(meta.columns) ? meta.columns : [];
+    debugDevField('candidates', {
+      lastContextInfo,
+      detectedCellIndex: colIndex,
+      isHeader: Boolean(lastContextInfo?.isHeader),
+      viewColumns: columns
+    });
+    const candidateIndexes = [colIndex, colIndex - 1, colIndex + 1, colIndex - 2, colIndex + 2]
+      .filter((idx) => idx >= 0);
+    for (const idx of candidateIndexes) {
+      const hit = columns.find((column) => Number(column?.index) === idx) || columns[idx];
+      const code = normalizeFieldCode(hit?.fieldCode);
+      if (code) {
+        return { ok: true, value: code };
+      }
+    }
+    return { ok: false, reason: 'field_code_not_resolved' };
+  }
+
+  async function resolveDevFieldCode() {
+    const target = devContextState.target;
+    const lastContextInfo = devContextState.lastContextInfo;
+    if (!target) {
+      debugDevField('result', { ok: false, reason: 'no_context_target' });
+      return { ok: false, reason: 'no_context_target' };
+    }
+    debugDevField('start', {
+      lastContextInfo
+    });
+
+    const overlayFieldCode = normalizeFieldCode(lastContextInfo?.overlayFieldCode || '');
+    if (overlayFieldCode) {
+      debugDevField('result', { ok: true, source: 'overlay', fieldCode: overlayFieldCode });
+      return { ok: true, value: overlayFieldCode };
+    }
+
+    const viaViewMeta = await resolveFieldCodeByViewMeta(lastContextInfo);
+    if (viaViewMeta?.ok && viaViewMeta?.value) {
+      debugDevField('result', { ok: true, source: 'view_meta', fieldCode: viaViewMeta.value });
+      return viaViewMeta;
+    }
+
+    const fallbackCode = resolveFieldCodeFromTarget(target);
+    if (fallbackCode) {
+      debugDevField('result', { ok: true, source: 'target_dataset', fieldCode: fallbackCode });
+      return { ok: true, value: fallbackCode };
+    }
+
+    const reason = viaViewMeta?.reason || 'field_code_not_resolved';
+    debugDevField('result', {
+      ok: false,
+      reason,
+      overlayFieldCode: lastContextInfo?.overlayFieldCode || null,
+      detectedCellIndex: lastContextInfo?.cellIndex ?? null,
+      isHeader: Boolean(lastContextInfo?.isHeader)
+    });
+    return { ok: false, reason };
+  }
+
+  async function copyDevValue(handlerName) {
+    const resolver = handlerName === 'query' ? resolveDevQuery : resolveDevFieldCode;
+    const resolved = await resolver();
+    if (!resolved?.ok || !resolved?.value) {
+      return { ok: false, reason: resolved?.reason || 'not_found' };
+    }
+    const copied = await writeClipboardText(resolved.value);
+    if (!copied) {
+      if (handlerName === 'field_code') {
+        debugDevField('result', { ok: false, reason: 'clipboard_failed' });
+      }
+      return { ok: false, reason: 'clipboard_failed' };
+    }
+    console.log('[kfav][DEV] copied', { type: handlerName, value: resolved.value });
+    return { ok: true, value: resolved.value };
+  }
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     (async () => {
       try {
+        if (msg?.type === 'DEV_COPY_QUERY') {
+          const result = await copyDevValue('query');
+          sendResponse(result); return;
+        }
+        if (msg?.type === 'DEV_COPY_TEXT') {
+          const text = String(msg?.text || '');
+          const label = String(msg?.label || 'text');
+          if (!text) {
+            sendResponse({ ok: false, reason: 'empty_text' }); return;
+          }
+          const copied = await writeClipboardText(text);
+          if (!copied) {
+            console.warn('[kfav][DEV] copy failed', { reason: 'clipboard_failed', label });
+            sendResponse({ ok: false, reason: 'clipboard_failed' }); return;
+          }
+          console.log('[kfav][DEV] copied', { type: label });
+          sendResponse({ ok: true }); return;
+        }
+        if (msg?.type === 'DEV_COPY_FIELD_CODE') {
+          const result = await copyDevValue('field_code');
+          sendResponse(result); return;
+        }
         if (msg?.type === 'COUNT_BULK') {
           const res = await postToPage('COUNT_BULK', msg.payload);
           sendResponse(res); return;
@@ -182,11 +459,11 @@
       btnPrev: "◀ Prev",
       btnNext: "Next ▶",
       btnClose: "閉じる",
-      modeViewOnly: "閲覧のみ",
+      modeViewOnly: "Standard",
       toastNoChanges: "変更はありません",
       toastInvalidCells: "エラーを解消してから保存してください",
       toastRequiredMissing: "必須項目を入力してください",
-      toastViewOnlyBlocked: "閲覧のみモードのため編集できません",
+      toastViewOnlyBlocked: "Proモードで利用できます",
       lookupAutoReadonly: "LOOKUPにより自動入力されるため編集できません",
       toastSaveSuccess: "保存しました",
       toastSaveFailed: "保存に失敗しました",
@@ -215,6 +492,7 @@
       rowDeleteToggle: "削除予定にする",
       rowDeleteUndo: "削除予定を解除",
       rowDeleteNewUndo: "新規行を取消",
+      toastPasteSkipped: (n) => `${n}件のセルを権限によりスキップしました`,
       toastCopySuccess: "コピーしました",
       toastCopyFailed: "コピーに失敗しました",
       dirtyLabel: (n) => `未保存: ${n}`,
@@ -253,11 +531,11 @@
       btnPrev: "◀ Prev",
       btnNext: "Next ▶",
       btnClose: "Close",
-      modeViewOnly: "View only",
+      modeViewOnly: "Standard",
       toastNoChanges: "No changes",
       toastInvalidCells: "Fix errors before saving",
       toastRequiredMissing: "Please fill required fields",
-      toastViewOnlyBlocked: "Editing is disabled in view-only mode",
+      toastViewOnlyBlocked: "Available in Pro mode",
       lookupAutoReadonly: "This field is auto-populated by LOOKUP and cannot be edited",
       toastSaveSuccess: "Changes saved",
       toastSaveFailed: "Failed to save changes",
@@ -286,6 +564,7 @@
       rowDeleteToggle: "Mark row for delete",
       rowDeleteUndo: "Unmark delete",
       rowDeleteNewUndo: "Discard new row",
+      toastPasteSkipped: (n) => `${n} cells were skipped due to permissions`,
       toastCopySuccess: "Copied",
       toastCopyFailed: "Copy failed",
       dirtyLabel: (n) => `Unsaved: ${n}`,
@@ -317,9 +596,10 @@
   };
 
   const COLUMN_PREF_STORAGE_KEY = 'kfavExcelColumns';
-  const EXCEL_OVERLAY_MODE_KEY = 'kfavExcelOverlayMode';
-  const DEFAULT_EXCEL_OVERLAY_MODE = 'edit';
-  const EXCEL_OVERLAY_MODE_VALUES = new Set(['off', 'view', 'edit']);
+  const EXCEL_OVERLAY_MODE_STANDARD = 'standard';
+  const EXCEL_OVERLAY_MODE_PRO = 'pro';
+  const DEFAULT_EXCEL_OVERLAY_MODE = EXCEL_OVERLAY_MODE_STANDARD;
+  const EXCEL_OVERLAY_MODE_VALUES = new Set([EXCEL_OVERLAY_MODE_STANDARD, EXCEL_OVERLAY_MODE_PRO]);
   const MAX_COLUMN_PREF_ENTRIES = 80;
   const DEFAULT_COLUMN_WIDTH = 160;
   const MIN_COLUMN_WIDTH = 96;
@@ -337,7 +617,36 @@
   }
 
   function normalizeExcelOverlayMode(value) {
+    if (value === 'edit') return EXCEL_OVERLAY_MODE_PRO;
+    if (value === 'view' || value === 'off') return EXCEL_OVERLAY_MODE_STANDARD;
     return EXCEL_OVERLAY_MODE_VALUES.has(value) ? value : DEFAULT_EXCEL_OVERLAY_MODE;
+  }
+
+  function createPermissionServiceSafe() {
+    if (typeof createPermissionService === 'function') {
+      return createPermissionService();
+    }
+    return {
+      init() {},
+      setFields() {},
+      setAppPermission() {},
+      setPendingDeletes() {},
+      refreshRecordAcl() {},
+      upsertRecordAcl() {},
+      removeRecordAcl() {},
+      clearRecordAcl() {},
+      canEditRecord() { return false; },
+      canDeleteRecord() { return false; },
+      canAddRow() { return false; },
+      canEditCell() { return false; },
+      getCellPermission() { return { editable: false, reason: 'no_acl' }; },
+      filterPasteTargets(targets) {
+        return { applicable: [], skipped: Array.isArray(targets) ? targets : [] };
+      },
+      isSystemField() { return true; },
+      isLookupField() { return false; },
+      isFieldTypeEditable() { return false; }
+    };
   }
 
   function columnLabel(index) {
@@ -354,6 +663,7 @@
   class ExcelOverlayController {
     constructor(postFn) {
       this.postFn = postFn;
+      this.permissionService = createPermissionServiceSafe();
       this.isOpen = false;
       this.root = null;
       this.surface = null;
@@ -388,6 +698,7 @@
       this.language = 'ja';
       this.appName = '';
       this.overlayMode = DEFAULT_EXCEL_OVERLAY_MODE;
+      this.proEntitlement = false;
       this.modeBadge = null;
       this.viewOnlyNoticeShown = false;
       this.appId = null;
@@ -405,15 +716,6 @@
       this.rows = [];
       this.rowMap = new Map();
       this.rowIndexMap = new Map();
-      this.appPermissions = {
-        view: 'unknown',
-        add: 'unknown',
-        edit: 'unknown',
-        delete: 'unknown',
-        source: 'unknown'
-      };
-      this.recordPermissions = new Map();
-      this.recordAcl = new Map();
       this.aclStatus = { loaded: false, failed: false };
       this.pendingDeletes = new Set();
       this.filters = new Map();
@@ -493,7 +795,7 @@
     async open() {
       if (this.isOpen) return;
       await this.loadOverlayMode();
-      if (this.overlayMode === 'off') return;
+      console.log('[overlay] mode flags', this.getOverlayModeFlags());
       this.isOpen = true;
       try {
         this.previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -511,6 +813,7 @@
           this.renderNoFields();
           return;
         }
+        console.log('[overlay] render grid start');
         this.renderGrid();
         this.attachEvents();
         this.updateDirtyBadge();
@@ -824,24 +1127,53 @@
     }
 
     async loadOverlayMode() {
-      try {
-        const stored = await chrome.storage.sync.get(EXCEL_OVERLAY_MODE_KEY);
-        this.overlayMode = normalizeExcelOverlayMode(stored?.[EXCEL_OVERLAY_MODE_KEY]);
-      } catch (_error) {
-        this.overlayMode = DEFAULT_EXCEL_OVERLAY_MODE;
-      }
+      // Public build is fixed to Standard mode for CWS release.
+      // Pro mode plumbing stays in place for future entitlement integration.
+      this.overlayMode = EXCEL_OVERLAY_MODE_STANDARD;
+      this.proEntitlement = false;
+    }
+
+    isProMode() {
+      return this.overlayMode === EXCEL_OVERLAY_MODE_PRO;
+    }
+
+    canUseEditFeatures() {
+      // Future expansion:
+      // return this.isProMode() && this.proEntitlement && permissionService.canEdit...
+      return this.isProMode() && this.proEntitlement;
+    }
+
+    canViewOverlay() {
+      return true;
+    }
+
+    canEditOverlay() {
+      return this.canUseEditFeatures();
+    }
+
+    canSaveOverlay() {
+      return this.canEditOverlay();
+    }
+
+    getOverlayModeFlags() {
+      return {
+        overlayMode: this.overlayMode,
+        canViewOverlay: this.canViewOverlay(),
+        canEditOverlay: this.canEditOverlay(),
+        canSaveOverlay: this.canSaveOverlay()
+      };
     }
 
     isOverlayEditable() {
-      return this.overlayMode === 'edit';
+      return this.canEditOverlay();
     }
 
     isOverlayViewOnly() {
-      return this.overlayMode === 'view';
+      return this.canViewOverlay() && !this.canEditOverlay();
     }
 
     canMutateOverlay(showNotice = false) {
-      const allowed = this.isOverlayEditable();
+      const allowed = this.canEditOverlay();
       if (!allowed && showNotice) {
         this.notifyViewOnlyBlocked();
       }
@@ -906,8 +1238,7 @@
       const fieldsMetaRes = await this.postFn('EXCEL_GET_FIELDS_META', { appId: this.appId });
       let rawFields = [];
       if (fieldsMetaRes?.ok && Array.isArray(fieldsMetaRes.fieldsMeta)) {
-        rawFields = fieldsMetaRes.fieldsMeta
-          .filter((f) => this.shouldIncludeField(f))
+        const allMetaFields = fieldsMetaRes.fieldsMeta
           .map((f) => ({
             code: f.code,
             label: f.label || '',
@@ -925,19 +1256,52 @@
                 }))
               }
               : undefined
-          }));
+          }))
+          .filter((f) => this.shouldIncludeField(f));
+
+        if (this.canEditOverlay()) {
+          rawFields = allMetaFields.filter((f) => overlayConfig.allowedTypes.has(f.type));
+        } else {
+          const viewOrdered = [];
+          const viewSeen = new Set();
+          const viewMap = new Map(allMetaFields.map((field) => [String(field.code), field]));
+          (Array.isArray(viewFieldOrder) ? viewFieldOrder : []).forEach((code) => {
+            const normalizedCode = String(code || '').trim();
+            if (!normalizedCode || viewSeen.has(normalizedCode)) return;
+            const field = viewMap.get(normalizedCode);
+            if (!field) return;
+            viewOrdered.push(field);
+            viewSeen.add(normalizedCode);
+          });
+          rawFields = viewOrdered.length ? viewOrdered : allMetaFields.slice();
+        }
       } else {
         const fieldsRes = await this.postFn('EXCEL_GET_FIELDS', { appId: this.appId });
         if (!fieldsRes?.ok) throw new Error('Failed to get fields');
         rawFields = Array.isArray(fieldsRes.fields)
           ? fieldsRes.fields.filter((f) => overlayConfig.allowedTypes.has(f.type))
           : [];
+        if (!rawFields.length && !this.canEditOverlay()) {
+          const fallbackCodes = Array.from(new Set(
+            (Array.isArray(viewFieldOrder) ? viewFieldOrder : [])
+              .map((code) => String(code || '').trim())
+              .filter(Boolean)
+          ));
+          rawFields = fallbackCodes.map((code) => ({
+            code,
+            label: code,
+            type: 'SINGLE_LINE_TEXT',
+            required: false,
+            choices: []
+          }));
+        }
       }
       this.fieldsMeta = rawFields.map((field) => ({ ...field }));
       this.fieldsMetaMap.clear();
       this.fieldsMeta.forEach((field) => {
         if (field?.code) this.fieldsMetaMap.set(field.code, field);
       });
+      this.syncPermissionServiceFields();
 
       const sorted = rawFields.slice().sort((a, b) => {
         const aIdx = viewFieldOrder.indexOf(a.code);
@@ -975,7 +1339,7 @@
         ...field,
         required: Boolean(field.required),
         choices: Array.isArray(field.choices) ? field.choices.map((choice) => String(choice)) : [],
-        editable: this.isFieldEditable(field),
+        editable: true,
         width: widthMap.get(field.code) || DEFAULT_COLUMN_WIDTH
       }));
       this.rebuildFieldMaps();
@@ -1006,13 +1370,12 @@
       return this.normalizeOverlayQuery(this.baseQuery || this.query || '', this.pageSize, this.pageOffset);
     }
 
-    seedRecordPermissionsFromRows() {
-      this.recordPermissions.clear();
-      this.rows.forEach((row) => {
-        const id = String(row?.id || '').trim();
-        if (!id) return;
-        this.recordPermissions.set(id, { view: 'allow', edit: 'allow', delete: 'allow', source: 'local' });
-      });
+    syncPermissionServicePendingDeletes() {
+      this.permissionService.setPendingDeletes(Array.from(this.pendingDeletes));
+    }
+
+    syncPermissionServiceFields() {
+      this.permissionService.setFields(this.fieldsMeta);
     }
 
     getVisibleRows() {
@@ -1516,10 +1879,11 @@
       this.totalCount = Number(recordsRes.totalCount || 0);
       const records = Array.isArray(recordsRes.records) ? recordsRes.records : [];
       this.rows = records.map((record) => this.transformRecord(record));
+      console.log('[overlay] records loaded', records.length);
       this.rebuildRowMaps();
-      this.seedRecordPermissionsFromRows();
       this.recomputeFilteredRowIds();
       await this.loadEffectiveRecordAcl();
+      this.syncPermissionServicePendingDeletes();
       this.updatePermissionUiState();
       this.updatePagerUi();
     }
@@ -1531,6 +1895,7 @@
       this.invalidCells.clear();
       this.invalidValueCache.clear();
       this.pendingDeletes.clear();
+      this.syncPermissionServicePendingDeletes();
       this.updateDirtyBadge();
       this.updateStats();
     }
@@ -1614,187 +1979,20 @@
       return (field?.type || '') === 'SUBTABLE';
     }
 
-    isLookupAutoField(field) {
-      if (!field) return false;
-      if (field.lookupAuto) return true;
-      const type = String(field.type || '').trim();
-      if (type !== 'LOOKUP') return false;
-      const code = String(field.code || '').trim();
-      const key = String(field.lookup?.keyField || '').trim();
-      if (!code || !key) return false;
-      return key !== code;
-    }
-
-    isLookupKeyField(field) {
-      if (!field) return false;
-      const type = String(field.type || '').trim();
-      if (type === 'SINGLE_LINE_TEXT' && field.lookup) return true;
-      if (type !== 'LOOKUP') return false;
-      const code = String(field.code || '').trim();
-      const key = String(field.lookup?.keyField || '').trim();
-      if (!code || !key) return false;
-      return key === code;
-    }
-
     shouldIncludeField(field) {
       if (!field || !field.code || !field.type) return false;
-      return overlayConfig.allowedTypes.has(field.type);
+      return true;
     }
 
-    isFieldEditable(field) {
-      if (!field || !field.type) return false;
-      if (this.isSubtableField(field)) return false;
-      if (this.isLookupAutoField(field)) return false;
-      const type = String(field.type || '').trim();
-      const editableScalar = type === 'SINGLE_LINE_TEXT'
-        || type === 'NUMBER'
-        || type === 'DATE'
-        || type === 'RADIO_BUTTON'
-        || type === 'DROP_DOWN';
-
-      if (type === 'LOOKUP') {
-        const key = String(field.lookup?.keyField || '').trim();
-        if (!key) {
-          console.warn('[kintone-excel-overlay] LOOKUP key 未特定:', field.code);
-          return false;
-        }
-        return key === String(field.code || '').trim();
-      }
-      if (field.lookup) {
-        const key = String(field.lookup?.keyField || '').trim();
-        if (!key) {
-          console.warn('[kintone-excel-overlay] LOOKUP metadata is incomplete:', field.code);
-          return false;
-        }
-        return editableScalar;
-      }
-      return editableScalar;
-    }
-
-    normalizePermissionState(value, fallback = 'unknown') {
-      if (value === 'allow' || value === 'deny' || value === 'unknown') return value;
-      if (value === true) return 'allow';
-      if (value === false) return 'deny';
-      if (typeof value === 'string') {
-        const normalized = value.trim().toLowerCase();
-        if (normalized === 'allow' || normalized === 'allowed' || normalized === 'true') return 'allow';
-        if (normalized === 'deny' || normalized === 'denied' || normalized === 'false') return 'deny';
-        if (normalized === 'unknown' || normalized === 'unresolved') return 'unknown';
-      }
-      return fallback;
-    }
-
-    normalizeAppPermissions(value) {
-      const source = value && typeof value === 'object' ? value : {};
-      const next = {
-        view: this.normalizePermissionState(source.view),
-        add: this.normalizePermissionState(source.add),
-        edit: this.normalizePermissionState(source.edit),
-        delete: this.normalizePermissionState(source.delete),
-        source: 'unknown'
-      };
-      if (source.source === 'api' || source.source === 'fallback' || source.source === 'unknown') {
-        next.source = source.source;
-      } else if (next.view === 'unknown' || next.add === 'unknown' || next.edit === 'unknown' || next.delete === 'unknown') {
-        next.source = 'unknown';
-      } else {
-        next.source = 'api';
-      }
-      return next;
-    }
-
-    normalizeRecordPermission(value) {
-      const source = value && typeof value === 'object' ? value : {};
-      const next = {
-        view: this.normalizePermissionState(source.view),
-        edit: this.normalizePermissionState(source.edit),
-        delete: this.normalizePermissionState(source.delete),
-        source: 'unknown'
-      };
-      if (source.source === 'api' || source.source === 'unknown') {
-        next.source = source.source;
-      } else if (next.view === 'unknown' || next.edit === 'unknown' || next.delete === 'unknown') {
-        next.source = 'unknown';
-      } else {
-        next.source = 'api';
-      }
-      return next;
-    }
-
-    getUnknownRecordPermission() {
-      return { view: 'unknown', edit: 'unknown', delete: 'unknown', source: 'unknown' };
-    }
-
-    getRecordPermission(recordId) {
+    getCellPermissionInfo(recordId, fieldCode) {
       const key = String(recordId || '').trim();
-      if (!key) return this.getUnknownRecordPermission();
-      return this.recordPermissions.get(key) || this.getUnknownRecordPermission();
-    }
-
-    normalizeAclBool(value) {
-      if (typeof value === 'boolean') return value;
-      if (typeof value === 'number') return value !== 0;
-      if (typeof value === 'string') {
-        const normalized = value.trim().toLowerCase();
-        if (['true', '1', 'yes', 'allow', 'allowed'].includes(normalized)) return true;
-        if (['false', '0', 'no', 'deny', 'denied'].includes(normalized)) return false;
-      }
-      return null;
-    }
-
-    normalizeRecordAclEntry(raw) {
-      if (!raw || typeof raw !== 'object') return null;
-      const id = String(raw.id ?? raw.recordId ?? raw.record?.id ?? raw.record?.recordId ?? '').trim();
-      if (!id) return null;
-      const record = raw.record && typeof raw.record === 'object' ? raw.record : raw;
-      const viewable = this.normalizeAclBool(record.viewable ?? record.view);
-      const editable = this.normalizeAclBool(record.editable ?? record.edit);
-      const deletable = this.normalizeAclBool(record.deletable ?? record.delete);
-      const fieldsRaw = raw.fields && typeof raw.fields === 'object' ? raw.fields : {};
-      const fields = {};
-      if (Array.isArray(fieldsRaw)) {
-        fieldsRaw.forEach((item) => {
-          if (!item || typeof item !== 'object') return;
-          const code = String(item.code ?? item.fieldCode ?? '').trim();
-          if (!code) return;
-          const fieldEditable = this.normalizeAclBool(item.editable ?? item.edit);
-          if (fieldEditable === null) return;
-          fields[code] = { editable: fieldEditable };
-        });
-      } else {
-        Object.keys(fieldsRaw).forEach((code) => {
-          const fieldCode = String(code || '').trim();
-          if (!fieldCode) return;
-          const value = fieldsRaw[code];
-          const fieldEditable = this.normalizeAclBool(value?.editable ?? value?.edit ?? value);
-          if (fieldEditable === null) return;
-          fields[fieldCode] = { editable: fieldEditable };
-        });
-      }
-      return {
-        id,
-        viewable,
-        editable,
-        deletable,
-        fields
-      };
-    }
-
-    getRecordAcl(recordId) {
-      const key = String(recordId || '').trim();
-      if (!key) return null;
-      return this.recordAcl.get(key) || null;
-    }
-
-    isFieldDeniedByAcl(recordId, fieldCode) {
-      const acl = this.getRecordAcl(recordId);
-      if (!acl || !fieldCode) return false;
-      const field = acl.fields && acl.fields[fieldCode] ? acl.fields[fieldCode] : null;
-      return Boolean(field && field.editable === false);
+      const code = String(fieldCode || '').trim();
+      if (!key || !code) return { editable: false, reason: 'unknown_field' };
+      return this.permissionService.getCellPermission(key, code);
     }
 
     async loadEffectiveRecordAcl() {
-      this.recordAcl.clear();
+      this.permissionService.clearRecordAcl();
       this.aclStatus = { loaded: false, failed: false };
       const appId = String(this.appId || '').trim();
       if (!appId) return;
@@ -1806,6 +2004,7 @@
       const chunkSize = 100;
       let succeeded = false;
       let failed = false;
+      const allRights = [];
       for (let i = 0; i < ids.length; i += chunkSize) {
         const chunk = ids.slice(i, i + chunkSize);
         try {
@@ -1825,11 +2024,7 @@
             : Array.isArray(res.records)
               ? res.records
               : [];
-          rights.forEach((item) => {
-            const normalized = this.normalizeRecordAclEntry(item);
-            if (!normalized) return;
-            this.recordAcl.set(normalized.id, normalized);
-          });
+          allRights.push(...rights);
         } catch (error) {
           failed = true;
           console.warn('[kintone-excel-overlay] record acl evaluation request failed', {
@@ -1839,192 +2034,58 @@
           });
         }
       }
+      if (allRights.length) {
+        this.permissionService.refreshRecordAcl(allRights);
+      }
       this.aclStatus = {
         loaded: succeeded,
         failed: !succeeded && failed
       };
+      this.syncPermissionServicePendingDeletes();
       console.debug('[excel-acl-status]', this.aclStatus);
     }
 
-    debugPermissionCheck(reason, detail = {}) {
-      try {
-        console.debug('[excel-editability]', {
-          reason,
-          appPermissions: this.appPermissions,
-          ...detail
-        });
-      } catch (_err) {
-        // ignore
-      }
-    }
-
-    canAddRows() {
-      if (!this.isOverlayEditable()) return false;
-      const allowed = this.appPermissions?.add === 'allow';
-      if (!allowed) {
-        this.debugPermissionCheck('add_blocked', {
-          appAdd: this.appPermissions?.add,
-          source: this.appPermissions?.source
-        });
-      }
-      return allowed;
-    }
-
-    canEditRecord(recordId, fieldCode = '') {
-      if (!this.isOverlayEditable()) return false;
-      const key = String(recordId || '').trim();
-      if (!key) return false;
-      if (this.isNewRowId(key)) return this.canAddRows();
-      const acl = this.getRecordAcl(key);
-      if (acl) {
-        if (acl.editable === false) {
-          this.debugPermissionCheck('edit_blocked_acl_record', {
-            recordId: key,
-            fieldCode,
-            acl
-          });
-          return false;
-        }
-        if (fieldCode) {
-          const fieldAcl = acl.fields && acl.fields[fieldCode] ? acl.fields[fieldCode] : null;
-          if (fieldAcl && fieldAcl.editable === false) {
-            this.debugPermissionCheck('edit_blocked_acl_field', {
-              recordId: key,
-              fieldCode,
-              acl,
-              fieldAcl
-            });
-            return false;
-          }
-        }
-        if (this.pendingDeletes.has(key)) {
-          this.debugPermissionCheck('edit_blocked_pending_delete', {
-            recordId: key,
-            fieldCode,
-            acl
-          });
-          return false;
-        }
-        if (acl.editable === true) return true;
-      }
-      const perm = this.getRecordPermission(key);
-      if (this.appPermissions?.edit !== 'allow') {
-        this.debugPermissionCheck('edit_blocked_app', {
-          recordId: key,
-          appEdit: this.appPermissions?.edit,
-          appSource: this.appPermissions?.source,
-          recordEdit: perm?.edit,
-          fieldCode,
-          recordPermission: perm
-        });
-        return false;
-      }
-      if (this.pendingDeletes.has(key)) {
-        this.debugPermissionCheck('edit_blocked_pending_delete', {
-          recordId: key,
-          appEdit: this.appPermissions?.edit,
-          appSource: this.appPermissions?.source,
-          recordEdit: perm?.edit,
-          fieldCode,
-          recordPermission: perm
-        });
-        return false;
-      }
-      if (!perm || perm.edit !== 'allow') {
-        this.debugPermissionCheck('edit_blocked_record', {
-          recordId: key,
-          appEdit: this.appPermissions?.edit,
-          appSource: this.appPermissions?.source,
-          recordEdit: perm?.edit,
-          recordPermission: perm,
-          fieldCode
-        });
-        return false;
-      }
-      return true;
-    }
-
-    canDeleteRecord(recordId) {
-      if (!this.isOverlayEditable()) return false;
-      const key = String(recordId || '').trim();
-      if (!key) return false;
-      if (this.isNewRowId(key)) return true;
-      const acl = this.getRecordAcl(key);
-      if (acl) {
-        if (acl.deletable === false) {
-          this.debugPermissionCheck('delete_blocked_acl_record', {
-            recordId: key,
-            acl
-          });
-          return false;
-        }
-        if (acl.deletable === true) return true;
-      }
-      const perm = this.getRecordPermission(key);
-      if (this.appPermissions?.delete !== 'allow') {
-        this.debugPermissionCheck('delete_blocked_app', {
-          recordId: key,
-          appDelete: this.appPermissions?.delete,
-          appSource: this.appPermissions?.source,
-          recordDelete: perm?.delete,
-          recordPermission: perm
-        });
-        return false;
-      }
-      if (!perm || perm.delete !== 'allow') {
-        this.debugPermissionCheck('delete_blocked_record', {
-          recordId: key,
-          appDelete: this.appPermissions?.delete,
-          appSource: this.appPermissions?.source,
-          recordDelete: perm?.delete,
-          recordPermission: perm
-        });
-        return false;
-      }
-      return true;
-    }
-
-    isCellEditable(field, recordId) {
-      if (!this.isFieldEditable(field)) return false;
-      return this.canEditRecord(recordId, String(field?.code || '').trim());
-    }
-
     getRowPermissionStatusText(recordId) {
-      const acl = this.getRecordAcl(recordId);
-      if (acl) {
-        const parts = [];
-        if (acl.editable === true) parts.push(resolveText(this.language, 'permEditable'));
-        else parts.push(resolveText(this.language, 'permViewOnly'));
-        if (acl.deletable === true) parts.push(resolveText(this.language, 'permDeletable'));
-        return parts.join(' / ');
-      }
-      const perm = this.getRecordPermission(recordId);
+      const editable = this.permissionService.canEditRecord(recordId);
+      const deletable = this.permissionService.canDeleteRecord(recordId);
       const parts = [];
-      if (perm.edit === 'allow' && this.appPermissions.edit === 'allow') parts.push(resolveText(this.language, 'permEditable'));
-      else if (perm.edit === 'unknown' || this.appPermissions.edit === 'unknown') parts.push(resolveText(this.language, 'permUnknown'));
-      else parts.push(resolveText(this.language, 'permViewOnly'));
-      if (perm.delete === 'allow' && this.appPermissions.delete === 'allow') parts.push(resolveText(this.language, 'permDeletable'));
+      if (editable) {
+        parts.push(resolveText(this.language, 'permEditable'));
+      } else {
+        parts.push(resolveText(this.language, 'permViewOnly'));
+      }
+      if (deletable) {
+        parts.push(resolveText(this.language, 'permDeletable'));
+      }
       return parts.join(' / ');
     }
 
     async loadPermissions() {
       // Keep default behavior: do not call app-level ACL APIs in normal flow.
       // Effective per-record restrictions are evaluated via EXCEL_EVALUATE_RECORD_ACL.
-      this.appPermissions = { view: 'allow', add: 'allow', edit: 'allow', delete: 'allow', source: 'local' };
-      this.recordPermissions.clear();
+      this.syncPermissionServiceFields();
+      this.permissionService.setAppPermission({
+        editable: true,
+        addable: true,
+        deletable: true,
+        source: 'local'
+      });
+      this.syncPermissionServicePendingDeletes();
       console.debug('[excel-permission-state]', {
-        appPermissions: this.appPermissions,
-        recordPermissionsSize: this.recordPermissions.size
+        aclStatus: this.aclStatus,
+        rows: this.rows.length
       });
     }
 
     updatePermissionUiState() {
+      const canEdit = this.canEditOverlay();
+      const canSave = this.canSaveOverlay();
       if (this.addRowButton) {
-        const allowed = this.canAddRows();
+        const allowed = canEdit && this.permissionService.canAddRow();
         this.addRowButton.disabled = this.saving || !allowed;
         this.addRowButton.title = allowed
           ? ''
-          : (this.isOverlayEditable() ? resolveText(this.language, 'permNoAdd') : resolveText(this.language, 'toastViewOnlyBlocked'));
+          : (canEdit ? resolveText(this.language, 'permNoAdd') : resolveText(this.language, 'toastViewOnlyBlocked'));
       }
       if (this.saveButton && !this.saving) {
         let dirtyCount = 0;
@@ -2032,8 +2093,8 @@
           dirtyCount += Object.keys(entry).length;
         });
         dirtyCount += this.pendingDeletes.size;
-        this.saveButton.disabled = !this.isOverlayEditable() || dirtyCount === 0;
-        this.saveButton.title = this.isOverlayEditable() ? '' : resolveText(this.language, 'toastViewOnlyBlocked');
+        this.saveButton.disabled = !canSave || dirtyCount === 0;
+        this.saveButton.title = canSave ? '' : resolveText(this.language, 'toastViewOnlyBlocked');
       }
       if (this.permissionWarningEl) {
         const showWarning = this.aclStatus.failed === true && this.aclStatus.loaded === false;
@@ -2671,12 +2732,10 @@
         const row = visibleRows[rowIndex];
         if (!row) continue;
         const recordId = String(row.id || '').trim();
-        const acl = this.getRecordAcl(recordId);
-        const rowViewable = !acl || acl.viewable !== false;
         const pendingDelete = this.pendingDeletes.has(recordId);
-        const rowEditable = this.canEditRecord(recordId);
+        const rowEditable = this.isOverlayEditable() && this.permissionService.canEditRecord(recordId);
         const rowEditableVisual = this.isOverlayViewOnly() ? true : rowEditable;
-        const rowDeletable = this.canDeleteRecord(recordId);
+        const rowDeletable = this.isOverlayEditable() && this.permissionService.canDeleteRecord(recordId);
         const top = rowIndex * this.rowHeight;
 
         const header = document.createElement('div');
@@ -2685,7 +2744,6 @@
         header.style.top = `${top}px`;
         header.style.left = '0';
         if (!rowEditableVisual) header.classList.add('pb-overlay__row-header--readonly');
-        if (!rowViewable) header.classList.add('pb-overlay__row-header--no-view');
         if (pendingDelete) header.classList.add('pb-overlay__row-header--pending-delete');
         if (pendingDelete) {
           header.title = '削除予定（保存時に削除）';
@@ -2749,7 +2807,6 @@
         rowLine.style.left = '0';
         rowLine.style.width = 'max-content';
         if (!rowEditableVisual) rowLine.classList.add('pb-overlay__row--readonly');
-        if (!rowViewable) rowLine.classList.add('pb-overlay__row--no-view');
         if (pendingDelete) rowLine.classList.add('pb-overlay__row--pending-delete');
 
         const inputsRow = [];
@@ -2757,6 +2814,7 @@
         this.fields.forEach((field, colIndex) => {
           const cell = document.createElement('div');
           cell.className = 'pb-overlay__cell';
+          cell.dataset.fieldCode = String(field.code || '');
           const fieldWidth = field.width || DEFAULT_COLUMN_WIDTH;
           cell.style.width = `${fieldWidth}px`;
           cell.style.minWidth = `${fieldWidth}px`;
@@ -2814,9 +2872,10 @@
       input.dataset.rowIndex = String(rowIndex);
       input.dataset.colIndex = String(colIndex);
       input.dataset.originalValue = this.formatCellDisplayValue(field, row.original[field.code]);
-      input.dataset.editable = this.isCellEditable(field, row.id) ? 'true' : 'false';
+      const permission = this.getCellPermissionInfo(row.id, field.code);
+      const editable = this.isOverlayEditable() && permission.editable;
+      input.dataset.editable = editable ? 'true' : 'false';
       input.disabled = false;
-      const editable = this.isCellEditable(field, row.id);
       const editableVisual = this.isOverlayViewOnly() ? true : editable;
       const isPending = Boolean(
         this.pendingEdit
@@ -2824,15 +2883,15 @@
         && this.pendingEdit.colIndex === colIndex
       );
       const editing = (this.isEditingCell(rowIndex, colIndex) || isPending) && editable;
-      const lookupAuto = this.isLookupAutoField(field);
+      const lookupReadonly = permission.reason === 'lookup_readonly';
       const isDropdown = field?.type === 'DROP_DOWN';
       const isRadio = field?.type === 'RADIO_BUTTON';
-      const isLookupKey = this.isLookupKeyField(field) && !lookupAuto;
-      const fieldDeniedByAcl = this.isFieldDeniedByAcl(row.id, field.code);
+      const isLookupKey = field?.type === 'SINGLE_LINE_TEXT' && Boolean(field?.lookup);
+      const fieldDeniedByAcl = permission.reason === 'field_readonly';
       this.setInputEditingVisual(input, editing);
       input.classList.toggle('pb-overlay__input--readonly', !editableVisual);
       input.classList.toggle('pb-overlay__input--subtable', this.isSubtableField(field));
-      if (lookupAuto) {
+      if (lookupReadonly) {
         input.title = resolveText(this.language, 'lookupAutoReadonly');
       } else if (!this.isSubtableField(field) && !editableVisual) {
         input.title = resolveText(this.language, fieldDeniedByAcl ? 'permNoFieldEdit' : 'permNoEdit');
@@ -2840,7 +2899,7 @@
         input.removeAttribute('title');
       }
       if (input.parentElement) {
-        input.parentElement.classList.toggle('pb-overlay__cell--lookup-auto', lookupAuto);
+        input.parentElement.classList.toggle('pb-overlay__cell--lookup-auto', lookupReadonly);
         input.parentElement.classList.toggle('pb-overlay__cell--readonly', !editableVisual);
         input.parentElement.classList.toggle('pb-overlay__cell--dropdown', isDropdown);
         input.parentElement.classList.toggle('pb-overlay__cell--radio', isRadio);
@@ -2889,7 +2948,8 @@
       } else {
         cell.classList.remove('pb-overlay__cell--active');
       }
-      const editable = this.isCellEditable(field, row.id);
+      const permission = this.getCellPermissionInfo(row.id, fieldCode);
+      const editable = this.isOverlayEditable() && permission.editable;
       const editableVisual = this.isOverlayViewOnly() ? true : editable;
       const isPending = Boolean(
         this.pendingEdit
@@ -2897,15 +2957,15 @@
         && this.pendingEdit.colIndex === colIndex
       );
       const editing = (this.isEditingCell(rowIndex, colIndex) || isPending) && editable;
-      const lookupAuto = this.isLookupAutoField(field);
+      const lookupReadonly = permission.reason === 'lookup_readonly';
       const isDropdown = field?.type === 'DROP_DOWN';
       const isRadio = field?.type === 'RADIO_BUTTON';
-      const isLookupKey = this.isLookupKeyField(field) && !lookupAuto;
-      const fieldDeniedByAcl = this.isFieldDeniedByAcl(row.id, fieldCode);
+      const isLookupKey = field?.type === 'SINGLE_LINE_TEXT' && Boolean(field?.lookup);
+      const fieldDeniedByAcl = permission.reason === 'field_readonly';
       this.setInputEditingVisual(input, editing);
       input.classList.toggle('pb-overlay__input--readonly', !editableVisual);
       input.classList.toggle('pb-overlay__input--subtable', this.isSubtableField(field));
-      if (lookupAuto) {
+      if (lookupReadonly) {
         input.title = resolveText(this.language, 'lookupAutoReadonly');
       } else if (!this.isSubtableField(field) && !editableVisual) {
         input.title = resolveText(this.language, fieldDeniedByAcl ? 'permNoFieldEdit' : 'permNoEdit');
@@ -2913,7 +2973,7 @@
         input.removeAttribute('title');
       }
       cell.classList.toggle('pb-overlay__cell--readonly', !editableVisual);
-      cell.classList.toggle('pb-overlay__cell--lookup-auto', lookupAuto);
+      cell.classList.toggle('pb-overlay__cell--lookup-auto', lookupReadonly);
       cell.classList.toggle('pb-overlay__cell--dropdown', isDropdown);
       cell.classList.toggle('pb-overlay__cell--radio', isRadio);
       cell.classList.toggle('pb-overlay__cell--lookup', isLookupKey);
@@ -3273,7 +3333,7 @@
       const row = this.getVisibleRowAt(rowIndex);
       const field = this.fields[colIndex];
       if (!row || !field || !this.isSubtableField(field)) return;
-      const readOnlyMode = !this.isOverlayEditable() || !this.canEditRecord(row.id);
+      const readOnlyMode = !this.isOverlayEditable() || !this.permissionService.canEditRecord(row.id);
       this.closeSubtableEditor(false);
       this.exitEditMode();
 
@@ -3568,7 +3628,7 @@
         return;
       }
       if (!this.isChoiceField(field)) return;
-      if (!this.isCellEditable(field, recordId)) return;
+      if (!this.permissionService.canEditCell(recordId, fieldCode)) return;
       if (!this.isEditingCell(rowIndex, colIndex)) return;
       if (this.radioPicker && this.radioPicker.input === input) return;
       this.openRadioPicker(rowIndex, colIndex, input);
@@ -3582,7 +3642,8 @@
       const key = `${recordId}:${fieldCode}`;
       const field = this.fieldMap.get(fieldCode);
       if (!field) return;
-      if (!this.isCellEditable(field, recordId)) return;
+      const cellPermission = this.getCellPermissionInfo(recordId, fieldCode);
+      if (!cellPermission.editable || !this.isOverlayEditable()) return;
       const cell = input.parentElement;
       if (!cell) return;
 
@@ -3700,9 +3761,9 @@
       if (!Array.isArray(matrix) || !matrix.length) return;
       const rowCount = this.getVisibleRowCount();
       const colCount = this.fields.length;
-      let appliedRows = 0;
-      let appliedCols = 0;
-      const pasteChanges = [];
+      let attemptedRows = 0;
+      let attemptedCols = 0;
+      const targets = [];
       for (let r = 0; r < matrix.length; r += 1) {
         const targetRowIndex = startRow + r;
         if (targetRowIndex >= rowCount) break;
@@ -3710,21 +3771,43 @@
         for (let c = 0; c < rowValues.length; c += 1) {
           const targetColIndex = startCol + c;
           if (targetColIndex >= colCount) break;
-          const change = this.applyPastedValue(targetRowIndex, targetColIndex, rowValues[c]);
-          if (change) pasteChanges.push(change);
-          appliedCols = Math.max(appliedCols, c + 1);
+          const row = this.getVisibleRowAt(targetRowIndex);
+          const field = this.fields[targetColIndex];
+          if (!row || !field) continue;
+          targets.push({
+            recordId: String(row.id || '').trim(),
+            fieldCode: String(field.code || '').trim(),
+            rowIndex: targetRowIndex,
+            colIndex: targetColIndex,
+            value: rowValues[c]
+          });
+          attemptedCols = Math.max(attemptedCols, c + 1);
         }
-        appliedRows = r + 1;
+        attemptedRows = r + 1;
       }
-      if (!appliedRows || !appliedCols) return;
+
+      const filteredTargets = this.permissionService.filterPasteTargets(targets);
+      const applicableTargets = Array.isArray(filteredTargets?.applicable) ? filteredTargets.applicable : [];
+      const skippedTargets = Array.isArray(filteredTargets?.skipped) ? filteredTargets.skipped : [];
+      const pasteChanges = [];
+      applicableTargets.forEach((target) => {
+        const change = this.applyPastedValue(target.rowIndex, target.colIndex, target.value);
+        if (change) pasteChanges.push(change);
+      });
+
+      if (skippedTargets.length) {
+        this.notify(resolveText(this.language, 'toastPasteSkipped', skippedTargets.length));
+      }
+      if (!attemptedRows || !attemptedCols) return;
+      if (!applicableTargets.length) return;
       if (pasteChanges.length) {
         this.pushHistory({
           type: 'paste',
           payload: { changes: pasteChanges }
         });
       }
-      const endRow = Math.min(rowCount - 1, startRow + appliedRows - 1);
-      const endCol = Math.min(colCount - 1, startCol + appliedCols - 1);
+      const endRow = Math.min(rowCount - 1, startRow + attemptedRows - 1);
+      const endCol = Math.min(colCount - 1, startCol + attemptedCols - 1);
       this.selection = {
         startRow,
         endRow,
@@ -3767,8 +3850,8 @@
       const field = this.fields[colIndex];
       if (!row || !field) return null;
       if (this.isSubtableField(field)) return null;
-      if (this.isLookupAutoField(field)) return null;
-      if (!this.isCellEditable(field, row.id)) return null;
+      const cellPermission = this.getCellPermissionInfo(row.id, field.code);
+      if (!this.isOverlayEditable() || !cellPermission.editable) return null;
       const beforeValue = this.deepClone(row.values[field.code]);
       const input = this.getInput(rowIndex, colIndex);
       if (input) {
@@ -4031,7 +4114,8 @@
       const field = this.fields[c];
       const targetRow = this.getVisibleRowAt(r);
       const targetRecordId = String(targetRow?.id || '').trim();
-      if (!this.isCellEditable(field, targetRecordId)) {
+      const cellPermission = this.getCellPermissionInfo(targetRecordId, String(field?.code || ''));
+      if (!this.isOverlayEditable() || !cellPermission.editable) {
         if (this.isSubtableField(field)) {
           if (targetRecordId) {
             this.openSubtableEditor(r, c, input || this.getInput(r, c));
@@ -4216,8 +4300,9 @@
         this.dirtyBadge.classList.remove('pb-overlay__dirty--active');
       }
       if (this.saveButton && !this.saving) {
-        this.saveButton.disabled = !this.isOverlayEditable() || count === 0;
-        this.saveButton.title = this.isOverlayEditable() ? '' : resolveText(this.language, 'toastViewOnlyBlocked');
+        const canSave = this.canSaveOverlay();
+        this.saveButton.disabled = !canSave || count === 0;
+        this.saveButton.title = canSave ? '' : resolveText(this.language, 'toastViewOnlyBlocked');
       }
     }
 
@@ -4354,10 +4439,10 @@
 
     updateHistoryButtons() {
       if (this.undoButton) {
-        this.undoButton.disabled = this.saving || !this.isOverlayEditable() || this.undoStack.length === 0;
+        this.undoButton.disabled = this.saving || !this.canEditOverlay() || this.undoStack.length === 0;
       }
       if (this.redoButton) {
-        this.redoButton.disabled = this.saving || !this.isOverlayEditable() || this.redoStack.length === 0;
+        this.redoButton.disabled = this.saving || !this.canEditOverlay() || this.redoStack.length === 0;
       }
     }
 
@@ -4392,6 +4477,7 @@
       const shouldSet = Boolean(nextState);
       if (shouldSet) this.pendingDeletes.add(key);
       else this.pendingDeletes.delete(key);
+      this.syncPermissionServicePendingDeletes();
       const editingRowId = this.editingCell ? this.getVisibleRowAt(this.editingCell.rowIndex)?.id : '';
       if (editingRowId && String(editingRowId) === key) {
         this.exitEditMode();
@@ -4410,14 +4496,6 @@
       this.rows.splice(insertAt, 0, row);
       this.rebuildRowMaps();
       this.recomputeFilteredRowIds();
-      this.recordPermissions.set(id, { view: 'allow', edit: 'allow', delete: 'allow', source: 'local' });
-      this.recordAcl.set(id, {
-        id,
-        viewable: true,
-        editable: true,
-        deletable: true,
-        fields: {}
-      });
       this.updateVirtualRows(true);
       this.updateDirtyBadge();
       this.updateStats();
@@ -4433,12 +4511,12 @@
       }
       this.rows.splice(index, 1);
       this.pendingDeletes.delete(key);
+      this.syncPermissionServicePendingDeletes();
       this.diff.delete(key);
       this.rowMap.delete(key);
       this.rowIndexMap.delete(key);
       this.revisionMap.delete(key);
-      this.recordPermissions.delete(key);
-      this.recordAcl.delete(key);
+      this.permissionService.removeRecordAcl(key);
       this.clearInvalidStateForRecord(key);
       this.rebuildRowMaps();
       this.recomputeFilteredRowIds();
@@ -4547,14 +4625,14 @@
     }
 
     findFirstEditableColIndex(recordId = '') {
-      const index = this.fields.findIndex((field) => this.isCellEditable(field, recordId));
+      const index = this.fields.findIndex((field) => this.permissionService.canEditCell(recordId, field.code));
       return index >= 0 ? index : 0;
     }
 
     addNewRow() {
       if (!this.canMutateOverlay(true)) return;
       if (this.saving) return;
-      if (!this.canAddRows()) return;
+      if (!this.permissionService.canAddRow()) return;
       if (!this.fields.length) return;
       const tempId = `NEW:${Date.now()}:${this.newRowSeq++}`;
       const values = {};
@@ -4581,14 +4659,6 @@
       });
       this.rebuildRowMaps();
       this.recomputeFilteredRowIds();
-      this.recordPermissions.set(tempId, { view: 'allow', edit: 'allow', delete: 'allow', source: 'local' });
-      this.recordAcl.set(tempId, {
-        id: tempId,
-        viewable: true,
-        editable: true,
-        deletable: true,
-        fields: {}
-      });
       if (this.bodyScroll) {
         this.bodyScroll.scrollTop = 0;
       }
@@ -4612,9 +4682,9 @@
       }
       this.rows.splice(index, 1);
       this.pendingDeletes.delete(key);
+      this.syncPermissionServicePendingDeletes();
       this.diff.delete(key);
-      this.recordPermissions.delete(key);
-      this.recordAcl.delete(key);
+      this.permissionService.removeRecordAcl(key);
       this.clearInvalidStateForRecord(key);
       this.rebuildRowMaps();
       this.recomputeFilteredRowIds();
@@ -4640,13 +4710,14 @@
         this.removeNewRowById(key);
         return;
       }
-      if (!this.canDeleteRecord(key)) return;
+      if (!this.permissionService.canDeleteRecord(key)) return;
       const before = this.pendingDeletes.has(key);
       if (this.pendingDeletes.has(key)) {
         this.pendingDeletes.delete(key);
       } else {
         this.pendingDeletes.add(key);
       }
+      this.syncPermissionServicePendingDeletes();
       const after = this.pendingDeletes.has(key);
       if (before !== after) {
         this.pushHistory({
@@ -4755,7 +4826,7 @@
       const recordId = targetInput?.dataset.recordId || '';
       const isChoiceField = this.isChoiceField(field);
       const isSubtableField = this.isSubtableField(field);
-      const isEditableField = this.isCellEditable(field, recordId);
+      const isEditableField = this.permissionService.canEditCell(recordId, fieldCode);
       const isSpaceKey = event.key === ' ' || event.key === 'Spacebar';
       const isArrowKey = event.key === 'ArrowUp'
         || event.key === 'ArrowDown'
@@ -5167,7 +5238,7 @@
           };
           return;
         }
-        if (!this.isFieldEditable(field)) return;
+        if (!this.permissionService.canEditCell(recordId, fieldCode)) return;
         record[fieldCode] = { value: this.toRecordPayloadValue(field, item.value) };
       });
       return Object.keys(record).length ? record : null;
@@ -5220,8 +5291,7 @@
     isRequiredCheckTargetField(field) {
       if (!field || !field.required) return false;
       if (this.isSubtableField(field)) return false;
-      if (field.type === 'LOOKUP') return this.isFieldEditable(field);
-      return true;
+      return this.permissionService.canEditCell('NEW:required-check', String(field.code || ''));
     }
 
     isMissingRequiredValue(field, value) {
@@ -5524,6 +5594,7 @@
           this.notify(resolveText(this.language, 'toastSaveSuccess'));
           this.diff.clear();
           this.pendingDeletes.clear();
+          this.syncPermissionServicePendingDeletes();
           this.clearHistory();
           this.updateDirtyBadge();
           this.updateStats();
@@ -5599,13 +5670,6 @@
         const rowIndex = this.rowIndexMap.get(tempId);
         this.rowMap.delete(tempId);
         this.rowMap.set(newId, row);
-        this.recordPermissions.delete(tempId);
-        this.recordPermissions.set(newId, {
-          view: this.appPermissions.view === 'allow' ? 'allow' : 'unknown',
-          edit: this.appPermissions.edit === 'allow' ? 'allow' : 'unknown',
-          delete: this.appPermissions.delete === 'allow' ? 'allow' : 'unknown',
-          source: this.appPermissions.source === 'api' ? 'api' : 'unknown'
-        });
         if (rowIndex !== undefined) {
           this.rowIndexMap.delete(tempId);
           this.rowIndexMap.set(newId, rowIndex);
@@ -5614,14 +5678,12 @@
         if (newRevision !== undefined) this.revisionMap.set(newId, newRevision);
         this.diff.delete(tempId);
         this.clearInvalidStateForRecord(tempId);
-        const tempAcl = this.recordAcl.get(tempId);
-        this.recordAcl.delete(tempId);
-        if (tempAcl) {
-          this.recordAcl.set(newId, {
-            ...tempAcl,
-            id: newId
-          });
-        }
+        this.permissionService.removeRecordAcl(tempId);
+        this.permissionService.upsertRecordAcl({
+          id: newId,
+          record: { viewable: true, editable: true, deletable: true },
+          fields: {}
+        });
 
         this.fields.forEach((field) => {
           const input = this.findInput(newId, field.code);
@@ -5658,10 +5720,10 @@
         this.rowMap.delete(id);
         this.rowIndexMap.delete(id);
         this.revisionMap.delete(id);
-        this.recordPermissions.delete(id);
-        this.recordAcl.delete(id);
+        this.permissionService.removeRecordAcl(id);
         this.clearInvalidStateForRecord(id);
       });
+      this.syncPermissionServicePendingDeletes();
 
       this.rebuildRowMaps();
       this.recomputeFilteredRowIds();
@@ -5762,20 +5824,20 @@
       this.rows = [];
       this.rowMap.clear();
       this.rowIndexMap.clear();
-      this.recordPermissions.clear();
-      this.recordAcl.clear();
+      this.permissionService.clearRecordAcl();
       this.aclStatus = { loaded: false, failed: false };
       this.pendingDeletes.clear();
+      this.syncPermissionServicePendingDeletes();
       this.filters.clear();
       this.filteredRowIds = null;
       this.filterPanel = null;
-      this.appPermissions = {
-        view: 'unknown',
-        add: 'unknown',
-        edit: 'unknown',
-        delete: 'unknown',
-        source: 'unknown'
-      };
+      this.syncPermissionServiceFields();
+      this.permissionService.setAppPermission({
+        editable: true,
+        addable: true,
+        deletable: true,
+        source: 'local'
+      });
       this.inputsByRow.clear();
       this.diff.clear();
       this.undoStack = [];
