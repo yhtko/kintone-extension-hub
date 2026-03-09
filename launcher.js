@@ -28,6 +28,152 @@ const SHORTCUT_SEARCH_OPEN_MODE_KEY = 'shortcutSearchOpenMode';
 const SHORTCUT_SEARCH_OPEN_MODE_CURRENT_TAB = 'current_tab';
 const SHORTCUT_SEARCH_OPEN_MODE_NEW_TAB = 'new_tab';
 const COLLAPSED_SECTIONS_KEY = 'kfavLauncherCollapsedSections';
+const UI_LANGUAGE_KEY = 'uiLanguage';
+const UI_LANGUAGE_VALUES = ['auto', 'ja', 'en'];
+const DEFAULT_UI_LANGUAGE = 'auto';
+const DEFAULT_LANGUAGE = 'ja';
+const DEFAULT_LOCALE = 'ja';
+
+const I18N_MESSAGES = {
+  ja: {
+    panel_title: 'kintone Base Launcher',
+    panel_search_label: '検索',
+    panel_search_placeholder: '検索（ラベル / URL / ホスト）',
+    panel_shortcuts_toolbar: 'ショートカット一覧',
+    panel_section_shortcuts: 'ショートカット',
+    panel_section_watchlist_pinned: 'ウォッチリスト（ピン）',
+    panel_section_watchlist: 'ウォッチリスト',
+    panel_section_record_pins: 'レコードピン',
+    panel_section_recent_records: '最近のレコード',
+    panel_action_toggle_search_show: '検索を表示',
+    panel_action_toggle_search_hide: '検索を隠す',
+    panel_action_open_settings: '設定を開く',
+    panel_action_clear_search: '検索をクリア',
+    panel_action_toggle_shortcuts_collapse: 'ショートカットを折りたたむ',
+    panel_action_toggle_shortcuts_expand: 'ショートカットを展開',
+    panel_action_add_current_view: '現在のkintoneビューを追加',
+    panel_action_refresh_counts: '件数を更新',
+    panel_action_toggle_watchlist_collapse: 'ウォッチリストを折りたたむ',
+    panel_action_toggle_watchlist_expand: 'ウォッチリストを展開',
+    panel_action_add_current_record_pin: '現在のレコードをピン留め',
+    panel_action_refresh_pins: 'ピンを更新',
+    panel_action_toggle_record_pins_collapse: 'レコードピンを折りたたむ',
+    panel_action_toggle_record_pins_expand: 'レコードピンを展開',
+    panel_action_toggle_recent_records_collapse: '最近のレコードを折りたたむ',
+    panel_action_toggle_recent_records_expand: '最近のレコードを展開',
+    panel_action_clear_recent_records: '履歴をクリア',
+    panel_action_app_search: 'アプリ検索',
+    panel_app_search_placeholder: 'アプリ名で検索',
+    panel_app_search_load_failed: 'アプリ一覧を取得できませんでした',
+    panel_app_search_no_results: '一致するアプリがありません',
+    panel_collapsed_sections_label: '折りたたみ済みセクション',
+    panel_collapsed_watchlist: 'ウォッチリスト',
+    panel_collapsed_record_pins: 'レコードピン',
+    panel_collapsed_recent_records: '最近のレコード',
+    panel_recent_app_fallback: 'App',
+    panel_recent_app_prefix: 'App',
+    panel_empty_pinned_no_match: '検索条件に一致するピン留めはありません',
+    panel_empty_pinned: 'ピン留めされた項目はありません',
+    panel_empty_favorites_no_match: '検索条件に一致するウォッチリストはありません',
+    panel_empty_favorites: 'ウォッチリストはまだありません',
+    panel_empty_shortcuts: 'ショートカットを設定',
+    panel_entry_no_label: '(no label)',
+    panel_badge_not_fetched: '未取得',
+    panel_badge_permission_required: 'ホスト権限が必要です',
+    panel_badge_missing_result: 'この項目の件数が返されませんでした',
+    panel_badge_fetch_failed: '件数取得に失敗しました',
+    panel_notice_permission_missing_hosts: '次のホスト権限が不足しています: {hosts}',
+    panel_notice_counts_failed: '一部ホストの件数取得に失敗しました。ログを確認してください。',
+    panel_notice_shortcut_url_missing: 'ショートカットURLが設定されていません',
+    panel_notice_open_kintone_first: '先にkintoneタブを開いてください',
+    panel_notice_parse_url_failed: 'URLを解析できませんでした',
+    panel_notice_already_registered: 'このビューは既に登録済みです',
+    panel_notice_added_fetching: 'ウォッチリストに追加しました。件数を取得しています...',
+    panel_notice_add_failed: 'ウォッチリストの追加に失敗しました',
+    panel_notice_url_required: 'URLは必須です',
+    panel_notice_kintone_url_required: 'kintone URLを入力してください',
+    panel_notice_updated: '更新しました',
+    panel_notice_icon_updated: 'アイコンを更新しました',
+    panel_notice_category_updated: 'カテゴリを更新しました',
+    panel_notice_initialization_failed: '初期化に失敗しました',
+    panel_prompt_edit_label: 'ラベルを編集',
+    panel_prompt_edit_url: 'URLを編集',
+    panel_prompt_icon: 'アイコン名を入力\n選択肢: {icons}',
+    panel_prompt_category: 'カテゴリを入力（空欄 = その他）',
+    panel_confirm_delete_shortcut: 'このショートカットを削除しますか？',
+    panel_meta_view_prefix: 'view',
+    panel_search_panel_placeholder: 'パネル内を検索'
+  },
+  en: {
+    panel_title: 'kintone Base Launcher',
+    panel_search_label: 'Search',
+    panel_search_placeholder: 'Search (label / URL / host)',
+    panel_shortcuts_toolbar: 'Shortcut list',
+    panel_section_shortcuts: 'Shortcuts',
+    panel_section_watchlist_pinned: 'Pinned watchlist',
+    panel_section_watchlist: 'Watchlist',
+    panel_section_record_pins: 'Record pins',
+    panel_section_recent_records: 'Recent records',
+    panel_action_toggle_search_show: 'Show search',
+    panel_action_toggle_search_hide: 'Hide search',
+    panel_action_open_settings: 'Open settings',
+    panel_action_clear_search: 'Clear search',
+    panel_action_toggle_shortcuts_collapse: 'Collapse shortcuts',
+    panel_action_toggle_shortcuts_expand: 'Expand shortcuts',
+    panel_action_add_current_view: 'Add current kintone view',
+    panel_action_refresh_counts: 'Refresh counts',
+    panel_action_toggle_watchlist_collapse: 'Collapse watchlist',
+    panel_action_toggle_watchlist_expand: 'Expand watchlist',
+    panel_action_add_current_record_pin: 'Pin current record',
+    panel_action_refresh_pins: 'Refresh pins',
+    panel_action_toggle_record_pins_collapse: 'Collapse record pins',
+    panel_action_toggle_record_pins_expand: 'Expand record pins',
+    panel_action_toggle_recent_records_collapse: 'Collapse recent records',
+    panel_action_toggle_recent_records_expand: 'Expand recent records',
+    panel_action_clear_recent_records: 'Clear history',
+    panel_action_app_search: 'App search',
+    panel_app_search_placeholder: 'Search app name',
+    panel_app_search_load_failed: 'App list could not be loaded',
+    panel_app_search_no_results: 'No apps matched',
+    panel_collapsed_sections_label: 'Collapsed sections',
+    panel_collapsed_watchlist: 'Watchlist',
+    panel_collapsed_record_pins: 'Record pins',
+    panel_collapsed_recent_records: 'Recent records',
+    panel_recent_app_fallback: 'App',
+    panel_recent_app_prefix: 'App',
+    panel_empty_pinned_no_match: 'No pinned items matched your search',
+    panel_empty_pinned: 'No pinned items yet',
+    panel_empty_favorites_no_match: 'No watchlist items matched your search',
+    panel_empty_favorites: 'No watchlist items yet',
+    panel_empty_shortcuts: 'Configure shortcuts',
+    panel_entry_no_label: '(no label)',
+    panel_badge_not_fetched: 'Not fetched',
+    panel_badge_permission_required: 'Host permission required',
+    panel_badge_missing_result: 'Count was not returned for this item',
+    panel_badge_fetch_failed: 'Failed to fetch count',
+    panel_notice_permission_missing_hosts: 'Permission is missing for hosts: {hosts}',
+    panel_notice_counts_failed: 'Some hosts failed to fetch counts. Check the log for details.',
+    panel_notice_shortcut_url_missing: 'Shortcut URL is not configured',
+    panel_notice_open_kintone_first: 'Open a kintone tab first',
+    panel_notice_parse_url_failed: 'Could not parse the URL',
+    panel_notice_already_registered: 'This view is already registered',
+    panel_notice_added_fetching: 'Added to watchlist. Fetching counts...',
+    panel_notice_add_failed: 'Failed to add watchlist item',
+    panel_notice_url_required: 'URL is required',
+    panel_notice_kintone_url_required: 'Please enter a kintone URL',
+    panel_notice_updated: 'Updated',
+    panel_notice_icon_updated: 'Icon updated',
+    panel_notice_category_updated: 'Category updated',
+    panel_notice_initialization_failed: 'Initialization failed',
+    panel_prompt_edit_label: 'Edit label',
+    panel_prompt_edit_url: 'Edit URL',
+    panel_prompt_icon: 'Enter icon name\nChoices: {icons}',
+    panel_prompt_category: 'Enter category (empty = Other)',
+    panel_confirm_delete_shortcut: 'Delete this shortcut?',
+    panel_meta_view_prefix: 'view',
+    panel_search_panel_placeholder: 'Search panel'
+  }
+};
 
 const doc = document;
 
@@ -93,7 +239,9 @@ const state = {
   appSearchInputHandler: null,
   appSearchInputKeydownHandler: null,
   appSearchOutsideHandler: null,
-  pinListObserver: null
+  pinListObserver: null,
+  uiLanguageSetting: DEFAULT_UI_LANGUAGE,
+  currentLang: DEFAULT_LANGUAGE
 };
 
 const shortcutState = {
@@ -115,6 +263,130 @@ const DEFAULT_ICON_COLOR = 'gray';
 const ICON_COLOR_OPTIONS = ['gray', 'blue', 'green', 'orange', 'red', 'purple'];
 const APP_CANDIDATE_LIMIT = 10;
 const SHORTCUT_MAX_VISIBLE = 16;
+
+function normalizeUiLanguage(raw) {
+  const value = String(raw || '').trim().toLowerCase();
+  if (!value) return DEFAULT_LANGUAGE;
+  if (value === 'ja' || value.startsWith('ja-')) return 'ja';
+  return 'en';
+}
+
+function normalizeUiLanguageSetting(raw) {
+  const value = String(raw || '').trim().toLowerCase();
+  if (UI_LANGUAGE_VALUES.includes(value)) return value;
+  return DEFAULT_UI_LANGUAGE;
+}
+
+function getBrowserUiLanguage() {
+  try {
+    const browserLang = navigator.language || (Array.isArray(navigator.languages) ? navigator.languages[0] : '');
+    return normalizeUiLanguage(browserLang);
+  } catch (_err) {
+    return DEFAULT_LANGUAGE;
+  }
+}
+
+function resolveEffectiveUiLanguage(setting) {
+  if (setting === 'ja' || setting === 'en') return setting;
+  return getBrowserUiLanguage();
+}
+
+function t(key, vars) {
+  const base = I18N_MESSAGES[state.currentLang]?.[key]
+    ?? I18N_MESSAGES.ja?.[key]
+    ?? key;
+  if (!vars || typeof vars !== 'object') return base;
+  return Object.keys(vars).reduce((text, name) => {
+    return text.replaceAll(`{${name}}`, String(vars[name]));
+  }, base);
+}
+
+function applyI18n(root = doc) {
+  if (!root) return;
+  root.querySelectorAll('[data-i18n]').forEach((el) => {
+    const key = el.getAttribute('data-i18n');
+    if (!key) return;
+    el.textContent = t(key);
+  });
+  root.querySelectorAll('[data-i18n-title]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-title');
+    if (!key) return;
+    el.setAttribute('title', t(key));
+  });
+  root.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (!key) return;
+    el.setAttribute('placeholder', t(key));
+  });
+  root.querySelectorAll('[data-i18n-aria-label]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-aria-label');
+    if (!key) return;
+    el.setAttribute('aria-label', t(key));
+  });
+}
+
+function getSortLocale() {
+  return state.currentLang === 'en' ? 'en' : DEFAULT_LOCALE;
+}
+
+async function initializeI18n() {
+  let setting = DEFAULT_UI_LANGUAGE;
+  try {
+    const stored = await chrome.storage.local.get(UI_LANGUAGE_KEY);
+    setting = normalizeUiLanguageSetting(stored?.[UI_LANGUAGE_KEY]);
+  } catch (_err) {
+    setting = DEFAULT_UI_LANGUAGE;
+  }
+  await applyUiLanguageSetting(setting, { persist: false, rerender: false });
+}
+
+async function applyUiLanguageSetting(settingValue, { persist = false, rerender = true } = {}) {
+  const setting = normalizeUiLanguageSetting(settingValue);
+  const nextLang = resolveEffectiveUiLanguage(setting);
+  state.uiLanguageSetting = setting;
+  state.currentLang = nextLang;
+  doc.documentElement.lang = nextLang;
+  applyI18n(doc);
+  if (persist) {
+    try {
+      await chrome.storage.local.set({ [UI_LANGUAGE_KEY]: setting });
+    } catch (_err) {
+      // ignore
+    }
+  }
+  if (rerender) {
+    rerenderLocalizedUi();
+  }
+}
+
+function rerenderLocalizedUi() {
+  if (els.filter) {
+    els.filter.placeholder = t('panel_search_placeholder');
+  }
+  if (els.collapsedTray) {
+    els.collapsedTray.setAttribute('aria-label', t('panel_collapsed_sections_label'));
+  }
+  if (els.appSearchToggle) {
+    els.appSearchToggle.title = t('panel_action_app_search');
+    els.appSearchToggle.setAttribute('aria-label', t('panel_action_app_search'));
+  }
+  if (els.appSearchInput) {
+    els.appSearchInput.placeholder = t('panel_app_search_placeholder');
+  }
+  setFilterPanelVisible(state.filterPanelVisible);
+  applyShortcutVisibility(shortcutState.visible);
+  setWatchlistCollapsed(state.pinsOnly, { persist: false });
+  setRecordPinsCollapsed(state.recordPinsCollapsed, { persist: false });
+  setRecentRecordsCollapsed(state.recentRecordsCollapsed, { persist: false });
+  renderLists();
+  renderShortcuts();
+  renderRecentRecords();
+  if (state.appSearchOpen) {
+    refreshAppSearchMatches();
+  } else {
+    renderAppSearchResults();
+  }
+}
 
 function normalizeIconName(value) {
   const name = typeof value === 'string' ? value.trim() : '';
@@ -245,6 +517,10 @@ function setNotice(message) {
   }
 }
 
+function setNoticeKey(key, vars) {
+  setNotice(t(key, vars));
+}
+
 function setFilterPanelVisible(visible, { focus = false } = {}) {
   state.filterPanelVisible = Boolean(visible);
   if (els.filterPanel) {
@@ -252,7 +528,9 @@ function setFilterPanelVisible(visible, { focus = false } = {}) {
   }
   if (els.toggleFilterPanel) {
     els.toggleFilterPanel.setAttribute('aria-pressed', state.filterPanelVisible ? 'true' : 'false');
-    els.toggleFilterPanel.title = state.filterPanelVisible ? 'Hide search' : 'Show search';
+    const label = state.filterPanelVisible ? t('panel_action_toggle_search_hide') : t('panel_action_toggle_search_show');
+    els.toggleFilterPanel.title = label;
+    els.toggleFilterPanel.setAttribute('aria-label', label);
   }
   if (focus && state.filterPanelVisible && els.filter) {
     setTimeout(() => {
@@ -302,7 +580,7 @@ function ensureCollapsedSectionsTray() {
   const tray = doc.createElement('section');
   tray.id = 'collapsedSectionsTray';
   tray.className = 'collapsed-sections-tray hidden';
-  tray.setAttribute('aria-label', 'Collapsed sections');
+  tray.setAttribute('aria-label', t('panel_collapsed_sections_label'));
 
   const row = doc.createElement('div');
   row.id = 'collapsedSectionsRow';
@@ -385,7 +663,7 @@ function renderCollapsedSectionsTray() {
     items.push({
       id: 'watchlist',
       icon: 'bookmark',
-      label: 'ウォッチリスト',
+      label: t('panel_collapsed_watchlist'),
       count: state.favorites.length,
       onClick: () => setWatchlistCollapsed(false)
     });
@@ -395,7 +673,7 @@ function renderCollapsedSectionsTray() {
     items.push({
       id: 'record-pins',
       icon: 'pin',
-      label: 'レコードピン',
+      label: t('panel_collapsed_record_pins'),
       count,
       onClick: () => setRecordPinsCollapsed(false)
     });
@@ -404,7 +682,7 @@ function renderCollapsedSectionsTray() {
     items.push({
       id: 'recent-records',
       icon: 'history',
-      label: '最近のレコード',
+      label: t('panel_collapsed_recent_records'),
       count: state.recentRecords.length,
       onClick: () => setRecentRecordsCollapsed(false)
     });
@@ -434,7 +712,9 @@ function setRecordPinsCollapsed(collapsed, { persist = true } = {}) {
     const isCollapsed = state.recordPinsCollapsed;
     els.toggleRecordPins.textContent = isCollapsed ? '\u25B6' : '\u25BC';
     els.toggleRecordPins.setAttribute('aria-pressed', isCollapsed ? 'true' : 'false');
-    els.toggleRecordPins.title = isCollapsed ? 'Expand record pins' : 'Collapse record pins';
+    const label = isCollapsed ? t('panel_action_toggle_record_pins_expand') : t('panel_action_toggle_record_pins_collapse');
+    els.toggleRecordPins.title = label;
+    els.toggleRecordPins.setAttribute('aria-label', label);
   }
   if (persist) {
     persistCollapsedSectionsState().catch(() => {});
@@ -457,7 +737,9 @@ function setWatchlistCollapsed(collapsed, { persist = true } = {}) {
   if (els.togglePinsOnlyIcon) {
     const isCollapsed = state.pinsOnly;
     els.togglePinsOnlyIcon.textContent = isCollapsed ? '\u25B6' : '\u25BC';
-    els.togglePinsOnlyIcon.title = isCollapsed ? 'Expand watchlist' : 'Collapse watchlist';
+    const label = isCollapsed ? t('panel_action_toggle_watchlist_expand') : t('panel_action_toggle_watchlist_collapse');
+    els.togglePinsOnlyIcon.title = label;
+    els.togglePinsOnlyIcon.setAttribute('aria-label', label);
   }
   if (persist) {
     persistCollapsedSectionsState().catch(() => {});
@@ -474,7 +756,9 @@ function setRecentRecordsCollapsed(collapsed, { persist = true } = {}) {
     const isCollapsed = state.recentRecordsCollapsed;
     els.toggleRecentRecords.textContent = isCollapsed ? '\u25B6' : '\u25BC';
     els.toggleRecentRecords.setAttribute('aria-pressed', isCollapsed ? 'true' : 'false');
-    els.toggleRecentRecords.title = isCollapsed ? 'Expand recent records' : 'Collapse recent records';
+    const label = isCollapsed ? t('panel_action_toggle_recent_records_expand') : t('panel_action_toggle_recent_records_collapse');
+    els.toggleRecentRecords.title = label;
+    els.toggleRecentRecords.setAttribute('aria-label', label);
   }
   if (persist) {
     persistCollapsedSectionsState().catch(() => {});
@@ -569,7 +853,7 @@ function getRecentAppLabel(entry) {
   const appName = String(entry?.appName || '').trim();
   if (appName) return appName;
   const appId = String(entry?.appId || '').trim();
-  return appId ? `App ${appId}` : 'App';
+  return appId ? `${t('panel_recent_app_prefix')} ${appId}` : t('panel_recent_app_fallback');
 }
 
 function normalizeRecentHost(host) {
@@ -873,7 +1157,7 @@ function searchAppsByName(query, limit = APP_CANDIDATE_LIMIT) {
   const sorter = (a, b) => {
     const nameA = String(a.name || '');
     const nameB = String(b.name || '');
-    return nameA.localeCompare(nameB, 'ja');
+    return nameA.localeCompare(nameB, getSortLocale());
   };
   return [...prefix.sort(sorter), ...partial.sort(sorter)].slice(0, Math.max(1, Number(limit) || APP_CANDIDATE_LIMIT));
 }
@@ -946,8 +1230,8 @@ function renderAppSearchResults() {
     const empty = doc.createElement('li');
     empty.className = 'kp-app-search-empty';
     empty.textContent = state.appCatalogError && !state.appCatalog.length
-      ? 'App list could not be loaded'
-      : 'No apps matched';
+      ? t('panel_app_search_load_failed')
+      : t('panel_app_search_no_results');
     els.appSearchResults.appendChild(empty);
     return;
   }
@@ -1114,9 +1398,9 @@ function ensureAppSearchUi() {
     toggle.id = 'kp-app-search-toggle';
     toggle.type = 'button';
     toggle.className = 'icon-btn small';
-    toggle.setAttribute('aria-label', 'App search');
+    toggle.setAttribute('aria-label', t('panel_action_app_search'));
     toggle.setAttribute('aria-pressed', 'false');
-    toggle.title = 'App search';
+    toggle.title = t('panel_action_app_search');
 
     const icon = doc.createElement('span');
     icon.className = 'lc';
@@ -1145,7 +1429,7 @@ function ensureAppSearchUi() {
     const input = doc.createElement('input');
     input.id = 'kp-app-search-input';
     input.type = 'text';
-    input.placeholder = 'Search app name';
+    input.placeholder = t('panel_app_search_placeholder');
     input.autocomplete = 'off';
 
     const results = doc.createElement('ul');
@@ -1246,9 +1530,9 @@ async function refreshAppCatalog() {
   if (seq !== state.appCatalogSeq) return;
 
   nextCatalog.sort((a, b) => {
-    const byName = String(a.name || '').localeCompare(String(b.name || ''), 'ja');
+    const byName = String(a.name || '').localeCompare(String(b.name || ''), getSortLocale());
     if (byName !== 0) return byName;
-    return String(a.appId || '').localeCompare(String(b.appId || ''), 'ja');
+    return String(a.appId || '').localeCompare(String(b.appId || ''), getSortLocale());
   });
 
   state.appCatalog = nextCatalog;
@@ -1262,7 +1546,7 @@ function normalizeFavorites(list) {
   return sortFavorites(
     (list || []).map((item, index) => ({
       id: item.id || createId(),
-      label: item.label || '(no label)',
+      label: item.label || t('panel_entry_no_label'),
       url: item.url || '',
       host: item.host || '',
       appId: item.appId || '',
@@ -1362,8 +1646,8 @@ function renderPinnedList(items) {
     empty.className = 'empty-message';
     const hasFilter = state.filterText.trim().length > 0;
     empty.textContent = hasFilter
-      ? 'No pinned items matched your search'
-      : 'No pinned items yet';
+      ? t('panel_empty_pinned_no_match')
+      : t('panel_empty_pinned');
     els.pinnedList.appendChild(empty);
     return [];
   }
@@ -1392,8 +1676,8 @@ function renderCategorySections(items) {
     message.className = 'empty-message';
     const hasFilter = state.filterText.trim().length > 0;
     message.textContent = hasFilter
-      ? 'No favorites matched your search'
-      : 'No favorites yet';
+      ? t('panel_empty_favorites_no_match')
+      : t('panel_empty_favorites');
     container.appendChild(message);
     return [];
   }
@@ -1401,7 +1685,7 @@ function renderCategorySections(items) {
   const order = Array.from(grouped.keys()).sort((a, b) => {
     if (a === DEFAULT_CATEGORY) return 1;
     if (b === DEFAULT_CATEGORY) return -1;
-    return a.localeCompare(b, 'ja');
+    return a.localeCompare(b, getSortLocale());
   });
   const flattened = [];
   order.forEach((name) => {
@@ -1462,10 +1746,10 @@ function createEntryElement(entry, pinned) {
   text.className = 'entry-text';
   const title = doc.createElement('div');
   title.className = 'entry-title';
-  title.textContent = entry.label || '(no label)';
+  title.textContent = entry.label || t('panel_entry_no_label');
   const sub = doc.createElement('div');
   sub.className = 'entry-sub';
-  const view = entry.viewIdOrName ? `view:${entry.viewIdOrName}` : '';
+  const view = entry.viewIdOrName ? `${t('panel_meta_view_prefix')}:${entry.viewIdOrName}` : '';
   sub.textContent = view;
   sub.classList.toggle('hidden', !view);
   li.dataset.search = [
@@ -1553,7 +1837,7 @@ async function openEntry(entry, options = {}) {
 }
 
 function syncBadgeToElement(id, el) {
-  const stateItem = state.badgeStatus.get(id) || { text: '-', title: 'Not fetched', loading: false };
+  const stateItem = state.badgeStatus.get(id) || { text: '-', title: t('panel_badge_not_fetched'), loading: false };
   el.textContent = stateItem.text ?? '-';
   el.title = stateItem.title || '';
   el.classList.toggle('loading', Boolean(stateItem.loading));
@@ -1565,7 +1849,7 @@ function updateBadgeDom(id) {
 }
 
 function setBadgeLoading(id, loading) {
-  const prev = state.badgeStatus.get(id) || { text: '-', title: 'Not fetched', loading: false };
+  const prev = state.badgeStatus.get(id) || { text: '-', title: t('panel_badge_not_fetched'), loading: false };
   state.badgeStatus.set(id, { ...prev, loading: Boolean(loading) });
   updateBadgeDom(id);
 }
@@ -1617,7 +1901,7 @@ async function refreshCounts() {
     try {
       const permitted = await hasHostPermission(host);
       if (!permitted) {
-        items.forEach((item) => setBadgeValue(item.id, null, 'Host permission required'));
+        items.forEach((item) => setBadgeValue(item.id, null, t('panel_badge_permission_required')));
         missingPerm.add(host);
         continue;
       }
@@ -1643,12 +1927,12 @@ async function refreshCounts() {
           } else if (Object.prototype.hasOwnProperty.call(counts, item.id)) {
             setBadgeValue(item.id, counts[item.id]);
           } else {
-            setBadgeValue(item.id, null, 'Count was not returned for this item');
+            setBadgeValue(item.id, null, t('panel_badge_missing_result'));
             failedHosts.add(host);
           }
         }
       } else {
-        const message = res?.error || 'Failed to fetch counts';
+        const message = res?.error || t('panel_badge_fetch_failed');
         items.forEach((item) => setBadgeValue(item.id, null, message));
         failedHosts.add(host);
       }
@@ -1659,15 +1943,22 @@ async function refreshCounts() {
     }
   }
   if (missingPerm.size) {
-    setNotice(`Permission is missing for hosts: ${Array.from(missingPerm).join(', ')}`);
+    setNoticeKey('panel_notice_permission_missing_hosts', { hosts: Array.from(missingPerm).join(', ') });
   } else if (failedHosts.size) {
-    setNotice('Some hosts failed to fetch counts. Check the log for details.');
+    setNoticeKey('panel_notice_counts_failed');
   }
 }
 
 function attachStorageListener() {
   if (!chrome?.storage?.onChanged) return;
   const listener = (changes, area) => {
+    if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, UI_LANGUAGE_KEY)) {
+      const nextSetting = normalizeUiLanguageSetting(changes[UI_LANGUAGE_KEY]?.newValue);
+      applyUiLanguageSetting(nextSetting, { persist: false, rerender: true }).catch((error) => {
+        console.error('Failed to apply launcher language', error);
+      });
+      return;
+    }
     if (area !== 'sync') return;
     if (changes.kintoneFavorites) {
       loadFavoritesAndRender().catch((error) => {
@@ -1737,7 +2028,9 @@ function applyShortcutVisibility(visible) {
   if (els.toggleShortcuts) {
     els.toggleShortcuts.setAttribute('aria-pressed', visible ? 'true' : 'false');
     els.toggleShortcuts.textContent = visible ? '▼' : '▶';
-    els.toggleShortcuts.title = visible ? 'Collapse shortcuts' : 'Expand shortcuts';
+    const label = visible ? t('panel_action_toggle_shortcuts_collapse') : t('panel_action_toggle_shortcuts_expand');
+    els.toggleShortcuts.title = label;
+    els.toggleShortcuts.setAttribute('aria-label', label);
   }
 }
 
@@ -1772,7 +2065,8 @@ function renderShortcuts() {
     empty.type = 'button';
     empty.className = 'shortcut-button shortcut-empty';
     empty.textContent = '+';
-    empty.title = 'Configure shortcuts';
+    empty.title = t('panel_empty_shortcuts');
+    empty.setAttribute('aria-label', t('panel_empty_shortcuts'));
     empty.addEventListener('click', () => {
       if (chrome?.runtime?.openOptionsPage) {
         chrome.runtime.openOptionsPage();
@@ -1788,9 +2082,10 @@ function renderShortcuts() {
     btn.type = 'button';
     const type = entry.type || 'appTop';
     const label = (entry.label || '').trim();
+    const displayLabel = label || t('panel_entry_no_label');
     const iconColor = resolveShortcutIconColor(entry);
     btn.className = `shortcut-button shortcut-${type}`;
-    btn.setAttribute('aria-label', label);
+    btn.setAttribute('aria-label', displayLabel);
     btn.dataset.icoColor = iconColor;
     const url = buildShortcutUrl(entry);
     if (!url) {
@@ -1805,7 +2100,7 @@ function renderShortcuts() {
 
     const tooltip = doc.createElement('span');
     tooltip.className = 'shortcut-tooltip';
-    tooltip.textContent = label;
+    tooltip.textContent = displayLabel;
     tooltip.setAttribute('aria-hidden', 'true');
 
     btn.appendChild(icon);
@@ -1822,7 +2117,7 @@ function renderShortcuts() {
 async function openShortcut(entry) {
   const url = buildShortcutUrl(entry);
   if (!url) {
-    setNotice('Shortcut URL is not configured');
+    setNoticeKey('panel_notice_shortcut_url_missing');
     return;
   }
   if (entry.host) {
@@ -1876,20 +2171,20 @@ async function quickAddFromActiveTab() {
   try {
     const tab = await getActiveTab();
     if (!tab || !isKintoneUrl(tab.url || '')) {
-      setNotice('Open a kintone tab first');
+      setNoticeKey('panel_notice_open_kintone_first');
       return;
     }
     const parsed = parseKintoneUrl(tab.url);
     if (!parsed.host) {
-      setNotice('Could not parse the URL');
+      setNoticeKey('panel_notice_parse_url_failed');
       return;
     }
     const existing = await loadFavorites();
     if (existing.some((item) => item.url === parsed.url)) {
-      setNotice('This view is already registered');
+      setNoticeKey('panel_notice_already_registered');
       return;
     }
-    const label = (tab.title || '').replace(/ - kintone.*/, '') || '(no label)';
+    const label = (tab.title || '').replace(/ - kintone.*/, '') || t('panel_entry_no_label');
     const orderBase = existing.filter((item) => !item.pinned).length;
     const entry = {
       id: createId(),
@@ -1905,63 +2200,63 @@ async function quickAddFromActiveTab() {
     const next = [...existing, entry];
     await saveFavorites(next);
     state.favorites = normalizeFavorites(next);
-    state.badgeStatus.set(entry.id, { text: '-', title: 'Not fetched', loading: false });
+    state.badgeStatus.set(entry.id, { text: '-', title: t('panel_badge_not_fetched'), loading: false });
     renderLists();
-    setNotice('Added to favorites. Fetching counts...');
+    setNoticeKey('panel_notice_added_fetching');
     refreshCounts().catch(() => {});
   } catch (error) {
     console.error('Failed to add favorite', error);
-    setNotice('Failed to add favorite');
+    setNoticeKey('panel_notice_add_failed');
   }
 }
 
 async function editEntry(entry) {
   const currentLabel = entry.label || '';
-  const nextLabel = window.prompt('Edit label', currentLabel);
+  const nextLabel = window.prompt(t('panel_prompt_edit_label'), currentLabel);
   if (nextLabel == null) return;
   const currentUrl = entry.url || '';
-  const nextUrl = window.prompt('Edit URL', currentUrl);
+  const nextUrl = window.prompt(t('panel_prompt_edit_url'), currentUrl);
   if (nextUrl == null) return;
   if (!nextUrl.trim()) {
-    setNotice('URL is required');
+    setNoticeKey('panel_notice_url_required');
     return;
   }
   if (!isKintoneUrl(nextUrl.trim())) {
-    setNotice('Please enter a kintone URL');
+    setNoticeKey('panel_notice_kintone_url_required');
     return;
   }
   const parsed = parseKintoneUrl(nextUrl.trim());
-  entry.label = nextLabel.trim() || '(no label)';
+  entry.label = nextLabel.trim() || t('panel_entry_no_label');
   entry.url = parsed.url;
   entry.host = parsed.host;
   entry.appId = parsed.appId;
   entry.viewIdOrName = parsed.viewIdOrName;
   await persistFavorites();
-  setNotice('Updated');
+  setNoticeKey('panel_notice_updated');
 }
 
 async function changeEntryIcon(entry) {
   const current = normalizeIconName(entry.icon);
-  const promptText = `Enter icon name\nChoices: ${ICON_OPTIONS.join(', ')}`;
+  const promptText = t('panel_prompt_icon', { icons: ICON_OPTIONS.join(', ') });
   const input = window.prompt(promptText, current);
   if (input == null) return;
   const value = input.trim();
   entry.icon = normalizeIconName(value);
   await persistFavorites();
-  setNotice('Icon updated');
+  setNoticeKey('panel_notice_icon_updated');
 }
 
 async function changeEntryCategory(entry) {
   const current = normalizeCategoryName(entry.category);
-  const input = window.prompt('Enter category (empty = Other)', current);
+  const input = window.prompt(t('panel_prompt_category'), current);
   if (input == null) return;
   entry.category = normalizeCategoryName(input);
   await persistFavorites();
-  setNotice('Category updated');
+  setNoticeKey('panel_notice_category_updated');
 }
 
 async function deleteEntry(id) {
-  if (!window.confirm('Delete this shortcut?')) return;
+  if (!window.confirm(t('panel_confirm_delete_shortcut'))) return;
   const next = state.favorites.filter((item) => item.id !== id);
   state.favorites = next;
   reindexOrders();
@@ -2146,7 +2441,7 @@ function wireEvents() {
     state.pinListObserver.observe(els.pinList, { childList: true, subtree: false });
   }
   if (els.filter) {
-    els.filter.placeholder = 'Search panel';
+    els.filter.placeholder = t('panel_search_placeholder');
   }
   els.toggleFilterPanel?.addEventListener('click', () => {
     const next = !state.filterPanelVisible;
@@ -2224,6 +2519,7 @@ function dispose() {
 }
 
 async function init() {
+  await initializeI18n();
   await loadShortcutSearchOpenMode();
   await loadCollapsedSectionsState();
   wireEvents();
@@ -2239,7 +2535,7 @@ async function init() {
 
 init().catch((error) => {
   console.error('Failed to initialize launcher', error);
-  setNotice('Initialization failed');
+  setNoticeKey('panel_notice_initialization_failed');
 });
 
 window.addEventListener('beforeunload', dispose);

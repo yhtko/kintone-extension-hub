@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "kintone Base",
+  "name": "PlugBits Launcher for kintone",
   "version": "1.5.0",
   "description": "kintoneのよく使うアプリ/ビューへショートカット。件数表示／編集／並び替え／ピン／バッジ／サイドバー対応。",
   "action": {
-    "default_title": "kintone Base"
+    "default_title": "PlugBits Launcher for kintone"
   },
   "background": {
     "service_worker": "service_worker.js",
