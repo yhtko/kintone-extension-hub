@@ -257,7 +257,7 @@ const DEFAULT_ICON = 'file-text';
 const DEFAULT_CATEGORY = 'Other';
 const ICON_OPTIONS = [
   'clipboard', 'file-text', 'package', 'box', 'truck', 'factory', 'wrench', 'calendar',
-  'list-checks', 'search', 'chart-bar', 'receipt', 'users', 'settings', 'bookmark', 'star', 'history'
+  'list-checks', 'search', 'filter', 'chart-bar', 'receipt', 'users', 'settings', 'bookmark', 'star', 'history'
 ];
 const DEFAULT_ICON_COLOR = 'gray';
 const ICON_COLOR_OPTIONS = ['gray', 'blue', 'green', 'orange', 'red', 'purple'];
@@ -1053,15 +1053,28 @@ function renderRecentRecords() {
   if (!list.length) {
     els.recentSection.classList.add('hidden');
     renderCollapsedSectionsTray();
+    applySearchVisibility();
     return;
   }
   list.forEach((item) => {
     const li = doc.createElement('li');
+    li.className = 'recent-list-item';
     const btn = doc.createElement('button');
     btn.type = 'button';
     btn.className = 'recent-item';
-    btn.dataset.host = normalizeRecentHost(item.host);
-    btn.dataset.appId = String(item.appId || '').trim();
+    const safeHost = normalizeRecentHost(item.host);
+    const safeAppId = String(item.appId || '').trim();
+    const safeRecordId = String(item.recordId || '').trim();
+    const appLabel = getRecentAppLabel(item);
+    btn.dataset.host = safeHost;
+    btn.dataset.appId = safeAppId;
+    btn.dataset.recordId = safeRecordId;
+    btn.dataset.search = [
+      appLabel,
+      safeRecordId,
+      item.url || '',
+      safeHost
+    ].join('\n').toLowerCase();
     btn.title = item.url || '';
     btn.addEventListener('click', () => openRecentRecord(item));
 
@@ -1074,7 +1087,6 @@ function renderRecentRecords() {
     text.className = 'recent-item-text';
     const title = doc.createElement('div');
     title.className = 'recent-title recent-item-title';
-    const appLabel = getRecentAppLabel(item);
     const app = doc.createElement('span');
     app.className = 'recent-item-app';
     app.textContent = appLabel;
@@ -1098,6 +1110,7 @@ function renderRecentRecords() {
   els.recentSection.classList.remove('hidden');
   setRecentRecordsCollapsed(state.recentRecordsCollapsed, { persist: false });
   renderLucideIcons(els.recentSection);
+  applySearchVisibility();
 }
 
 async function loadRecentAndRender() {
@@ -1550,7 +1563,9 @@ function normalizeFavorites(list) {
       url: item.url || '',
       host: item.host || '',
       appId: item.appId || '',
+      appName: item.appName || '',
       viewIdOrName: item.viewIdOrName || '',
+      viewName: item.viewName || '',
       query: item.query || '',
       pinned: Boolean(item.pinned),
       order: typeof item.order === 'number' ? item.order : index,
@@ -1598,10 +1613,38 @@ function applySearchVisibility() {
 
   if (els.pinSection) {
     const hasPinned = Boolean(els.pinnedList?.querySelector('.entry'));
-    const hasPinnedVisible = Boolean(els.pinnedList?.querySelector('.entry:not(.entry-filter-hidden)'));
-    const hidePinned = !hasPinned || (keyword.length > 0 && !hasPinnedVisible);
-    els.pinSection.classList.toggle('hidden', hidePinned);
+    els.pinSection.classList.toggle('hidden', !hasPinned);
   }
+
+  const pinCards = Array.from(doc.querySelectorAll('#pinList .pin-card'));
+  pinCards.forEach((cardEl) => {
+    const title = cardEl.querySelector('.pin-title-input')?.value || '';
+    const note = cardEl.querySelector('.pin-note-input')?.value || '';
+    const recordTitle = cardEl.querySelector('.pin-record-title')?.textContent || '';
+    const meta = cardEl.querySelector('.pin-meta')?.textContent || '';
+    const url = cardEl.querySelector('.record-pin-open')?.getAttribute('href') || '';
+    let host = '';
+    try {
+      host = new URL(url).origin;
+    } catch (_err) {
+      host = '';
+    }
+    const haystack = [title, note, recordTitle, meta, url, host].join('\n').toLowerCase();
+    const matched = !keyword || haystack.includes(keyword);
+    cardEl.classList.toggle('pin-filter-hidden', !matched);
+  });
+
+  const recentItems = Array.from(doc.querySelectorAll('#recentList .recent-item'));
+  recentItems.forEach((itemEl) => {
+    const haystack = itemEl.dataset.search || itemEl.textContent?.toLowerCase() || '';
+    const matched = !keyword || haystack.includes(keyword);
+    const row = itemEl.closest('.recent-list-item');
+    if (row) {
+      row.classList.toggle('recent-filter-hidden', !matched);
+    } else {
+      itemEl.classList.toggle('recent-filter-hidden', !matched);
+    }
+  });
 }
 
 function isSelectableEntry(entryEl) {
@@ -1756,8 +1799,11 @@ function createEntryElement(entry, pinned) {
     entry.label || '',
     entry.url || '',
     entry.host || '',
+    entry.appId || '',
+    entry.appName || '',
     categoryLabel,
     entry.viewIdOrName || '',
+    entry.viewName || '',
     entry.query || ''
   ].join('\n').toLowerCase();
   text.appendChild(title);
@@ -2437,6 +2483,7 @@ function wireEvents() {
       if (state.recordPinsCollapsed) {
         renderCollapsedSectionsTray();
       }
+      applySearchVisibility();
     });
     state.pinListObserver.observe(els.pinList, { childList: true, subtree: false });
   }

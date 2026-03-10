@@ -456,14 +456,17 @@
       titleUndo: "元に戻す (Ctrl+Z)",
       titleRedo: "やり直し (Ctrl+Y)",
       btnAddRow: "＋ 行追加",
-      btnPrev: "◀ Prev",
-      btnNext: "Next ▶",
+      btnPrev: "◀ 前へ",
+      btnNext: "次へ ▶",
       btnClose: "閉じる",
       modeViewOnly: "Standard",
       toastNoChanges: "変更はありません",
       toastInvalidCells: "エラーを解消してから保存してください",
       toastRequiredMissing: "必須項目を入力してください",
       toastViewOnlyBlocked: "Proモードで利用できます",
+      overlayProOnly: "Proモードで利用できます",
+      overlayStandardReadonly: "Standardでは閲覧のみ利用できます",
+      overlayProComingSoon: "Proモードは近日公開予定です",
       lookupAutoReadonly: "LOOKUPにより自動入力されるため編集できません",
       toastSaveSuccess: "保存しました",
       toastSaveFailed: "保存に失敗しました",
@@ -475,10 +478,14 @@
       conflictFailed: "他の変更と競合し保存できませんでした",
       btnSubtableEdit: "編集",
       subtableTitle: "サブテーブル編集",
+      subtableClose: "閉じる",
       subtableAddRow: "＋ 行追加",
       subtableRemoveRow: "削除",
       subtableSave: "保存",
       subtableCancel: "キャンセル",
+      subtableRows: (n) => `${n} 行`,
+      subtableEmpty: "行がありません",
+      subtableActionsAria: "操作",
       permNoAdd: "追加権限がありません",
       permNoEdit: "編集権限がありません",
       permNoFieldEdit: "このフィールドは編集できません",
@@ -492,6 +499,7 @@
       rowDeleteToggle: "削除予定にする",
       rowDeleteUndo: "削除予定を解除",
       rowDeleteNewUndo: "新規行を取消",
+      rowDeletePendingTitle: "削除予定（保存時に削除）",
       toastPasteSkipped: (n) => `${n}件のセルを権限によりスキップしました`,
       toastCopySuccess: "コピーしました",
       toastCopyFailed: "コピーに失敗しました",
@@ -504,6 +512,15 @@
       statusPendingDeletes: "削除予定",
       statusNewRows: "新規行",
       btnColumns: "列順",
+      filterButton: "フィルター",
+      filterTitle: "フィルター",
+      filterContains: "含む",
+      filterEquals: "一致",
+      filterStartsWith: "前方一致",
+      filterFrom: "開始",
+      filterTo: "終了",
+      filterClear: "クリア",
+      filterApply: "適用",
       columnsTitle: "列の並び替え",
       columnsHint: "ヘッダーをドラッグして並び順を変え、幅はドラッグまたは自動調整ボタンで変更できます。",
       columnsAutoWidth: "自動調整",
@@ -536,6 +553,9 @@
       toastInvalidCells: "Fix errors before saving",
       toastRequiredMissing: "Please fill required fields",
       toastViewOnlyBlocked: "Available in Pro mode",
+      overlayProOnly: "Available in Pro mode",
+      overlayStandardReadonly: "Editing is disabled in Standard mode",
+      overlayProComingSoon: "Pro mode is coming soon",
       lookupAutoReadonly: "This field is auto-populated by LOOKUP and cannot be edited",
       toastSaveSuccess: "Changes saved",
       toastSaveFailed: "Failed to save changes",
@@ -547,10 +567,14 @@
       conflictFailed: "Conflicted with other changes; save aborted",
       btnSubtableEdit: "Edit",
       subtableTitle: "Edit subtable",
+      subtableClose: "Close",
       subtableAddRow: "+ Add row",
       subtableRemoveRow: "Delete",
       subtableSave: "Save",
       subtableCancel: "Cancel",
+      subtableRows: (n) => (n === 1 ? '1 row' : `${n} rows`),
+      subtableEmpty: "No rows",
+      subtableActionsAria: "Actions",
       permNoAdd: "No add permission",
       permNoEdit: "No edit permission",
       permNoFieldEdit: "This field cannot be edited",
@@ -564,6 +588,7 @@
       rowDeleteToggle: "Mark row for delete",
       rowDeleteUndo: "Unmark delete",
       rowDeleteNewUndo: "Discard new row",
+      rowDeletePendingTitle: "Pending delete (will delete on save)",
       toastPasteSkipped: (n) => `${n} cells were skipped due to permissions`,
       toastCopySuccess: "Copied",
       toastCopyFailed: "Copy failed",
@@ -576,6 +601,15 @@
       statusPendingDeletes: "Pending delete",
       statusNewRows: "New rows",
       btnColumns: "Columns",
+      filterButton: "Filter",
+      filterTitle: "Filter",
+      filterContains: "contains",
+      filterEquals: "equals",
+      filterStartsWith: "starts with",
+      filterFrom: "from",
+      filterTo: "to",
+      filterClear: "Clear",
+      filterApply: "Apply",
       columnsTitle: "Reorder columns",
       columnsHint: "Drag the header chips below to reorder columns, then save the layout for future sessions.",
       columnsAutoWidth: "Auto width",
@@ -595,6 +629,11 @@
     allowedTypes: new Set(['SINGLE_LINE_TEXT', 'NUMBER', 'DATE', 'RADIO_BUTTON', 'DROP_DOWN', 'SUBTABLE', 'LOOKUP'])
   };
 
+  const UI_LANGUAGE_KEY = 'uiLanguage';
+  const UI_LANGUAGE_VALUES = ['auto', 'ja', 'en'];
+  const DEFAULT_UI_LANGUAGE = 'auto';
+  const DEFAULT_OVERLAY_LANGUAGE = 'ja';
+
   const COLUMN_PREF_STORAGE_KEY = 'kfavExcelColumns';
   const EXCEL_OVERLAY_MODE_STANDARD = 'standard';
   const EXCEL_OVERLAY_MODE_PRO = 'pro';
@@ -607,13 +646,56 @@
 
   let overlayCssLoaded = false;
 
+  function normalizeUiLanguage(raw) {
+    const value = String(raw || '').trim().toLowerCase();
+    if (!value) return DEFAULT_OVERLAY_LANGUAGE;
+    if (value === 'ja' || value.startsWith('ja-')) return 'ja';
+    return 'en';
+  }
+
+  function normalizeUiLanguageSetting(raw) {
+    const value = String(raw || '').trim().toLowerCase();
+    if (UI_LANGUAGE_VALUES.includes(value)) return value;
+    return DEFAULT_UI_LANGUAGE;
+  }
+
+  function getBrowserUiLanguage() {
+    try {
+      const browserLang = navigator.language || (Array.isArray(navigator.languages) ? navigator.languages[0] : '');
+      return normalizeUiLanguage(browserLang);
+    } catch (_err) {
+      return DEFAULT_OVERLAY_LANGUAGE;
+    }
+  }
+
+  function resolveEffectiveUiLanguage(setting) {
+    if (setting === 'ja' || setting === 'en') return setting;
+    return getBrowserUiLanguage();
+  }
+
+  async function resolveOverlayUiLanguage() {
+    let setting = DEFAULT_UI_LANGUAGE;
+    try {
+      const stored = await chrome.storage.local.get(UI_LANGUAGE_KEY);
+      setting = normalizeUiLanguageSetting(stored?.[UI_LANGUAGE_KEY]);
+    } catch (_err) {
+      setting = DEFAULT_UI_LANGUAGE;
+    }
+    return {
+      setting,
+      language: resolveEffectiveUiLanguage(setting)
+    };
+  }
+
   function resolveText(language, key, ...args) {
-    const table = overlayTexts[language] || overlayTexts.en;
-    const value = table[key];
+    const primary = overlayTexts[language] || {};
+    const value = primary[key];
     if (typeof value === 'function') return value(...args);
     if (typeof value === 'string') return value;
-    const fallback = overlayTexts.en[key];
-    return typeof fallback === 'function' ? fallback(...args) : (fallback || '');
+    const fallbackJa = overlayTexts.ja?.[key];
+    if (typeof fallbackJa === 'function') return fallbackJa(...args);
+    if (typeof fallbackJa === 'string') return fallbackJa;
+    return key;
   }
 
   function normalizeExcelOverlayMode(value) {
@@ -696,6 +778,7 @@
         newRows: null
       };
       this.language = 'ja';
+      this.uiLanguageSetting = DEFAULT_UI_LANGUAGE;
       this.appName = '';
       this.overlayMode = DEFAULT_EXCEL_OVERLAY_MODE;
       this.proEntitlement = false;
@@ -790,6 +873,8 @@
         if (button && (button === event.target || button.contains(event.target))) return;
         this.closeFilterPanel();
       };
+      this.boundUiLanguageStorageChanged = this.handleUiLanguageStorageChanged.bind(this);
+      this.uiLanguageListenerAttached = false;
     }
 
     async open() {
@@ -805,6 +890,7 @@
         this.viewOnlyNoticeShown = false;
         await this.ensureStyles();
         await this.loadLanguage();
+        this.attachUiLanguageListener();
         this.mountShell();
         this.showLoading(resolveText(this.language, 'loading'));
         await this.fetchData();
@@ -1113,16 +1199,132 @@
     }
 
     async loadLanguage() {
-      try {
-        const res = await this.postFn('EXCEL_GET_LOGIN_USER');
-        if (res?.ok && res.user?.language) {
-          const lang = String(res.user.language).toLowerCase();
-          this.language = overlayTexts[lang] ? lang : 'en';
-        } else {
-          this.language = 'en';
-        }
-      } catch (_e) {
-        this.language = 'en';
+      const resolved = await resolveOverlayUiLanguage();
+      this.uiLanguageSetting = resolved.setting;
+      this.language = resolved.language;
+    }
+
+    attachUiLanguageListener() {
+      if (this.uiLanguageListenerAttached) return;
+      if (!chrome?.storage?.onChanged?.addListener) return;
+      chrome.storage.onChanged.addListener(this.boundUiLanguageStorageChanged);
+      this.uiLanguageListenerAttached = true;
+    }
+
+    detachUiLanguageListener() {
+      if (!this.uiLanguageListenerAttached) return;
+      if (!chrome?.storage?.onChanged?.removeListener) return;
+      chrome.storage.onChanged.removeListener(this.boundUiLanguageStorageChanged);
+      this.uiLanguageListenerAttached = false;
+    }
+
+    handleUiLanguageStorageChanged(changes, areaName) {
+      if (areaName !== 'local' || !changes || !Object.prototype.hasOwnProperty.call(changes, UI_LANGUAGE_KEY)) {
+        return;
+      }
+      const nextSetting = normalizeUiLanguageSetting(changes[UI_LANGUAGE_KEY]?.newValue);
+      const nextLanguage = resolveEffectiveUiLanguage(nextSetting);
+      if (nextSetting === this.uiLanguageSetting && nextLanguage === this.language) return;
+      this.uiLanguageSetting = nextSetting;
+      this.language = nextLanguage;
+      if (!this.isOpen || !this.root) return;
+      this.applyLanguageToOverlayUi();
+    }
+
+    applyLanguageToOverlayUi() {
+      if (this.filterPanel?.panel) {
+        this.closeFilterPanel();
+      }
+      if (this.titleElement) {
+        this.titleElement.textContent = this.appName || resolveText(this.language, 'title');
+      }
+      if (this.modeBadge) {
+        this.modeBadge.textContent = resolveText(this.language, 'modeViewOnly');
+      }
+      if (this.prevPageButton) {
+        this.prevPageButton.textContent = resolveText(this.language, 'btnPrev');
+      }
+      if (this.nextPageButton) {
+        this.nextPageButton.textContent = resolveText(this.language, 'btnNext');
+      }
+      if (this.columnButton) {
+        this.columnButton.textContent = resolveText(this.language, 'btnColumns');
+      }
+      if (this.addRowButton) {
+        this.addRowButton.textContent = resolveText(this.language, 'btnAddRow');
+      }
+      if (this.undoButton) {
+        this.undoButton.textContent = resolveText(this.language, 'btnUndo');
+        this.undoButton.title = resolveText(this.language, 'titleUndo');
+      }
+      if (this.redoButton) {
+        this.redoButton.textContent = resolveText(this.language, 'btnRedo');
+        this.redoButton.title = resolveText(this.language, 'titleRedo');
+      }
+      if (this.closeButton) {
+        this.closeButton.textContent = resolveText(this.language, 'btnClose');
+      }
+      if (this.saveButtonLabel) {
+        this.saveButtonLabel.textContent = resolveText(this.language, this.saving ? 'btnSaving' : 'btnSave');
+      }
+      if (this.permissionWarningEl) {
+        this.permissionWarningEl.textContent = resolveText(this.language, 'permWarningUnknown');
+      }
+      this.refreshHeaderFilterButtonsText();
+      this.refreshSubtableEditorTexts();
+      if (this.tableContainer && this.rowHeaderContainer) {
+        this.updateVirtualRows(true);
+      }
+      this.updatePermissionUiState();
+      this.updateDirtyBadge();
+      this.updateStats();
+    }
+
+    refreshHeaderFilterButtonsText() {
+      const headRow = this.columnHeaderScroll?.querySelector('.pb-overlay__col-row');
+      if (!headRow) return;
+      const filterLabel = resolveText(this.language, 'filterButton');
+      const headerCells = Array.from(headRow.querySelectorAll('.pb-overlay__col-header'));
+      headerCells.forEach((cell, index) => {
+        const btn = cell.querySelector('.pb-overlay__filter-btn');
+        if (!btn) return;
+        const field = this.fields[index];
+        const fieldLabel = field ? (field.label || field.code) : '';
+        btn.title = filterLabel;
+        btn.setAttribute('aria-label', fieldLabel ? `${filterLabel}: ${fieldLabel}` : filterLabel);
+      });
+    }
+
+    refreshSubtableEditorTexts() {
+      if (!this.subtableEditor?.panel) return;
+      const panel = this.subtableEditor.panel;
+      const field = this.fields[this.subtableEditor.colIndex];
+      const title = panel.querySelector('.pb-overlay__subtable-title');
+      if (title) {
+        title.textContent = `${resolveText(this.language, 'subtableTitle')}: ${field?.label || field?.code || ''}`;
+      }
+      const closeBtn = panel.querySelector('.pb-overlay__subtable-close');
+      if (closeBtn) {
+        closeBtn.title = resolveText(this.language, 'subtableClose');
+        closeBtn.setAttribute('aria-label', resolveText(this.language, 'subtableClose'));
+      }
+      const addBtn = panel.querySelector('[data-subtable-action="add"]');
+      if (addBtn) addBtn.textContent = resolveText(this.language, 'subtableAddRow');
+      const cancelBtn = panel.querySelector('[data-subtable-action="cancel"]');
+      if (cancelBtn) cancelBtn.textContent = resolveText(this.language, 'subtableCancel');
+      const saveBtn = panel.querySelector('[data-subtable-action="save"]');
+      if (saveBtn) saveBtn.textContent = resolveText(this.language, 'subtableSave');
+      const opHeader = panel.querySelector('th.pb-subtable__op');
+      if (opHeader) {
+        opHeader.setAttribute('aria-label', resolveText(this.language, 'subtableActionsAria'));
+      }
+      panel.querySelectorAll('.pb-subtable__remove').forEach((btn) => {
+        btn.title = resolveText(this.language, 'subtableRemoveRow');
+        btn.setAttribute('aria-label', resolveText(this.language, 'subtableRemoveRow'));
+      });
+      const emptyCell = panel.querySelector('.pb-subtable__empty');
+      if (emptyCell) {
+        emptyCell.textContent = resolveText(this.language, 'subtableEmpty');
       }
     }
 
@@ -1685,7 +1887,7 @@
 
       const title = document.createElement('div');
       title.className = 'pb-overlay__filter-title';
-      title.textContent = `Filter: ${field.label || field.code}`;
+      title.textContent = `${resolveText(this.language, 'filterTitle')}: ${field.label || field.code}`;
       panel.appendChild(title);
 
       const body = document.createElement('div');
@@ -1702,9 +1904,9 @@
         modeSelect = document.createElement('select');
         modeSelect.className = 'pb-overlay__filter-select';
         [
-          ['contains', 'contains'],
-          ['equals', 'equals'],
-          ['startsWith', 'startsWith']
+          ['contains', resolveText(this.language, 'filterContains')],
+          ['equals', resolveText(this.language, 'filterEquals')],
+          ['startsWith', resolveText(this.language, 'filterStartsWith')]
         ].forEach(([value, label]) => {
           const option = document.createElement('option');
           option.value = value;
@@ -1723,13 +1925,13 @@
         fromInput.type = 'text';
         fromInput.inputMode = 'decimal';
         fromInput.className = 'pb-overlay__filter-input';
-        fromInput.placeholder = 'from';
+        fromInput.placeholder = resolveText(this.language, 'filterFrom');
         fromInput.value = String(working.from || '');
         toInput = document.createElement('input');
         toInput.type = 'text';
         toInput.inputMode = 'decimal';
         toInput.className = 'pb-overlay__filter-input';
-        toInput.placeholder = 'to';
+        toInput.placeholder = resolveText(this.language, 'filterTo');
         toInput.value = String(working.to || '');
         body.appendChild(fromInput);
         body.appendChild(toInput);
@@ -1771,11 +1973,11 @@
       const clearBtn = document.createElement('button');
       clearBtn.type = 'button';
       clearBtn.className = 'pb-overlay__btn';
-      clearBtn.textContent = 'Clear';
+      clearBtn.textContent = resolveText(this.language, 'filterClear');
       const applyBtn = document.createElement('button');
       applyBtn.type = 'button';
       applyBtn.className = 'pb-overlay__btn pb-overlay__btn--primary';
-      applyBtn.textContent = 'Apply';
+      applyBtn.textContent = resolveText(this.language, 'filterApply');
       actions.appendChild(clearBtn);
       actions.appendChild(applyBtn);
       panel.appendChild(actions);
@@ -2120,7 +2322,7 @@
     formatCellDisplayValue(field, value) {
       if (this.isSubtableField(field)) {
         const count = Array.isArray(value) ? value.length : 0;
-        return count ? `${count} rows` : '';
+        return count ? resolveText(this.language, 'subtableRows', count) : '';
       }
       return value === undefined || value === null ? '' : String(value);
     }
@@ -2659,8 +2861,9 @@
         filterBtn.type = 'button';
         filterBtn.className = 'pb-overlay__filter-btn';
         filterBtn.textContent = '▼';
-        filterBtn.title = 'Filter';
-        filterBtn.setAttribute('aria-label', `Filter ${field.label || field.code}`);
+        const filterLabel = resolveText(this.language, 'filterButton');
+        filterBtn.title = filterLabel;
+        filterBtn.setAttribute('aria-label', `${filterLabel}: ${field.label || field.code}`);
         if (this.isFieldFilterActive(field.code)) {
           filterBtn.classList.add('pb-overlay__filter-btn--active');
         }
@@ -2746,7 +2949,7 @@
         if (!rowEditableVisual) header.classList.add('pb-overlay__row-header--readonly');
         if (pendingDelete) header.classList.add('pb-overlay__row-header--pending-delete');
         if (pendingDelete) {
-          header.title = '削除予定（保存時に削除）';
+          header.title = resolveText(this.language, 'rowDeletePendingTitle');
         } else if (!rowEditableVisual) {
           header.title = resolveText(this.language, 'permNoEdit');
         } else {
@@ -2775,8 +2978,8 @@
           deleteBtn.title = resolveText(this.language, 'rowDeleteNewUndo');
           deleteBtn.setAttribute('aria-label', resolveText(this.language, 'rowDeleteNewUndo'));
         } else if (pendingDelete) {
-          deleteBtn.title = '削除予定（保存時に削除）';
-          deleteBtn.setAttribute('aria-label', '削除予定（保存時に削除）');
+          deleteBtn.title = resolveText(this.language, 'rowDeletePendingTitle');
+          deleteBtn.setAttribute('aria-label', resolveText(this.language, 'rowDeletePendingTitle'));
         } else {
           deleteBtn.title = rowDeletable
             ? resolveText(this.language, 'rowDeleteToggle')
@@ -3366,6 +3569,8 @@
       closeBtn.type = 'button';
       closeBtn.className = 'pb-overlay__subtable-close';
       closeBtn.textContent = '×';
+      closeBtn.title = resolveText(this.language, 'subtableClose');
+      closeBtn.setAttribute('aria-label', resolveText(this.language, 'subtableClose'));
       closeBtn.addEventListener('click', () => this.closeSubtableEditor(true));
       head.appendChild(title);
       head.appendChild(closeBtn);
@@ -3387,7 +3592,7 @@
       });
       const opTh = document.createElement('th');
       opTh.className = 'pb-subtable__head pb-subtable__op';
-      opTh.setAttribute('aria-label', 'actions');
+      opTh.setAttribute('aria-label', resolveText(this.language, 'subtableActionsAria'));
       theadRow.appendChild(opTh);
       thead.appendChild(theadRow);
       const tbody = document.createElement('tbody');
@@ -3401,14 +3606,17 @@
       const addBtn = document.createElement('button');
       addBtn.type = 'button';
       addBtn.className = 'pb-overlay__btn';
+      addBtn.dataset.subtableAction = 'add';
       addBtn.textContent = resolveText(this.language, 'subtableAddRow');
       const cancelBtn = document.createElement('button');
       cancelBtn.type = 'button';
       cancelBtn.className = 'pb-overlay__btn';
+      cancelBtn.dataset.subtableAction = 'cancel';
       cancelBtn.textContent = resolveText(this.language, 'subtableCancel');
       const saveBtn = document.createElement('button');
       saveBtn.type = 'button';
       saveBtn.className = 'pb-overlay__btn pb-overlay__btn--primary';
+      saveBtn.dataset.subtableAction = 'save';
       saveBtn.textContent = resolveText(this.language, 'subtableSave');
       footer.appendChild(addBtn);
       footer.appendChild(cancelBtn);
@@ -3422,7 +3630,7 @@
           const emptyCell = document.createElement('td');
           emptyCell.className = 'pb-subtable__empty';
           emptyCell.colSpan = Math.max(1, childFields.length + 1);
-          emptyCell.textContent = '-';
+          emptyCell.textContent = resolveText(this.language, 'subtableEmpty');
           emptyRow.appendChild(emptyCell);
           tbody.appendChild(emptyRow);
           return;
@@ -5750,6 +5958,7 @@
     close(force = false) {
       if (!force && this.saving) return;
       this.isOpen = false;
+      this.detachUiLanguageListener();
       this.closeColumnManager(true);
       this.closeFilterPanel();
       this.closeRadioPicker();

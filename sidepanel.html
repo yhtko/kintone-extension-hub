@@ -11,10 +11,10 @@
     <header class="launcher-head">
       <div class="launcher-title">
         <span class="launcher-name">PlugBits Launcher</span>
-        <span class="launcher-tag">Launcher</span>
+        <span class="launcher-tag">for kintone</span>
       </div>
       <div class="launcher-head-actions">
-        <button id="toggleFilterPanel" class="icon-btn small" type="button" aria-pressed="false" data-i18n-title="panel_action_toggle_search_show" data-i18n-aria-label="panel_action_toggle_search_show">🔍</button>
+        <button id="toggleFilterPanel" class="icon-btn small" type="button" aria-pressed="false" data-i18n-title="panel_action_toggle_search_show" data-i18n-aria-label="panel_action_toggle_search_show"><span class="lc" data-icon="filter" aria-hidden="true"></span></button>
         <button id="openOptions" class="icon-btn small" type="button" data-i18n-title="panel_action_open_settings" data-i18n-aria-label="panel_action_open_settings">⚙</button>
       </div>
     </header>
@@ -23,7 +23,7 @@
       <section id="filterPanel" class="filter-panel hidden" data-i18n-aria-label="panel_search_label">
         <label class="sr-only" for="filter" data-i18n="panel_search_label">検索</label>
         <div class="filter-field">
-          <span class="filter-icon" aria-hidden="true">🔎</span>
+          <span class="filter-icon lc" data-icon="filter" aria-hidden="true"></span>
           <input id="filter" type="search" data-i18n-placeholder="panel_search_placeholder" autocomplete="off" />
           <button id="clearFilter" class="icon-btn small" type="button" data-i18n-aria-label="panel_action_clear_search" data-i18n-title="panel_action_clear_search">✕</button>
         </div>
@@ -51,7 +51,7 @@
       <section id="favSection" class="list-section" data-i18n-aria-label="panel_section_watchlist">
         <div class="section-head">
           <span class="section-label">
-            <span class="section-ico" aria-hidden="true">🔖</span>
+            <span class="section-ico lc" data-icon="bookmark" aria-hidden="true"></span>
             <span data-i18n="panel_section_watchlist">ウォッチリスト</span>
           </span>
           <div class="section-actions section-actions-icons">
@@ -68,7 +68,7 @@
 
       <section id="recordPinSection" class="list-section" data-i18n-aria-label="panel_section_record_pins">
         <div class="section-head">
-          <span class="section-label">🧷 <span data-i18n="panel_section_record_pins">レコードピン</span></span>
+          <span class="section-label"><span class="section-ico lc" data-icon="pin" aria-hidden="true"></span> <span data-i18n="panel_section_record_pins">レコードピン</span></span>
           <div class="section-actions section-actions-icons">
             <button id="addPinFromTab" class="icon-btn small" type="button" data-i18n-title="panel_action_add_current_record_pin" data-i18n-aria-label="panel_action_add_current_record_pin">＋</button>
             <button id="refreshPins" class="icon-btn small" type="button" data-i18n-title="panel_action_refresh_pins" data-i18n-aria-label="panel_action_refresh_pins">↻</button>
@@ -82,7 +82,7 @@
       <section id="recentSection" class="list-section hidden" data-i18n-aria-label="panel_section_recent_records">
         <div class="section-head">
           <span class="section-label">
-            <span class="section-ico" aria-hidden="true">🕘</span>
+            <span class="section-ico lc" data-icon="history" aria-hidden="true"></span>
             <span data-i18n="panel_section_recent_records">最近のレコード</span>
           </span>
           <button id="recentClear" class="icon-btn small" type="button" data-i18n-title="panel_action_clear_recent_records" data-i18n-aria-label="panel_action_clear_recent_records">✕</button>

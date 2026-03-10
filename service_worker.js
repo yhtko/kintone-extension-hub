@@ -90,6 +90,13 @@ chrome.runtime.onStartup?.addListener(() => setupContextMenus());
 chrome.runtime.onStartup?.addListener(() => {
   migrateShortcutsFillIconFieldsOnce().catch(() => {});
 });
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (!changes || !Object.prototype.hasOwnProperty.call(changes, UI_LANGUAGE_KEY)) return;
+  setupContextMenus().catch((error) => {
+    console.error('[kfav] failed to rebuild context menus on language change', error);
+  });
+});
 
 const PIN_MENU_ID = 'kfav-pin-record';
 const FAVORITE_PARENT_ID = 'kfav-favorite-parent';
@@ -105,7 +112,77 @@ const DEV_COPY_QUERY_MENU_ID = 'kf-dev-copy-query';
 const DEV_COPY_FIELDS_LIST_MENU_ID = 'kf-dev-copy-fields-list';
 const DEV_COPY_APP_ID_MENU_ID = 'kf-dev-copy-app-id';
 const DEV_COPY_VIEW_ID_MENU_ID = 'kf-dev-copy-view-id';
+const UI_LANGUAGE_KEY = 'uiLanguage';
+const UI_LANGUAGE_VALUES = new Set(['auto', 'ja', 'en']);
 const latestPageContextByTab = new Map();
+
+const MENU_MESSAGES = {
+  ja: {
+    menu_pin_record: 'このレコードをピン留め',
+    menu_favorite_parent: 'ウォッチリストに追加',
+    menu_favorite_app: 'アプリトップ',
+    menu_favorite_view: 'ビューを追加',
+    menu_shortcut_parent: 'ショートカットに追加',
+    menu_shortcut_app: 'アプリトップ',
+    menu_shortcut_view: 'ビューを開く',
+    menu_shortcut_create: 'レコード新規',
+    menu_dev_root: '開発者ツール',
+    menu_copy_query: '絞り込みクエリをコピー',
+    menu_copy_fields: 'フィールド一覧をコピー',
+    menu_copy_app_id: 'appId をコピー',
+    menu_copy_view_id: 'viewId をコピー'
+  },
+  en: {
+    menu_pin_record: 'Pin this record',
+    menu_favorite_parent: 'Add to watchlist',
+    menu_favorite_app: 'App top',
+    menu_favorite_view: 'Add view',
+    menu_shortcut_parent: 'Add to shortcuts',
+    menu_shortcut_app: 'App top',
+    menu_shortcut_view: 'Open view',
+    menu_shortcut_create: 'New record',
+    menu_dev_root: 'Development Tools',
+    menu_copy_query: 'Copy Filter Query',
+    menu_copy_fields: 'Copy Field List',
+    menu_copy_app_id: 'Copy appId',
+    menu_copy_view_id: 'Copy viewId'
+  }
+};
+
+function normalizeUiLanguage(raw) {
+  const value = String(raw || '').trim().toLowerCase();
+  if (value === 'ja' || value.startsWith('ja-')) return 'ja';
+  return 'en';
+}
+
+function normalizeUiLanguageSetting(raw) {
+  const value = String(raw || '').trim().toLowerCase();
+  if (UI_LANGUAGE_VALUES.has(value)) return value;
+  return 'auto';
+}
+
+async function resolveUiLanguage() {
+  let setting = 'auto';
+  try {
+    const data = await chrome.storage.local.get(UI_LANGUAGE_KEY);
+    setting = normalizeUiLanguageSetting(data?.[UI_LANGUAGE_KEY]);
+  } catch (_err) {
+    setting = 'auto';
+  }
+  if (setting === 'ja' || setting === 'en') return setting;
+  try {
+    const browserLang = navigator.language || (Array.isArray(navigator.languages) ? navigator.languages[0] : '');
+    return normalizeUiLanguage(browserLang);
+  } catch (_err) {
+    return 'ja';
+  }
+}
+
+function tMenu(lang, key) {
+  return MENU_MESSAGES[lang]?.[key]
+    ?? MENU_MESSAGES.ja?.[key]
+    ?? key;
+}
 
 async function getActiveTabForDevAction(fallbackTab) {
   try {
@@ -346,6 +423,7 @@ async function copyDevTextToActiveTab(tabId, text, label) {
 
 async function setupContextMenus() {
   if (!chrome.contextMenus?.create) return;
+  const lang = await resolveUiLanguage();
   const patterns = [
     'https://*.kintone.com/*',
     'https://*.kintone-dev.com/*',
@@ -359,88 +437,88 @@ async function setupContextMenus() {
   try {
     chrome.contextMenus.create({
       id: PIN_MENU_ID,
-      title: 'このレコードをピン留め',
+      title: tMenu(lang, 'menu_pin_record'),
       contexts: ['page', 'frame'],
       documentUrlPatterns: patterns
     });
     chrome.contextMenus.create({
       id: FAVORITE_PARENT_ID,
-      title: 'ウォッチリストに追加',
+      title: tMenu(lang, 'menu_favorite_parent'),
       contexts: ['page', 'frame'],
       documentUrlPatterns: patterns
     });
     chrome.contextMenus.create({
       id: FAVORITE_MENU_APP,
       parentId: FAVORITE_PARENT_ID,
-      title: 'アプリトップ',
+      title: tMenu(lang, 'menu_favorite_app'),
       contexts: ['page', 'frame'],
       documentUrlPatterns: patterns
     });
     chrome.contextMenus.create({
       id: FAVORITE_MENU_VIEW,
       parentId: FAVORITE_PARENT_ID,
-      title: 'ビューを追加',
+      title: tMenu(lang, 'menu_favorite_view'),
       contexts: ['page', 'frame'],
       documentUrlPatterns: patterns
     });
     chrome.contextMenus.create({
       id: SHORTCUT_PARENT_ID,
-      title: 'ショートカットに追加',
+      title: tMenu(lang, 'menu_shortcut_parent'),
       contexts: ['page', 'frame'],
       documentUrlPatterns: patterns
     });
     chrome.contextMenus.create({
       id: SHORTCUT_MENU_APP,
       parentId: SHORTCUT_PARENT_ID,
-      title: 'アプリトップ',
+      title: tMenu(lang, 'menu_shortcut_app'),
       contexts: ['page', 'frame'],
       documentUrlPatterns: patterns
     });
     chrome.contextMenus.create({
       id: SHORTCUT_MENU_VIEW,
       parentId: SHORTCUT_PARENT_ID,
-      title: 'ビューを開く',
+      title: tMenu(lang, 'menu_shortcut_view'),
       contexts: ['page', 'frame'],
       documentUrlPatterns: patterns
     });
     chrome.contextMenus.create({
       id: SHORTCUT_MENU_CREATE,
       parentId: SHORTCUT_PARENT_ID,
-      title: 'レコード新規',
+      title: tMenu(lang, 'menu_shortcut_create'),
       contexts: ['page', 'frame'],
       documentUrlPatterns: patterns
     });
     chrome.contextMenus.create({
       id: DEV_PARENT_MENU_ID,
-      title: 'DEV Tools',
+      title: tMenu(lang, 'menu_dev_root'),
       contexts: ['all'],
       documentUrlPatterns: patterns
     });
     chrome.contextMenus.create({
       id: DEV_COPY_QUERY_MENU_ID,
       parentId: DEV_PARENT_MENU_ID,
-      title: '絞り込みクエリをコピー',
+      title: tMenu(lang, 'menu_copy_query'),
       contexts: ['all'],
       documentUrlPatterns: patterns
     });
     chrome.contextMenus.create({
       id: DEV_COPY_FIELDS_LIST_MENU_ID,
       parentId: DEV_PARENT_MENU_ID,
-      title: 'フィールド一覧をコピー',
+      title: tMenu(lang, 'menu_copy_fields'),
       contexts: ['all'],
       documentUrlPatterns: patterns
     });
     chrome.contextMenus.create({
       id: DEV_COPY_APP_ID_MENU_ID,
       parentId: DEV_PARENT_MENU_ID,
-      title: 'appId をコピー',
+      title: tMenu(lang, 'menu_copy_app_id'),
       contexts: ['all'],
       documentUrlPatterns: patterns
     });
     chrome.contextMenus.create({
       id: DEV_COPY_VIEW_ID_MENU_ID,
       parentId: DEV_PARENT_MENU_ID,
-      title: 'viewId をコピー',
+      title: tMenu(lang, 'menu_copy_view_id'),
       contexts: ['all'],
       documentUrlPatterns: patterns
     });

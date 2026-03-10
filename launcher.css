@@ -82,8 +82,8 @@ body.launcher {
   font-size: 11px;
   font-weight: 500;
   color: var(--launcher-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  text-transform: none;
+  letter-spacing: 0.04em;
 }
 
 .launcher-head-actions {
@@ -275,6 +275,25 @@ body.launcher {
   cursor: pointer;
   flex: 0 0 auto;
   position: relative;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease;
+  will-change: transform;
+  transform: scale(1);
+}
+
+@media (hover: hover) {
+  .shortcut-button:not(:disabled):not(.disabled):not(.is-disabled):hover {
+    transform: scale(1.06);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.14);
+  }
+}
+
+.shortcut-button:not(:disabled):not(.disabled):not(.is-disabled):active {
+  transform: scale(0.98);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
 }
 
 .shortcut-icon {
@@ -386,6 +405,13 @@ body.launcher {
 .shortcut-button.disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+.shortcut-button:disabled,
+.shortcut-button.disabled,
+.shortcut-button.is-disabled {
+  transform: none !important;
+  box-shadow: none !important;
 }
 
 .shortcut-button.shortcut-empty {
@@ -542,9 +568,16 @@ body.launcher {
 .filter-icon {
   position: absolute;
   left: 10px;
-  font-size: 14px;
+  width: 14px;
+  height: 14px;
   opacity: 0.8;
   pointer-events: none;
+}
+
+.filter-icon svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 #filter {
@@ -681,9 +714,16 @@ body.launcher {
 .section-ico {
   color: var(--launcher-muted);
   opacity: 0.75;
-  font-size: 14px;
-  line-height: 1;
+  width: 16px;
+  height: 16px;
+  line-height: 0;
   flex: 0 0 auto;
+}
+
+.section-ico svg {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
 .section-actions {
@@ -781,6 +821,10 @@ body.launcher {
   gap: 8px;
   text-align: left;
   cursor: pointer;
+}
+.recent-list-item.recent-filter-hidden,
+.recent-item.recent-filter-hidden {
+  display: none;
 }
 
 .recent-item:focus-visible {
@@ -1038,6 +1082,10 @@ body.launcher {
   padding: 12px;
   display: grid;
   gap: 8px;
+}
+
+.pin-card.pin-filter-hidden {
+  display: none;
 }
 
 .pin-card-header {
