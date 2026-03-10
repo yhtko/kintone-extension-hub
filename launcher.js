@@ -27,6 +27,8 @@ const MAX_SHORTCUT_INITIAL_LENGTH = 2;
 const SHORTCUT_SEARCH_OPEN_MODE_KEY = 'shortcutSearchOpenMode';
 const SHORTCUT_SEARCH_OPEN_MODE_CURRENT_TAB = 'current_tab';
 const SHORTCUT_SEARCH_OPEN_MODE_NEW_TAB = 'new_tab';
+const MESSAGE_OPEN_OVERLAY = 'EXCEL_OPEN_OVERLAY_FROM_SIDEPANEL';
+const MESSAGE_GET_OVERLAY_STATE = 'EXCEL_GET_OVERLAY_LAUNCH_STATE';
 const COLLAPSED_SECTIONS_KEY = 'kfavLauncherCollapsedSections';
 const UI_LANGUAGE_KEY = 'uiLanguage';
 const UI_LANGUAGE_VALUES = ['auto', 'ja', 'en'];
@@ -47,6 +49,9 @@ const I18N_MESSAGES = {
     panel_section_recent_records: '最近のレコード',
     panel_action_toggle_search_show: '検索を表示',
     panel_action_toggle_search_hide: '検索を隠す',
+    panel_action_open_overlay: 'Excel Overlay',
+    panel_action_open_overlay_view_only: 'Excel Overlay (View only)',
+    panel_action_open_overlay_unsupported: 'Excel Overlay (一覧/詳細画面のみ)',
     panel_action_open_settings: '設定を開く',
     panel_action_clear_search: '検索をクリア',
     panel_action_toggle_shortcuts_collapse: 'ショートカットを折りたたむ',
@@ -90,6 +95,8 @@ const I18N_MESSAGES = {
     panel_notice_already_registered: 'このビューは既に登録済みです',
     panel_notice_added_fetching: 'ウォッチリストに追加しました。件数を取得しています...',
     panel_notice_add_failed: 'ウォッチリストの追加に失敗しました',
+    panel_notice_overlay_unsupported: 'この画面では Excel Overlay を利用できません（一覧/詳細画面で利用できます）',
+    panel_notice_overlay_open_failed: 'Excel Overlay の起動に失敗しました',
     panel_notice_url_required: 'URLは必須です',
     panel_notice_kintone_url_required: 'kintone URLを入力してください',
     panel_notice_updated: '更新しました',
@@ -116,6 +123,9 @@ const I18N_MESSAGES = {
     panel_section_recent_records: 'Recent records',
     panel_action_toggle_search_show: 'Show search',
     panel_action_toggle_search_hide: 'Hide search',
+    panel_action_open_overlay: 'Excel Overlay',
+    panel_action_open_overlay_view_only: 'Excel Overlay (View only)',
+    panel_action_open_overlay_unsupported: 'Excel Overlay (List / Detail only)',
     panel_action_open_settings: 'Open settings',
     panel_action_clear_search: 'Clear search',
     panel_action_toggle_shortcuts_collapse: 'Collapse shortcuts',
@@ -159,6 +169,8 @@ const I18N_MESSAGES = {
     panel_notice_already_registered: 'This view is already registered',
     panel_notice_added_fetching: 'Added to watchlist. Fetching counts...',
     panel_notice_add_failed: 'Failed to add watchlist item',
+    panel_notice_overlay_unsupported: 'Excel Overlay is only available on list/detail pages',
+    panel_notice_overlay_open_failed: 'Failed to open Excel Overlay',
     panel_notice_url_required: 'URL is required',
     panel_notice_kintone_url_required: 'Please enter a kintone URL',
     panel_notice_updated: 'Updated',
@@ -203,6 +215,7 @@ const els = {
   notice: doc.getElementById('notice'),
   refreshCounts: doc.getElementById('refreshCounts'),
   quickAdd: doc.getElementById('quickAdd'),
+  openExcelOverlay: doc.getElementById('openExcelOverlay'),
   openOptions: doc.getElementById('openOptions'),
   shortcutRow: doc.getElementById('shortcutRow'),
   shortcutPanel: doc.getElementById('shortcutPanel'),
@@ -241,7 +254,11 @@ const state = {
   appSearchOutsideHandler: null,
   pinListObserver: null,
   uiLanguageSetting: DEFAULT_UI_LANGUAGE,
-  currentLang: DEFAULT_LANGUAGE
+  currentLang: DEFAULT_LANGUAGE,
+  overlayLaunchState: {
+    pageType: 'unsupported',
+    canEditOverlay: false
+  }
 };
 
 const shortcutState = {
@@ -370,6 +387,7 @@ function rerenderLocalizedUi() {
     els.appSearchToggle.title = t('panel_action_app_search');
     els.appSearchToggle.setAttribute('aria-label', t('panel_action_app_search'));
   }
+  syncOverlayButtonLabel();
   if (els.appSearchInput) {
     els.appSearchInput.placeholder = t('panel_app_search_placeholder');
   }
@@ -830,6 +848,85 @@ async function openUrlByMode(url, mode) {
     return;
   }
   await chrome.tabs.create({ url, active: true });
+}
+
+function normalizeOverlayPageType(value) {
+  const type = String(value || '').trim().toLowerCase();
+  if (type === 'list' || type === 'detail') return type;
+  return 'unsupported';
+}
+
+function getOverlayButtonLabel() {
+  const pageType = normalizeOverlayPageType(state.overlayLaunchState?.pageType);
+  if (pageType === 'unsupported') {
+    return t('panel_action_open_overlay_unsupported');
+  }
+  if (state.overlayLaunchState?.canEditOverlay) {
+    return t('panel_action_open_overlay');
+  }
+  return t('panel_action_open_overlay_view_only');
+}
+
+function syncOverlayButtonLabel() {
+  const btn = els.openExcelOverlay;
+  if (!btn) return;
+  const label = getOverlayButtonLabel();
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+}
+
+async function sendMessageToActiveKintoneTab(message) {
+  const tab = await getActiveTab();
+  if (!tab?.id || !isKintoneUrl(tab.url || '')) {
+    return { ok: false, reason: 'active_tab_not_kintone' };
+  }
+  try {
+    const response = await chrome.tabs.sendMessage(tab.id, message);
+    return response && typeof response === 'object'
+      ? response
+      : { ok: false, reason: 'empty_response' };
+  } catch (error) {
+    return { ok: false, reason: String(error?.message || error || 'send_message_failed') };
+  }
+}
+
+async function refreshOverlayLaunchState() {
+  const response = await sendMessageToActiveKintoneTab({ type: MESSAGE_GET_OVERLAY_STATE });
+  if (response?.ok) {
+    state.overlayLaunchState = {
+      pageType: normalizeOverlayPageType(response.pageType),
+      canEditOverlay: Boolean(response.canEditOverlay)
+    };
+  } else {
+    state.overlayLaunchState = {
+      pageType: 'unsupported',
+      canEditOverlay: false
+    };
+  }
+  syncOverlayButtonLabel();
+  return response;
+}
+
+async function openOverlayFromSidePanel() {
+  const response = await sendMessageToActiveKintoneTab({ type: MESSAGE_OPEN_OVERLAY });
+  if (response?.ok) {
+    state.overlayLaunchState = {
+      pageType: normalizeOverlayPageType(response.pageType),
+      canEditOverlay: Boolean(response.canEditOverlay)
+    };
+    syncOverlayButtonLabel();
+    setNotice('');
+    return;
+  }
+  if (response?.reason === 'unsupported_page') {
+    state.overlayLaunchState = { pageType: 'unsupported', canEditOverlay: false };
+    syncOverlayButtonLabel();
+    setNoticeKey('panel_notice_overlay_unsupported');
+  } else if (response?.reason === 'active_tab_not_kintone') {
+    setNoticeKey('panel_notice_open_kintone_first');
+  } else {
+    setNoticeKey('panel_notice_overlay_open_failed');
+  }
 }
 
 function formatRecentTime(value) {
@@ -2005,6 +2102,10 @@ function attachStorageListener() {
       });
       return;
     }
+    if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, 'pbDeveloperProOverride')) {
+      refreshOverlayLaunchState().catch(() => {});
+      return;
+    }
     if (area !== 'sync') return;
     if (changes.kintoneFavorites) {
       loadFavoritesAndRender().catch((error) => {
@@ -2494,6 +2595,17 @@ function wireEvents() {
     const next = !state.filterPanelVisible;
     setFilterPanelVisible(next, { focus: next });
   });
+  els.openExcelOverlay?.addEventListener('click', () => {
+    openOverlayFromSidePanel().catch(() => {
+      setNoticeKey('panel_notice_overlay_open_failed');
+    });
+  });
+  els.openExcelOverlay?.addEventListener('mouseenter', () => {
+    refreshOverlayLaunchState().catch(() => {});
+  });
+  els.openExcelOverlay?.addEventListener('focus', () => {
+    refreshOverlayLaunchState().catch(() => {});
+  });
   els.filter?.addEventListener('input', (event) => applyFilterText(event.target.value));
   els.filter?.addEventListener('keydown', handleFilterKeydown);
   els.clearFilter?.addEventListener('click', () => {
@@ -2575,6 +2687,7 @@ async function init() {
   await refreshShortcutEntries();
   await loadRecentAndRender();
   await loadFavoritesAndRender();
+  await refreshOverlayLaunchState();
   refreshCounts().catch(() => {});
   startCountTimer();
   focusFilterSoon();

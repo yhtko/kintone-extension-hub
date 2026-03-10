@@ -1,5 +1,5 @@
 ﻿// content.js
-// 1) page-bridge.js 繧偵・繝ｼ繧ｸ縺ｫ豕ｨ蜈･  2) popup/background 縺九ｉ縺ｮ隕∵ｱゅｒ window.postMessage 縺ｧ讖区ｸ｡縺・
+// 1) page-bridge.js  2) popup/background  window.postMessage 
 (function bootstrap() {
   if (window.__kfav_content_injected) return;
   window.__kfav_content_injected = true;
@@ -45,6 +45,8 @@
     window.postMessage({ __kfav__: true, id, type, payload }, location.origin);
     return p;
   }
+
+  let overlayController = null;
 
   const devContextState = {
     target: null,
@@ -365,6 +367,14 @@
           const res = await postToPage('CHECK_KINTONE_READY', msg.payload);
           sendResponse(res); return;
         }
+        if (msg?.type === 'EXCEL_GET_OVERLAY_LAUNCH_STATE') {
+          const res = await getOverlayLaunchState();
+          sendResponse(res); return;
+        }
+        if (msg?.type === 'EXCEL_OPEN_OVERLAY_FROM_SIDEPANEL') {
+          const res = await openOverlayByCurrentPage('sidepanel');
+          sendResponse(res); return;
+        }
         sendResponse({ ok: false, error: 'Unknown message type' });
       } catch (e) {
         sendResponse({ ok: false, error: String(e?.message || e) });
@@ -414,6 +424,34 @@
         appName,
         url: normalizedUrl,
         visitedAt: now
+      };
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  function parseDetailOverlayContext(rawUrl) {
+    const parsed = parseRecentRecordFromUrl(rawUrl);
+    if (!parsed) return null;
+    const appId = String(parsed.appId || '').trim();
+    const recordId = String(parsed.recordId || '').trim();
+    if (!appId || !recordId) return null;
+    return {
+      appId,
+      recordId,
+      href: String(rawUrl || location.href)
+    };
+  }
+
+  function parseListOverlayContext(rawUrl) {
+    try {
+      const url = new URL(rawUrl || location.href);
+      if (!isKintoneHostName(url.hostname)) return null;
+      const match = String(url.pathname || '').match(/^\/k\/(\d+)\/?$/);
+      if (!match) return null;
+      return {
+        appId: String(match[1] || '').trim(),
+        href: String(rawUrl || location.href)
       };
     } catch (_err) {
       return null;
@@ -480,12 +518,21 @@
       subtableTitle: "サブテーブル編集",
       subtableClose: "閉じる",
       subtableAddRow: "＋ 行追加",
+      subtableAutoWidth: "自動調整",
+      subtableOpen: "開く",
       subtableRemoveRow: "削除",
       subtableSave: "保存",
       subtableCancel: "キャンセル",
       subtableRows: (n) => `${n} 行`,
       subtableEmpty: "行がありません",
       subtableActionsAria: "操作",
+      multilineTitle: "複数行テキスト編集",
+      multilineSave: "保存",
+      multilineCancel: "キャンセル",
+      multiChoiceTitle: "複数選択",
+      multiChoiceApply: "適用",
+      multiChoiceClear: "クリア",
+      richTextReadonly: "リッチテキストは閲覧のみ対応です",
       permNoAdd: "追加権限がありません",
       permNoEdit: "編集権限がありません",
       permNoFieldEdit: "このフィールドは編集できません",
@@ -512,6 +559,16 @@
       statusPendingDeletes: "削除予定",
       statusNewRows: "新規行",
       btnColumns: "列順",
+      btnFieldsViewOnly: "ビュー",
+      btnFieldsAll: "全項目",
+      titleFieldsViewOnly: "現在のビュー項目のみ表示",
+      titleFieldsAll: "全項目を表示",
+      btnLayoutGrid: "Grid",
+      btnLayoutForm: "Form",
+      titleLayoutGrid: "グリッド表示",
+      titleLayoutForm: "縦表示",
+      formFieldHeader: "Field",
+      formValueHeader: "Value",
       filterButton: "フィルター",
       filterTitle: "フィルター",
       filterContains: "含む",
@@ -531,7 +588,8 @@
       toastColumnsSaved: "列順を保存しました",
       toastColumnsReset: "列順をリセットしました",
       toastColumnsAutoWidth: "列幅を自動調整しました",
-      errorUnsupportedFilter: "この一覧には一時的なフィルター/ソートが含まれているため、Excelモードを起動できません。ビューを標準状態に戻してから再試行してください。"
+      errorUnsupportedFilter: "この一覧には一時的なフィルター/ソートが含まれているため、Excelモードを起動できません。ビューを標準状態に戻してから再試行してください。",
+      overlayUnsupportedPage: "この画面では Excel Overlay を利用できません。一覧/詳細画面で利用できます。"
     },
     en: {
       title: "Excel mode",
@@ -569,12 +627,21 @@
       subtableTitle: "Edit subtable",
       subtableClose: "Close",
       subtableAddRow: "+ Add row",
+      subtableAutoWidth: "Auto width",
+      subtableOpen: "Open",
       subtableRemoveRow: "Delete",
       subtableSave: "Save",
       subtableCancel: "Cancel",
       subtableRows: (n) => (n === 1 ? '1 row' : `${n} rows`),
       subtableEmpty: "No rows",
       subtableActionsAria: "Actions",
+      multilineTitle: "Edit multi-line text",
+      multilineSave: "Save",
+      multilineCancel: "Cancel",
+      multiChoiceTitle: "Multiple choice",
+      multiChoiceApply: "Apply",
+      multiChoiceClear: "Clear",
+      richTextReadonly: "Rich text is view-only",
       permNoAdd: "No add permission",
       permNoEdit: "No edit permission",
       permNoFieldEdit: "This field cannot be edited",
@@ -601,6 +668,16 @@
       statusPendingDeletes: "Pending delete",
       statusNewRows: "New rows",
       btnColumns: "Columns",
+      btnFieldsViewOnly: "View",
+      btnFieldsAll: "All fields",
+      titleFieldsViewOnly: "Show only fields in current view",
+      titleFieldsAll: "Show all fields",
+      btnLayoutGrid: "Grid",
+      btnLayoutForm: "Form",
+      titleLayoutGrid: "Grid layout",
+      titleLayoutForm: "Form layout",
+      formFieldHeader: "Field",
+      formValueHeader: "Value",
       filterButton: "Filter",
       filterTitle: "Filter",
       filterContains: "contains",
@@ -620,13 +697,28 @@
       toastColumnsSaved: "Column order saved",
       toastColumnsReset: "Column order reset",
       toastColumnsAutoWidth: "Column widths adjusted",
-      errorUnsupportedFilter: "This list has ad-hoc filters/sorting that cannot be replayed in Excel mode. Clear the filter and try again."
+      errorUnsupportedFilter: "This list has ad-hoc filters/sorting that cannot be replayed in Excel mode. Clear the filter and try again.",
+      overlayUnsupportedPage: "Excel Overlay is only available on list/detail pages."
     }
   };
 
   const overlayConfig = {
     limit: 100,
-    allowedTypes: new Set(['SINGLE_LINE_TEXT', 'NUMBER', 'DATE', 'RADIO_BUTTON', 'DROP_DOWN', 'SUBTABLE', 'LOOKUP'])
+    allowedTypes: new Set([
+      'SINGLE_LINE_TEXT',
+      'MULTI_LINE_TEXT',
+      'NUMBER',
+      'DATE',
+      'LINK',
+      'RADIO_BUTTON',
+      'DROP_DOWN',
+      'CHECK_BOX',
+      'MULTI_SELECT',
+      'CALC',
+      'RICH_TEXT',
+      'SUBTABLE',
+      'LOOKUP'
+    ])
   };
 
   const UI_LANGUAGE_KEY = 'uiLanguage';
@@ -635,11 +727,20 @@
   const DEFAULT_OVERLAY_LANGUAGE = 'ja';
 
   const COLUMN_PREF_STORAGE_KEY = 'kfavExcelColumns';
+  const SUBTABLE_WIDTH_PREF_STORAGE_KEY = 'kfavExcelSubtableWidths';
+  const EXCEL_OVERLAY_MODE_KEY = 'kfavExcelOverlayMode';
   const EXCEL_OVERLAY_MODE_STANDARD = 'standard';
   const EXCEL_OVERLAY_MODE_PRO = 'pro';
   const DEFAULT_EXCEL_OVERLAY_MODE = EXCEL_OVERLAY_MODE_STANDARD;
   const EXCEL_OVERLAY_MODE_VALUES = new Set([EXCEL_OVERLAY_MODE_STANDARD, EXCEL_OVERLAY_MODE_PRO]);
+  const OVERLAY_RUNTIME_MODE_LIST = 'list';
+  const OVERLAY_RUNTIME_MODE_DETAIL_SINGLE_ROW = 'detail-single-row';
+  const OVERLAY_LAYOUT_MODE_GRID = 'grid';
+  const OVERLAY_LAYOUT_MODE_FORM = 'form';
+  const LIST_FIELD_SCOPE_VIEW_ONLY = 'view-only';
+  const LIST_FIELD_SCOPE_ALL_FIELDS = 'all-fields';
   const MAX_COLUMN_PREF_ENTRIES = 80;
+  const MAX_SUBTABLE_WIDTH_PREF_ENTRIES = 160;
   const DEFAULT_COLUMN_WIDTH = 160;
   const MIN_COLUMN_WIDTH = 96;
   const MAX_COLUMN_WIDTH = 320;
@@ -731,6 +832,26 @@
     };
   }
 
+  function createProServiceSafe() {
+    if (typeof createProService === 'function') {
+      return createProService();
+    }
+    return {
+      async getDeveloperOverride() { return false; },
+      async setDeveloperOverride() {},
+      async getProAccessState() {
+        return {
+          enabled: false,
+          reason: 'service_unavailable',
+          source: 'fallback'
+        };
+      },
+      async isProEnabled() { return false; },
+      async canUseProFeature() { return false; },
+      clearCaches() {}
+    };
+  }
+
   function columnLabel(index) {
     let n = index;
     let label = '';
@@ -746,6 +867,7 @@
     constructor(postFn) {
       this.postFn = postFn;
       this.permissionService = createPermissionServiceSafe();
+      this.proService = createProServiceSafe();
       this.isOpen = false;
       this.root = null;
       this.surface = null;
@@ -764,6 +886,12 @@
       this.closeButton = null;
       this.addRowButton = null;
       this.titleElement = null;
+      this.layoutToggleWrap = null;
+      this.gridLayoutButton = null;
+      this.formLayoutButton = null;
+      this.fieldScopeToggleWrap = null;
+      this.fieldScopeViewButton = null;
+      this.fieldScopeAllButton = null;
       this.prevPageButton = null;
       this.nextPageButton = null;
       this.pageLabelElement = null;
@@ -782,6 +910,17 @@
       this.appName = '';
       this.overlayMode = DEFAULT_EXCEL_OVERLAY_MODE;
       this.proEntitlement = false;
+      this.proAccessState = {
+        enabled: false,
+        reason: 'unknown',
+        source: 'none'
+      };
+      this.runtimeMode = OVERLAY_RUNTIME_MODE_LIST;
+      this.overlayLayoutMode = OVERLAY_LAYOUT_MODE_GRID;
+      this.listFieldScopeMode = LIST_FIELD_SCOPE_VIEW_ONLY;
+      this.detailRecordId = '';
+      this.detailAppId = '';
+      this.detailSourceUrl = '';
       this.modeBadge = null;
       this.viewOnlyNoticeShown = false;
       this.appId = null;
@@ -793,6 +932,9 @@
       this.paging = false;
       this.fields = [];
       this.fieldsMeta = [];
+      this.listAllFields = [];
+      this.viewFieldOrder = [];
+      this.recordFetchFieldCodes = [];
       this.fieldMap = new Map();
       this.fieldsMetaMap = new Map();
       this.fieldIndexMap = new Map();
@@ -829,6 +971,10 @@
       this.virtualEnd = 0;
       this.rowHeaderContainer = null;
       this.tableContainer = null;
+      this.gridRoot = null;
+      this.gridHead = null;
+      this.gridBody = null;
+      this.detailFormContainer = null;
       this.inputsByRow = new Map();
       this.pendingFocus = null;
       this.pendingEdit = null;
@@ -840,6 +986,7 @@
       this.editingCell = null;
       this.handleMouseUp = this.endSelection.bind(this);
       this.columnPrefCache = null;
+      this.subtableWidthPrefCache = null;
       this.viewKey = 'default';
       this.viewName = '';
       this.viewId = '';
@@ -851,9 +998,12 @@
       this.draggingColumnCode = null;
       this.columnWidthsDraft = new Map();
       this.radioPicker = null;
+      this.multiChoicePicker = null;
+      this.multilineEditor = null;
       this.newRowSeq = 1;
       this.subtableEditor = null;
       this.pasteFlashTimer = null;
+      this.subtableActivationTs = 0;
       this.boundRadioPickerScrollHandler = () => { this.repositionRadioPicker(); };
       this.boundRadioPickerResizeHandler = () => { this.repositionRadioPicker(); };
       this.boundRadioPickerOutsideClick = (event) => {
@@ -863,6 +1013,16 @@
         if (!panel) return;
         if (panel.contains(event.target) || input === event.target) return;
         this.closeRadioPicker();
+      };
+      this.boundMultiChoicePickerScrollHandler = () => { this.repositionMultiChoicePicker(); };
+      this.boundMultiChoicePickerResizeHandler = () => { this.repositionMultiChoicePicker(); };
+      this.boundMultiChoicePickerOutsideClick = (event) => {
+        if (!this.multiChoicePicker) return;
+        const panel = this.multiChoicePicker.panel;
+        const input = this.multiChoicePicker.input;
+        if (!panel) return;
+        if (panel.contains(event.target) || input === event.target) return;
+        this.closeMultiChoicePicker(true);
       };
       this.boundFilterPanelOutsideClick = (event) => {
         if (!this.filterPanel) return;
@@ -877,9 +1037,28 @@
       this.uiLanguageListenerAttached = false;
     }
 
-    async open() {
+    async open(options = {}) {
       if (this.isOpen) return;
       await this.loadOverlayMode();
+      const requestedRuntimeMode = String(options?.runtimeMode || OVERLAY_RUNTIME_MODE_LIST);
+      this.runtimeMode = requestedRuntimeMode === OVERLAY_RUNTIME_MODE_DETAIL_SINGLE_ROW
+        ? OVERLAY_RUNTIME_MODE_DETAIL_SINGLE_ROW
+        : OVERLAY_RUNTIME_MODE_LIST;
+      this.overlayLayoutMode = this.runtimeMode === OVERLAY_RUNTIME_MODE_DETAIL_SINGLE_ROW
+        ? OVERLAY_LAYOUT_MODE_FORM
+        : OVERLAY_LAYOUT_MODE_GRID;
+      this.listFieldScopeMode = this.runtimeMode === OVERLAY_RUNTIME_MODE_LIST
+        ? LIST_FIELD_SCOPE_VIEW_ONLY
+        : LIST_FIELD_SCOPE_ALL_FIELDS;
+      this.detailRecordId = String(options?.detailRecordId || '').trim();
+      this.detailAppId = String(options?.detailAppId || '').trim();
+      this.detailSourceUrl = String(options?.detailSourceUrl || location.href || '').trim();
+      if (this.runtimeMode === OVERLAY_RUNTIME_MODE_DETAIL_SINGLE_ROW) {
+        const detailContext = this.resolveDetailRecordContext();
+        if (!detailContext || !detailContext.recordId) return;
+        this.detailRecordId = detailContext.recordId;
+        if (!this.detailAppId) this.detailAppId = detailContext.appId || '';
+      }
       console.log('[overlay] mode flags', this.getOverlayModeFlags());
       this.isOpen = true;
       try {
@@ -994,6 +1173,9 @@
       pager.appendChild(prevBtn);
       pager.appendChild(pageLabel);
       pager.appendChild(nextBtn);
+      if (this.isDetailSingleRowMode()) {
+        pager.style.display = 'none';
+      }
 
       const columnsBtn = document.createElement('button');
       columnsBtn.type = 'button';
@@ -1002,6 +1184,48 @@
       columnsBtn.disabled = true;
       columnsBtn.addEventListener('click', () => { this.openColumnManager(); });
       this.columnButton = columnsBtn;
+
+      const layoutToggle = document.createElement('div');
+      layoutToggle.className = 'pb-overlay__layout-toggle';
+      const gridLayoutBtn = document.createElement('button');
+      gridLayoutBtn.type = 'button';
+      gridLayoutBtn.className = 'pb-overlay__layout-btn';
+      gridLayoutBtn.addEventListener('click', () => {
+        this.setDetailLayoutMode(OVERLAY_LAYOUT_MODE_GRID);
+      });
+      const formLayoutBtn = document.createElement('button');
+      formLayoutBtn.type = 'button';
+      formLayoutBtn.className = 'pb-overlay__layout-btn';
+      formLayoutBtn.addEventListener('click', () => {
+        this.setDetailLayoutMode(OVERLAY_LAYOUT_MODE_FORM);
+      });
+      layoutToggle.appendChild(gridLayoutBtn);
+      layoutToggle.appendChild(formLayoutBtn);
+      this.layoutToggleWrap = layoutToggle;
+      this.gridLayoutButton = gridLayoutBtn;
+      this.formLayoutButton = formLayoutBtn;
+      this.updateLayoutToggleUi();
+
+      const fieldScopeToggle = document.createElement('div');
+      fieldScopeToggle.className = 'pb-overlay__layout-toggle';
+      const viewScopeBtn = document.createElement('button');
+      viewScopeBtn.type = 'button';
+      viewScopeBtn.className = 'pb-overlay__layout-btn';
+      viewScopeBtn.addEventListener('click', () => {
+        void this.setListFieldScopeMode(LIST_FIELD_SCOPE_VIEW_ONLY);
+      });
+      const allScopeBtn = document.createElement('button');
+      allScopeBtn.type = 'button';
+      allScopeBtn.className = 'pb-overlay__layout-btn';
+      allScopeBtn.addEventListener('click', () => {
+        void this.setListFieldScopeMode(LIST_FIELD_SCOPE_ALL_FIELDS);
+      });
+      fieldScopeToggle.appendChild(viewScopeBtn);
+      fieldScopeToggle.appendChild(allScopeBtn);
+      this.fieldScopeToggleWrap = fieldScopeToggle;
+      this.fieldScopeViewButton = viewScopeBtn;
+      this.fieldScopeAllButton = allScopeBtn;
+      this.updateFieldScopeToggleUi();
 
       const dirty = document.createElement('span');
       dirty.className = 'pb-overlay__dirty';
@@ -1027,6 +1251,9 @@
       addRowBtn.type = 'button';
       addRowBtn.className = 'pb-overlay__btn';
       addRowBtn.textContent = resolveText(this.language, 'btnAddRow');
+      if (this.isDetailSingleRowMode()) {
+        addRowBtn.style.display = 'none';
+      }
       this.addRowButton = addRowBtn;
 
       const undoBtn = document.createElement('button');
@@ -1053,6 +1280,8 @@
 
       actions.appendChild(pager);
       actions.appendChild(columnsBtn);
+      actions.appendChild(fieldScopeToggle);
+      actions.appendChild(layoutToggle);
       actions.appendChild(dirty);
       actions.appendChild(addRowBtn);
       actions.appendChild(undoBtn);
@@ -1068,9 +1297,11 @@
     buildGridShell() {
       const grid = document.createElement('div');
       grid.className = 'pb-overlay__grid';
+      this.gridRoot = grid;
 
       const head = document.createElement('div');
       head.className = 'pb-overlay__grid-head';
+      this.gridHead = head;
 
       const corner = document.createElement('div');
       corner.className = 'pb-overlay__corner';
@@ -1087,6 +1318,7 @@
 
       const body = document.createElement('div');
       body.className = 'pb-overlay__grid-body';
+      this.gridBody = body;
 
       const rowScroll = document.createElement('div');
       rowScroll.className = 'pb-overlay__row-scroll';
@@ -1108,6 +1340,11 @@
 
       grid.appendChild(head);
       grid.appendChild(body);
+
+      const detailForm = document.createElement('div');
+      detailForm.className = 'pb-overlay__detail-form';
+      this.detailFormContainer = detailForm;
+      grid.appendChild(detailForm);
 
       return grid;
     }
@@ -1198,6 +1435,251 @@
       return null;
     }
 
+    isDetailSingleRowMode() {
+      return this.runtimeMode === OVERLAY_RUNTIME_MODE_DETAIL_SINGLE_ROW;
+    }
+
+    isListMode() {
+      return this.runtimeMode === OVERLAY_RUNTIME_MODE_LIST;
+    }
+
+    normalizeListFieldScopeMode(mode) {
+      return mode === LIST_FIELD_SCOPE_ALL_FIELDS
+        ? LIST_FIELD_SCOPE_ALL_FIELDS
+        : LIST_FIELD_SCOPE_VIEW_ONLY;
+    }
+
+    normalizeLayoutMode(mode) {
+      return mode === OVERLAY_LAYOUT_MODE_FORM
+        ? OVERLAY_LAYOUT_MODE_FORM
+        : OVERLAY_LAYOUT_MODE_GRID;
+    }
+
+    isDetailFormLayoutMode() {
+      return this.isDetailSingleRowMode()
+        && this.normalizeLayoutMode(this.overlayLayoutMode) === OVERLAY_LAYOUT_MODE_FORM;
+    }
+
+    updateLayoutToggleUi() {
+      if (!this.layoutToggleWrap) return;
+      const show = this.isDetailSingleRowMode();
+      this.layoutToggleWrap.style.display = show ? 'inline-flex' : 'none';
+      if (!show) return;
+      if (this.gridLayoutButton) {
+        this.gridLayoutButton.textContent = resolveText(this.language, 'btnLayoutGrid');
+        this.gridLayoutButton.title = resolveText(this.language, 'titleLayoutGrid');
+      }
+      if (this.formLayoutButton) {
+        this.formLayoutButton.textContent = resolveText(this.language, 'btnLayoutForm');
+        this.formLayoutButton.title = resolveText(this.language, 'titleLayoutForm');
+      }
+      const current = this.normalizeLayoutMode(this.overlayLayoutMode);
+      this.gridLayoutButton?.classList.toggle('is-active', current === OVERLAY_LAYOUT_MODE_GRID);
+      this.formLayoutButton?.classList.toggle('is-active', current === OVERLAY_LAYOUT_MODE_FORM);
+    }
+
+    updateFieldScopeToggleUi() {
+      if (!this.fieldScopeToggleWrap) return;
+      const show = this.isListMode();
+      this.fieldScopeToggleWrap.style.display = show ? 'inline-flex' : 'none';
+      if (!show) return;
+      const current = this.normalizeListFieldScopeMode(this.listFieldScopeMode);
+      if (this.fieldScopeViewButton) {
+        this.fieldScopeViewButton.textContent = resolveText(this.language, 'btnFieldsViewOnly');
+        this.fieldScopeViewButton.title = resolveText(this.language, 'titleFieldsViewOnly');
+        this.fieldScopeViewButton.classList.toggle('is-active', current === LIST_FIELD_SCOPE_VIEW_ONLY);
+      }
+      if (this.fieldScopeAllButton) {
+        this.fieldScopeAllButton.textContent = resolveText(this.language, 'btnFieldsAll');
+        this.fieldScopeAllButton.title = resolveText(this.language, 'titleFieldsAll');
+        this.fieldScopeAllButton.classList.toggle('is-active', current === LIST_FIELD_SCOPE_ALL_FIELDS);
+      }
+    }
+
+    getRecordFetchFieldCodes() {
+      if (Array.isArray(this.recordFetchFieldCodes) && this.recordFetchFieldCodes.length) {
+        return this.recordFetchFieldCodes.slice();
+      }
+      return this.fields
+        .map((field) => String(field?.code || '').trim())
+        .filter(Boolean);
+    }
+
+    getFieldDefinition(fieldCode) {
+      const code = String(fieldCode || '').trim();
+      if (!code) return null;
+      return this.fieldMap.get(code) || this.fieldsMetaMap.get(code) || null;
+    }
+
+    sortFieldsByViewOrder(fields) {
+      const source = Array.isArray(fields) ? fields : [];
+      const orderIndex = new Map();
+      this.viewFieldOrder.forEach((code, index) => {
+        orderIndex.set(code, index);
+      });
+      return source.slice().sort((a, b) => {
+        const aIdx = orderIndex.has(a.code) ? orderIndex.get(a.code) : Number.MAX_SAFE_INTEGER;
+        const bIdx = orderIndex.has(b.code) ? orderIndex.get(b.code) : Number.MAX_SAFE_INTEGER;
+        if (aIdx !== bIdx) return aIdx - bIdx;
+        return source.indexOf(a) - source.indexOf(b);
+      });
+    }
+
+    getListScopeBaseFields(mode) {
+      const normalized = this.normalizeListFieldScopeMode(mode);
+      const allSorted = this.sortFieldsByViewOrder(this.listAllFields);
+      if (normalized === LIST_FIELD_SCOPE_ALL_FIELDS) {
+        return allSorted;
+      }
+      const viewOnly = [];
+      const map = new Map(allSorted.map((field) => [String(field.code || ''), field]));
+      const seen = new Set();
+      this.viewFieldOrder.forEach((code) => {
+        if (seen.has(code)) return;
+        const field = map.get(code);
+        if (!field) return;
+        viewOnly.push(field);
+        seen.add(code);
+      });
+      return viewOnly.length ? viewOnly : allSorted;
+    }
+
+    async applyListFieldScope(mode, options = {}) {
+      if (!this.isListMode()) return;
+      const normalized = this.normalizeListFieldScopeMode(mode);
+      this.listFieldScopeMode = normalized;
+      const previousSelection = this.selection
+        ? {
+          row: this.selection.endRow,
+          col: this.selection.endCol,
+          code: this.fields[this.selection.endCol]?.code || ''
+        }
+        : null;
+      const baseFields = this.getListScopeBaseFields(normalized);
+      const baseCodes = baseFields.map((field) => String(field.code || '').trim()).filter(Boolean);
+      this.defaultFieldCodes = baseCodes.slice();
+      const savedPref = await this.getSavedColumnPref(this.defaultFieldCodes);
+      const sorted = baseFields.slice();
+      const savedOrder = savedPref?.order || [];
+      if (savedOrder.length) {
+        const savedIndex = new Map(savedOrder.map((code, index) => [code, index]));
+        const defaultIndex = new Map(this.defaultFieldCodes.map((code, index) => [code, index]));
+        sorted.sort((a, b) => {
+          const ap = savedIndex.has(a.code) ? savedIndex.get(a.code) : Number.MAX_SAFE_INTEGER;
+          const bp = savedIndex.has(b.code) ? savedIndex.get(b.code) : Number.MAX_SAFE_INTEGER;
+          if (ap !== bp) return ap - bp;
+          const da = defaultIndex.get(a.code) ?? Number.MAX_SAFE_INTEGER;
+          const db = defaultIndex.get(b.code) ?? Number.MAX_SAFE_INTEGER;
+          return da - db;
+        });
+      }
+      const widthMap = new Map();
+      if (savedPref?.widths) {
+        Object.entries(savedPref.widths).forEach(([code, value]) => {
+          const numeric = Number(value);
+          if (Number.isFinite(numeric)) {
+            widthMap.set(code, Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, numeric)));
+          }
+        });
+      }
+      this.fields = sorted.map((field) => ({
+        ...field,
+        required: Boolean(field.required),
+        choices: Array.isArray(field.choices) ? field.choices.map((choice) => String(choice)) : [],
+        editable: true,
+        width: widthMap.get(field.code) || DEFAULT_COLUMN_WIDTH
+      }));
+      this.rebuildFieldMaps();
+      this.updateFieldScopeToggleUi();
+      if (this.columnButton) {
+        this.columnButton.disabled = !this.fields.length;
+      }
+      if (options.skipRender) return;
+
+      const visibleFieldCodes = new Set(this.fields.map((field) => field.code));
+      let filtersChanged = false;
+      Array.from(this.filters.keys()).forEach((code) => {
+        if (!visibleFieldCodes.has(code)) {
+          this.filters.delete(code);
+          filtersChanged = true;
+        }
+      });
+      if (this.sortState.fieldCode && !visibleFieldCodes.has(this.sortState.fieldCode)) {
+        this.sortState = { fieldCode: '', direction: '' };
+      }
+      if (filtersChanged) {
+        this.recomputeFilteredRowIds();
+      }
+      this.closeFilterPanel();
+      this.closeColumnManager(true);
+      const currentRow = previousSelection?.row ?? 0;
+      const prevCode = previousSelection?.code || '';
+      const maxRow = Math.max(0, this.getVisibleRowCount() - 1);
+      const nextRow = Math.max(0, Math.min(maxRow, currentRow));
+      const nextColByCode = prevCode ? this.fieldIndexMap.get(prevCode) : undefined;
+      const nextCol = Number.isFinite(nextColByCode)
+        ? Math.max(0, Math.min(this.fields.length - 1, nextColByCode))
+        : Math.max(0, Math.min(this.fields.length - 1, previousSelection?.col ?? 0));
+      if (this.editingCell) {
+        this.exitEditMode();
+      }
+      this.renderGrid();
+      this.updateVirtualRows(true);
+      this.syncTableWidth();
+      if (this.getVisibleRowCount() > 0 && this.fields.length > 0) {
+        this.setSelectionSingle(nextRow, nextCol);
+        this.focusCell(nextRow, nextCol);
+      } else {
+        this.selection = null;
+        this.armedCell = null;
+      }
+      this.updateDirtyBadge();
+      this.updateStats();
+      this.updatePermissionUiState();
+    }
+
+    async setListFieldScopeMode(mode) {
+      if (!this.isListMode()) return;
+      const normalized = this.normalizeListFieldScopeMode(mode);
+      if (normalized === this.listFieldScopeMode) {
+        this.updateFieldScopeToggleUi();
+        return;
+      }
+      await this.applyListFieldScope(normalized);
+    }
+
+    setDetailLayoutMode(nextMode) {
+      if (!this.isDetailSingleRowMode()) return;
+      const normalized = this.normalizeLayoutMode(nextMode);
+      if (normalized === this.overlayLayoutMode) {
+        this.updateLayoutToggleUi();
+        return;
+      }
+      const active = this.getNavigationOrigin(document.activeElement instanceof HTMLInputElement ? document.activeElement : null);
+      const nextCol = Math.max(0, Math.min(this.fields.length - 1, Number(active?.col ?? this.selection?.endCol ?? 0)));
+      if (this.editingCell) this.exitEditMode();
+      this.overlayLayoutMode = normalized;
+      this.renderGrid();
+      this.updateLayoutToggleUi();
+      this.updateDirtyBadge();
+      this.updateStats();
+      if (this.getVisibleRowCount() > 0 && this.fields.length > 0) {
+        this.setSelectionSingle(0, nextCol);
+        this.focusCell(0, nextCol);
+      }
+    }
+
+    resolveDetailRecordContext() {
+      const fallback = parseDetailOverlayContext(this.detailSourceUrl || location.href || '');
+      const recordId = String(this.detailRecordId || fallback?.recordId || '').trim();
+      const appId = String(this.detailAppId || fallback?.appId || '').trim();
+      if (!recordId) return null;
+      return {
+        recordId,
+        appId
+      };
+    }
+
     async loadLanguage() {
       const resolved = await resolveOverlayUiLanguage();
       this.uiLanguageSetting = resolved.setting;
@@ -1250,6 +1732,8 @@
       if (this.columnButton) {
         this.columnButton.textContent = resolveText(this.language, 'btnColumns');
       }
+      this.updateFieldScopeToggleUi();
+      this.updateLayoutToggleUi();
       if (this.addRowButton) {
         this.addRowButton.textContent = resolveText(this.language, 'btnAddRow');
       }
@@ -1272,7 +1756,7 @@
       }
       this.refreshHeaderFilterButtonsText();
       this.refreshSubtableEditorTexts();
-      if (this.tableContainer && this.rowHeaderContainer) {
+      if (this.isDetailFormLayoutMode() || (this.tableContainer && this.rowHeaderContainer)) {
         this.updateVirtualRows(true);
       }
       this.updatePermissionUiState();
@@ -1310,6 +1794,8 @@
       }
       const addBtn = panel.querySelector('[data-subtable-action="add"]');
       if (addBtn) addBtn.textContent = resolveText(this.language, 'subtableAddRow');
+      const autoBtn = panel.querySelector('[data-subtable-action="autowidth"]');
+      if (autoBtn) autoBtn.textContent = resolveText(this.language, 'subtableAutoWidth');
       const cancelBtn = panel.querySelector('[data-subtable-action="cancel"]');
       if (cancelBtn) cancelBtn.textContent = resolveText(this.language, 'subtableCancel');
       const saveBtn = panel.querySelector('[data-subtable-action="save"]');
@@ -1329,10 +1815,23 @@
     }
 
     async loadOverlayMode() {
-      // Public build is fixed to Standard mode for CWS release.
-      // Pro mode plumbing stays in place for future entitlement integration.
-      this.overlayMode = EXCEL_OVERLAY_MODE_STANDARD;
-      this.proEntitlement = false;
+      let requestedMode = EXCEL_OVERLAY_MODE_STANDARD;
+      try {
+        const stored = await chrome.storage.sync.get(EXCEL_OVERLAY_MODE_KEY);
+        requestedMode = normalizeExcelOverlayMode(String(stored?.[EXCEL_OVERLAY_MODE_KEY] || ''));
+      } catch (_err) {
+        requestedMode = EXCEL_OVERLAY_MODE_STANDARD;
+      }
+      const accessState = await this.proService.getProAccessState({
+        featureName: 'excel-overlay-edit',
+        requestedMode,
+        allowDevelopmentInstall: false
+      });
+      this.proAccessState = accessState && typeof accessState === 'object'
+        ? accessState
+        : { enabled: false, reason: 'unknown', source: 'none' };
+      this.proEntitlement = Boolean(this.proAccessState.enabled);
+      this.overlayMode = this.proEntitlement ? EXCEL_OVERLAY_MODE_PRO : EXCEL_OVERLAY_MODE_STANDARD;
     }
 
     isProMode() {
@@ -1360,6 +1859,8 @@
     getOverlayModeFlags() {
       return {
         overlayMode: this.overlayMode,
+        runtimeMode: this.runtimeMode,
+        proReason: this.proAccessState?.reason || '',
         canViewOverlay: this.canViewOverlay(),
         canEditOverlay: this.canEditOverlay(),
         canSaveOverlay: this.canSaveOverlay()
@@ -1401,44 +1902,63 @@
       if (this.titleElement) {
         this.titleElement.textContent = this.appName || resolveText(this.language, 'title');
       }
-      const currentQuery = contextRes.query || '';
-      const viewId = this.getCurrentViewId();
+      const detailContext = this.isDetailSingleRowMode() ? this.resolveDetailRecordContext() : null;
+      if (this.isDetailSingleRowMode() && !detailContext) {
+        throw new Error('Detail context unavailable');
+      }
+      if (detailContext?.appId && detailContext.appId !== String(this.appId || '').trim()) {
+        this.appId = detailContext.appId;
+      }
+      const detailQuery = detailContext ? `$id = "${String(detailContext.recordId).replace(/"/g, '\\"')}"` : '';
+      const currentQuery = this.isDetailSingleRowMode() ? detailQuery : (contextRes.query || '');
+      const viewId = this.isDetailSingleRowMode() ? null : this.getCurrentViewId();
       this.viewId = '';
       this.viewName = '';
       this.viewKey = 'default';
       let resolvedQuery = currentQuery;
       let viewFieldOrder = [];
-      try {
-        const viewInfo = await this.postFn('EXCEL_GET_VIEW_INFO', {
-          appId: this.appId,
-          viewId,
-          currentQuery
-        });
-        if (viewInfo?.ok) {
-          if (typeof viewInfo.query === 'string') {
-            resolvedQuery = viewInfo.query;
+      if (!this.isDetailSingleRowMode()) {
+        try {
+          const viewInfo = await this.postFn('EXCEL_GET_VIEW_INFO', {
+            appId: this.appId,
+            viewId,
+            currentQuery
+          });
+          if (viewInfo?.ok) {
+            if (typeof viewInfo.query === 'string') {
+              resolvedQuery = viewInfo.query;
+            }
+            if (Array.isArray(viewInfo.fieldOrder)) {
+              viewFieldOrder = viewInfo.fieldOrder;
+            }
+            if (viewInfo.viewId) {
+              this.viewId = String(viewInfo.viewId);
+            }
+            if (viewInfo.viewName) {
+              this.viewName = String(viewInfo.viewName);
+            }
           }
-          if (Array.isArray(viewInfo.fieldOrder)) {
-            viewFieldOrder = viewInfo.fieldOrder;
-          }
-          if (viewInfo.viewId) {
-            this.viewId = String(viewInfo.viewId);
-          }
-          if (viewInfo.viewName) {
-            this.viewName = String(viewInfo.viewName);
-          }
+        } catch (_e) {
+          // ignore and fall back to currentQuery
         }
-      } catch (_e) {
-        // ignore and fall back to currentQuery
+        this.viewKey = this.computeViewKey(this.viewId, this.viewName, viewId);
+      } else {
+        this.viewId = `detail:${detailContext.recordId}`;
+        this.viewName = '';
+        this.viewKey = this.computeViewKey(this.viewId, this.viewName, 'detail');
       }
-      this.viewKey = this.computeViewKey(this.viewId, this.viewName, viewId);
+      this.viewFieldOrder = Array.from(new Set(
+        (Array.isArray(viewFieldOrder) ? viewFieldOrder : [])
+          .map((code) => String(code || '').trim())
+          .filter(Boolean)
+      ));
       this.baseQuery = String(resolvedQuery || '').trim();
       this.query = this.baseQuery;
       this.pageOffset = 0;
       this.totalCount = 0;
 
       const fieldsMetaRes = await this.postFn('EXCEL_GET_FIELDS_META', { appId: this.appId });
-      let rawFields = [];
+      let candidateFields = [];
       if (fieldsMetaRes?.ok && Array.isArray(fieldsMetaRes.fieldsMeta)) {
         const allMetaFields = fieldsMetaRes.fieldsMeta
           .map((f) => ({
@@ -1461,35 +1981,20 @@
           }))
           .filter((f) => this.shouldIncludeField(f));
 
-        if (this.canEditOverlay()) {
-          rawFields = allMetaFields.filter((f) => overlayConfig.allowedTypes.has(f.type));
-        } else {
-          const viewOrdered = [];
-          const viewSeen = new Set();
-          const viewMap = new Map(allMetaFields.map((field) => [String(field.code), field]));
-          (Array.isArray(viewFieldOrder) ? viewFieldOrder : []).forEach((code) => {
-            const normalizedCode = String(code || '').trim();
-            if (!normalizedCode || viewSeen.has(normalizedCode)) return;
-            const field = viewMap.get(normalizedCode);
-            if (!field) return;
-            viewOrdered.push(field);
-            viewSeen.add(normalizedCode);
-          });
-          rawFields = viewOrdered.length ? viewOrdered : allMetaFields.slice();
-        }
+        candidateFields = allMetaFields.filter((f) => overlayConfig.allowedTypes.has(f.type));
       } else {
         const fieldsRes = await this.postFn('EXCEL_GET_FIELDS', { appId: this.appId });
         if (!fieldsRes?.ok) throw new Error('Failed to get fields');
-        rawFields = Array.isArray(fieldsRes.fields)
+        candidateFields = Array.isArray(fieldsRes.fields)
           ? fieldsRes.fields.filter((f) => overlayConfig.allowedTypes.has(f.type))
           : [];
-        if (!rawFields.length && !this.canEditOverlay()) {
+        if (!candidateFields.length && this.isListMode()) {
           const fallbackCodes = Array.from(new Set(
-            (Array.isArray(viewFieldOrder) ? viewFieldOrder : [])
+            (Array.isArray(this.viewFieldOrder) ? this.viewFieldOrder : [])
               .map((code) => String(code || '').trim())
               .filter(Boolean)
           ));
-          rawFields = fallbackCodes.map((code) => ({
+          candidateFields = fallbackCodes.map((code) => ({
             code,
             label: code,
             type: 'SINGLE_LINE_TEXT',
@@ -1498,55 +2003,70 @@
           }));
         }
       }
-      this.fieldsMeta = rawFields.map((field) => ({ ...field }));
+      this.fieldsMeta = candidateFields.map((field) => ({ ...field }));
       this.fieldsMetaMap.clear();
       this.fieldsMeta.forEach((field) => {
         if (field?.code) this.fieldsMetaMap.set(field.code, field);
       });
+      this.recordFetchFieldCodes = Array.from(new Set(
+        this.fieldsMeta
+          .map((field) => String(field?.code || '').trim())
+          .filter(Boolean)
+      ));
       this.syncPermissionServiceFields();
 
-      const sorted = rawFields.slice().sort((a, b) => {
-        const aIdx = viewFieldOrder.indexOf(a.code);
-        const bIdx = viewFieldOrder.indexOf(b.code);
-        const ap = aIdx === -1 ? Number.MAX_SAFE_INTEGER : aIdx;
-        const bp = bIdx === -1 ? Number.MAX_SAFE_INTEGER : bIdx;
-        if (ap !== bp) return ap - bp;
-        return rawFields.indexOf(a) - rawFields.indexOf(b);
-      });
-      this.defaultFieldCodes = sorted.map((field) => field.code);
-      const savedPref = await this.getSavedColumnPref(this.defaultFieldCodes);
-      const savedOrder = savedPref?.order || null;
-      if (savedOrder?.length) {
-        const savedIndex = new Map(savedOrder.map((code, index) => [code, index]));
-        const defaultIndex = new Map(this.defaultFieldCodes.map((code, index) => [code, index]));
-        sorted.sort((a, b) => {
-          const ap = savedIndex.has(a.code) ? savedIndex.get(a.code) : Number.MAX_SAFE_INTEGER;
-          const bp = savedIndex.has(b.code) ? savedIndex.get(b.code) : Number.MAX_SAFE_INTEGER;
-          if (ap !== bp) return ap - bp;
-          const da = defaultIndex.get(a.code) ?? Number.MAX_SAFE_INTEGER;
-          const db = defaultIndex.get(b.code) ?? Number.MAX_SAFE_INTEGER;
-          return da - db;
-        });
+      if (this.isListMode()) {
+        this.listAllFields = this.fieldsMeta.map((field) => ({ ...field }));
+        await this.applyListFieldScope(this.listFieldScopeMode, { skipRender: true });
+      } else {
+        this.listAllFields = [];
+        const sorted = this.sortFieldsByViewOrder(this.fieldsMeta);
+        this.defaultFieldCodes = sorted.map((field) => field.code);
+        const savedPref = await this.getSavedColumnPref(this.defaultFieldCodes);
+        const savedOrder = savedPref?.order || null;
+        if (savedOrder?.length) {
+          const savedIndex = new Map(savedOrder.map((code, index) => [code, index]));
+          const defaultIndex = new Map(this.defaultFieldCodes.map((code, index) => [code, index]));
+          sorted.sort((a, b) => {
+            const ap = savedIndex.has(a.code) ? savedIndex.get(a.code) : Number.MAX_SAFE_INTEGER;
+            const bp = savedIndex.has(b.code) ? savedIndex.get(b.code) : Number.MAX_SAFE_INTEGER;
+            if (ap !== bp) return ap - bp;
+            const da = defaultIndex.get(a.code) ?? Number.MAX_SAFE_INTEGER;
+            const db = defaultIndex.get(b.code) ?? Number.MAX_SAFE_INTEGER;
+            return da - db;
+          });
+        }
+        const widthMap = new Map();
+        if (savedPref?.widths) {
+          Object.entries(savedPref.widths).forEach(([code, value]) => {
+            const numeric = Number(value);
+            if (Number.isFinite(numeric)) {
+              widthMap.set(code, Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, numeric)));
+            }
+          });
+        }
+        this.fields = sorted.map((field) => ({
+          ...field,
+          required: Boolean(field.required),
+          choices: Array.isArray(field.choices) ? field.choices.map((choice) => String(choice)) : [],
+          editable: true,
+          width: widthMap.get(field.code) || DEFAULT_COLUMN_WIDTH
+        }));
       }
-      const widthMap = new Map();
-      if (savedPref?.widths) {
-        Object.entries(savedPref.widths).forEach(([code, value]) => {
-          const numeric = Number(value);
-          if (Number.isFinite(numeric)) {
-            widthMap.set(code, Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, numeric)));
-          }
-        });
-      }
-      this.fields = sorted.map((field) => ({
-        ...field,
-        required: Boolean(field.required),
-        choices: Array.isArray(field.choices) ? field.choices.map((choice) => String(choice)) : [],
-        editable: true,
-        width: widthMap.get(field.code) || DEFAULT_COLUMN_WIDTH
-      }));
       this.rebuildFieldMaps();
       await this.loadPermissions();
       await this.loadCurrentPageRecords();
+      if (this.isDetailSingleRowMode()) {
+        if (!this.rows.length) {
+          throw new Error('Detail record not found');
+        }
+        if (this.rows.length > 1) {
+          this.rows = this.rows.slice(0, 1);
+          this.rebuildRowMaps();
+          this.recomputeFilteredRowIds();
+        }
+        this.totalCount = 1;
+      }
       if (this.columnButton) {
         this.columnButton.disabled = !this.fields.length;
       }
@@ -1644,6 +2164,8 @@
     resetViewAfterSort() {
       this.closeFilterPanel();
       this.closeRadioPicker();
+      this.closeMultiChoicePicker();
+      this.closeMultilineEditor();
       this.selection = null;
       this.armedCell = null;
       this.editingCell = null;
@@ -1731,7 +2253,7 @@
       if (!field) return 'text';
       if (field.type === 'NUMBER') return 'number';
       if (field.type === 'DATE') return 'date';
-      if (field.type === 'RADIO_BUTTON' || field.type === 'DROP_DOWN') return 'choice';
+      if (field.type === 'RADIO_BUTTON' || field.type === 'DROP_DOWN' || field.type === 'CHECK_BOX' || field.type === 'MULTI_SELECT') return 'choice';
       return 'text';
     }
 
@@ -1809,6 +2331,10 @@
       if (filter.type === 'choice') {
         const selected = Array.isArray(filter.values) ? filter.values.map((item) => String(item ?? '')) : [];
         if (!selected.length) return true;
+        if (Array.isArray(value)) {
+          const currentValues = value.map((item) => String(item ?? ''));
+          return currentValues.some((item) => selected.includes(item));
+        }
         return selected.includes(String(value ?? ''));
       }
       const needle = String(filter.value || '').trim().toLowerCase();
@@ -1843,6 +2369,8 @@
     resetViewAfterFilter() {
       this.closeFilterPanel();
       this.closeRadioPicker();
+      this.closeMultiChoicePicker();
+      this.closeMultilineEditor();
       this.selection = null;
       this.armedCell = null;
       this.editingCell = null;
@@ -2039,15 +2567,27 @@
     }
 
     updatePagerUi() {
+      if (this.isDetailSingleRowMode()) {
+        if (this.pageLabelElement) {
+          this.pageLabelElement.textContent = this.rows.length ? '1-1 / 1' : '0-0 / 0';
+        }
+        if (this.prevPageButton) this.prevPageButton.disabled = true;
+        if (this.nextPageButton) this.nextPageButton.disabled = true;
+        return;
+      }
       if (this.pageLabelElement) {
         const total = Math.max(0, Number(this.totalCount || 0));
         if (!total) {
           this.pageLabelElement.textContent = '0-0 / 0';
         } else {
-          const start = this.pageOffset + 1;
-          const visible = this.rows.length || this.pageSize;
-          const end = Math.min(this.pageOffset + visible, total);
-          this.pageLabelElement.textContent = `${start}-${end} / ${total}`;
+          const visible = Math.max(0, this.getVisibleRowCount());
+          if (!visible) {
+            this.pageLabelElement.textContent = `0-0 / ${total}`;
+          } else {
+            const start = Math.min(this.pageOffset + 1, total);
+            const end = Math.min(this.pageOffset + visible, total);
+            this.pageLabelElement.textContent = `${start}-${end} / ${total}`;
+          }
         }
       }
       if (this.prevPageButton) {
@@ -2060,7 +2600,7 @@
     }
 
     async loadCurrentPageRecords() {
-      const fieldCodes = this.fields.map((f) => f.code);
+      const fieldCodes = this.getRecordFetchFieldCodes();
       const pagedQuery = this.buildPagedQuery();
       console.debug('[excel-query]', {
         baseQuery: this.baseQuery || this.query || '',
@@ -2133,6 +2673,29 @@
       }
     }
 
+    async refreshListRowsAfterSave() {
+      if (!this.isListMode()) return;
+      await this.loadCurrentPageRecords();
+      const total = Math.max(0, Number(this.totalCount || 0));
+      if (!this.rows.length && total > 0 && this.pageOffset > 0) {
+        const maxOffset = Math.max(0, Math.floor((total - 1) / this.pageSize) * this.pageSize);
+        if (maxOffset !== this.pageOffset) {
+          this.pageOffset = maxOffset;
+          await this.loadCurrentPageRecords();
+        }
+      }
+      if (this.bodyScroll) this.bodyScroll.scrollTop = 0;
+      this.selection = null;
+      this.armedCell = null;
+      this.pendingFocus = null;
+      this.pendingEdit = null;
+      this.virtualStart = 0;
+      this.virtualEnd = 0;
+      this.renderGrid();
+      this.updateStats();
+      this.updatePagerUi();
+    }
+
     async prevPage() {
       if (this.pageOffset <= 0 || this.paging) return;
       if (!this.confirmPageMoveIfNeeded()) return;
@@ -2175,6 +2738,77 @@
     isChoiceField(field) {
       const type = field?.type || '';
       return type === 'RADIO_BUTTON' || type === 'DROP_DOWN';
+    }
+
+    isMultiChoiceField(field) {
+      const type = String(field?.type || '').toUpperCase();
+      return type === 'CHECK_BOX' || type === 'MULTI_SELECT';
+    }
+
+    isMultiLineField(field) {
+      return String(field?.type || '').toUpperCase() === 'MULTI_LINE_TEXT';
+    }
+
+    isLinkField(field) {
+      return String(field?.type || '').toUpperCase() === 'LINK';
+    }
+
+    isRichTextField(field) {
+      return String(field?.type || '').toUpperCase() === 'RICH_TEXT';
+    }
+
+    isCalcField(field) {
+      return String(field?.type || '').toUpperCase() === 'CALC';
+    }
+
+    isMultiValueField(field) {
+      return this.isMultiChoiceField(field);
+    }
+
+    normalizeMultiValue(value, field) {
+      let values = [];
+      if (Array.isArray(value)) {
+        values = value;
+      } else if (typeof value === 'string') {
+        const raw = value.trim();
+        values = raw ? raw.split(/\r?\n|,/g) : [];
+      } else if (value == null) {
+        values = [];
+      } else {
+        values = [value];
+      }
+      const normalized = [];
+      const seen = new Set();
+      values.forEach((item) => {
+        const text = String(item ?? '').trim();
+        if (!text || seen.has(text)) return;
+        seen.add(text);
+        normalized.push(text);
+      });
+      const choices = Array.isArray(field?.choices)
+        ? field.choices.map((choice) => String(choice ?? '').trim()).filter(Boolean)
+        : [];
+      if (!choices.length) return normalized;
+      const choiceSet = new Set(choices);
+      return normalized.filter((item) => choiceSet.has(item));
+    }
+
+    extractPlainTextFromRichText(value) {
+      const html = String(value ?? '');
+      if (!html) return '';
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        return String(doc.body?.textContent || '').replace(/\s+/g, ' ').trim();
+      } catch (_err) {
+        return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      }
+    }
+
+    formatMultiLinePreview(value) {
+      const text = String(value ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const preview = text.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 2).join(' / ');
+      return preview || '';
     }
 
     isSubtableField(field) {
@@ -2283,11 +2917,14 @@
       const canEdit = this.canEditOverlay();
       const canSave = this.canSaveOverlay();
       if (this.addRowButton) {
-        const allowed = canEdit && this.permissionService.canAddRow();
+        const allowed = !this.isDetailSingleRowMode() && canEdit && this.permissionService.canAddRow();
+        const blockedReason = this.isDetailSingleRowMode()
+          ? ''
+          : (canEdit ? resolveText(this.language, 'permNoAdd') : resolveText(this.language, 'toastViewOnlyBlocked'));
         this.addRowButton.disabled = this.saving || !allowed;
         this.addRowButton.title = allowed
           ? ''
-          : (canEdit ? resolveText(this.language, 'permNoAdd') : resolveText(this.language, 'toastViewOnlyBlocked'));
+          : blockedReason;
       }
       if (this.saveButton && !this.saving) {
         let dirtyCount = 0;
@@ -2316,6 +2953,9 @@
         }
         return [];
       }
+      if (this.isMultiValueField(field)) {
+        return this.normalizeMultiValue(value, field);
+      }
       return value === undefined || value === null ? '' : String(value);
     }
 
@@ -2323,6 +2963,15 @@
       if (this.isSubtableField(field)) {
         const count = Array.isArray(value) ? value.length : 0;
         return count ? resolveText(this.language, 'subtableRows', count) : '';
+      }
+      if (this.isMultiValueField(field)) {
+        return this.normalizeMultiValue(value, field).join(', ');
+      }
+      if (this.isRichTextField(field)) {
+        return this.extractPlainTextFromRichText(value);
+      }
+      if (this.isMultiLineField(field)) {
+        return this.formatMultiLinePreview(value);
       }
       return value === undefined || value === null ? '' : String(value);
     }
@@ -2349,6 +2998,134 @@
       }
       await chrome.storage.sync.set({ [COLUMN_PREF_STORAGE_KEY]: map });
       this.columnPrefCache = { ...map };
+    }
+
+    async loadSubtableWidthPrefMap(force = false) {
+      if (!force && this.subtableWidthPrefCache) return this.subtableWidthPrefCache;
+      try {
+        const stored = await chrome.storage.sync.get(SUBTABLE_WIDTH_PREF_STORAGE_KEY);
+        const raw = stored?.[SUBTABLE_WIDTH_PREF_STORAGE_KEY];
+        const map = raw && typeof raw === 'object' ? raw : {};
+        this.subtableWidthPrefCache = { ...map };
+        return this.subtableWidthPrefCache;
+      } catch (_err) {
+        this.subtableWidthPrefCache = {};
+        return this.subtableWidthPrefCache;
+      }
+    }
+
+    async writeSubtableWidthPrefMap(map) {
+      if (!map || !Object.keys(map).length) {
+        await chrome.storage.sync.remove(SUBTABLE_WIDTH_PREF_STORAGE_KEY);
+        this.subtableWidthPrefCache = {};
+        return;
+      }
+      await chrome.storage.sync.set({ [SUBTABLE_WIDTH_PREF_STORAGE_KEY]: map });
+      this.subtableWidthPrefCache = { ...map };
+    }
+
+    getSubtableWidthPrefKey(subtableFieldCode) {
+      const app = this.appId ? String(this.appId) : '0';
+      const fieldCode = String(subtableFieldCode || '').trim() || 'subtable';
+      return `${app}::${fieldCode}`;
+    }
+
+    getSubtableColumnWidthRange(type) {
+      const t = String(type || '').toUpperCase();
+      if (t === 'NUMBER' || t === 'DATE') {
+        return { min: 120, max: 160, base: 132 };
+      }
+      if (t === 'DROP_DOWN' || t === 'RADIO_BUTTON') {
+        return { min: 160, max: 260, base: 180 };
+      }
+      if (t === 'MULTI_LINE_TEXT') {
+        return { min: 240, max: 360, base: 280 };
+      }
+      return { min: 160, max: 320, base: 190 };
+    }
+
+    normalizeSubtableColumnWidth(width, type) {
+      const range = this.getSubtableColumnWidthRange(type);
+      const numeric = Number(width);
+      if (!Number.isFinite(numeric)) return range.base;
+      return Math.max(range.min, Math.min(range.max, Math.round(numeric)));
+    }
+
+    estimateSubtableCellWidth(text) {
+      const str = String(text ?? '');
+      if (!str) return 0;
+      let width = 0;
+      for (const ch of str) {
+        width += ch.charCodeAt(0) > 255 ? 14 : 8;
+      }
+      return width + 28;
+    }
+
+    computeSubtableAutoWidths(childFields, editorRows) {
+      const rows = Array.isArray(editorRows) ? editorRows : [];
+      const next = {};
+      (Array.isArray(childFields) ? childFields : []).forEach((child) => {
+        const code = String(child?.code || '').trim();
+        if (!code) return;
+        const range = this.getSubtableColumnWidthRange(child.type);
+        let width = Math.max(range.base, this.estimateSubtableCellWidth(child.label || child.code));
+        rows.slice(0, 80).forEach((item) => {
+          const raw = item?.value?.[code]?.value ?? '';
+          width = Math.max(width, this.estimateSubtableCellWidth(raw));
+        });
+        next[code] = this.normalizeSubtableColumnWidth(width, child.type);
+      });
+      return next;
+    }
+
+    async getInitialSubtableColumnWidths(subtableFieldCode, childFields, editorRows) {
+      const map = await this.loadSubtableWidthPrefMap();
+      const pref = map[this.getSubtableWidthPrefKey(subtableFieldCode)];
+      const widths = {};
+      (Array.isArray(childFields) ? childFields : []).forEach((child) => {
+        const code = String(child?.code || '').trim();
+        if (!code) return;
+        const saved = pref?.widths?.[code];
+        if (saved !== undefined) {
+          widths[code] = this.normalizeSubtableColumnWidth(saved, child.type);
+          return;
+        }
+        widths[code] = this.computeSubtableAutoWidths([child], editorRows)[code];
+      });
+      return widths;
+    }
+
+    async persistSubtableColumnWidths(subtableFieldCode, widths) {
+      const fieldCode = String(subtableFieldCode || '').trim();
+      if (!fieldCode || !widths || typeof widths !== 'object') return;
+      const sanitized = {};
+      Object.entries(widths).forEach(([code, width]) => {
+        const key = String(code || '').trim();
+        if (!key) return;
+        sanitized[key] = Math.max(80, Math.min(420, Math.round(Number(width) || 0)));
+      });
+      if (!Object.keys(sanitized).length) return;
+      const map = { ...(await this.loadSubtableWidthPrefMap()) };
+      const key = this.getSubtableWidthPrefKey(fieldCode);
+      map[key] = {
+        appId: this.appId || '',
+        fieldCode,
+        widths: sanitized,
+        savedAt: Date.now()
+      };
+      const entries = Object.entries(map);
+      if (entries.length > MAX_SUBTABLE_WIDTH_PREF_ENTRIES) {
+        entries.sort((a, b) => {
+          const aTime = a[1]?.savedAt || 0;
+          const bTime = b[1]?.savedAt || 0;
+          return aTime - bTime;
+        });
+        while (entries.length > MAX_SUBTABLE_WIDTH_PREF_ENTRIES) {
+          const [oldKey] = entries.shift();
+          if (oldKey) delete map[oldKey];
+        }
+      }
+      await this.writeSubtableWidthPrefMap(map);
     }
 
     getColumnPrefKey() {
@@ -2789,11 +3566,12 @@
       const revision = record?.$revision?.value ? String(record.$revision.value) : undefined;
       const values = {};
       const original = {};
-      this.fields.forEach((field) => {
-        const raw = record?.[field.code]?.value;
+      this.getRecordFetchFieldCodes().forEach((fieldCode) => {
+        const field = this.getFieldDefinition(fieldCode);
+        const raw = record?.[fieldCode]?.value;
         const baseValue = this.cloneFieldValue(field, raw);
-        values[field.code] = baseValue;
-        original[field.code] = this.cloneFieldValue(field, baseValue);
+        values[fieldCode] = baseValue;
+        original[fieldCode] = this.cloneFieldValue(field, baseValue);
       });
       return { id, revision, values, original, isNew: false };
     }
@@ -2817,21 +3595,39 @@
       if (!this.surface) return;
       this.closeFilterPanel();
       this.closeRadioPicker();
+      this.closeMultiChoicePicker();
+      this.closeMultilineEditor();
       this.inputsByRow.clear();
       if (this.columnHeaderScroll) {
-        this.columnHeaderScroll.style.transform = 'translateX(0px)';
+        this.columnHeaderScroll.style.transform = '';
       }
-      const headRow = this.columnHeaderScroll.querySelector('.pb-overlay__col-row');
-      headRow.textContent = '';
-      const rowWrap = this.rowHeaderScroll.querySelector('.pb-overlay__row-wrap');
-      const table = this.bodyScroll.querySelector('.pb-overlay__table');
-      rowWrap.textContent = '';
-      table.textContent = '';
+      const headRow = this.columnHeaderScroll?.querySelector('.pb-overlay__col-row');
+      if (headRow) {
+        headRow.style.transform = 'translateX(0px)';
+      }
+      const rowWrap = this.rowHeaderScroll?.querySelector('.pb-overlay__row-wrap');
+      const table = this.bodyScroll?.querySelector('.pb-overlay__table');
+      if (headRow) headRow.textContent = '';
+      if (rowWrap) rowWrap.textContent = '';
+      if (table) table.textContent = '';
+      if (this.detailFormContainer) {
+        this.detailFormContainer.textContent = '';
+      }
+      if (this.gridRoot) {
+        this.gridRoot.classList.toggle('pb-overlay__grid--detail-form', this.isDetailFormLayoutMode());
+      }
+
+      if (this.isDetailFormLayoutMode()) {
+        this.rowHeaderContainer = null;
+        this.tableContainer = null;
+        this.renderDetailForm();
+        return;
+      }
 
       const visibleRows = this.getVisibleRows();
       const totalHeight = Math.max(0, visibleRows.length * this.rowHeight);
-      rowWrap.style.height = `${totalHeight}px`;
-      table.style.height = `${totalHeight}px`;
+      if (rowWrap) rowWrap.style.height = `${totalHeight}px`;
+      if (table) table.style.height = `${totalHeight}px`;
 
       this.fields.forEach((field, index) => {
         const headerCell = document.createElement('div');
@@ -2878,7 +3674,7 @@
         });
         headerCell.appendChild(headerMain);
         headerCell.appendChild(filterBtn);
-        headRow.appendChild(headerCell);
+        headRow?.appendChild(headerCell);
       });
 
       const rowContainer = document.createElement('div');
@@ -2889,7 +3685,7 @@
       rowContainer.style.right = '0';
       rowContainer.style.width = '100%';
       this.rowHeaderContainer = rowContainer;
-      rowWrap.appendChild(rowContainer);
+      rowWrap?.appendChild(rowContainer);
 
       const tableContainer = document.createElement('div');
       tableContainer.className = 'pb-overlay__table-virtual';
@@ -2899,14 +3695,89 @@
       const totalWidth = this.fields.reduce((sum, field) => sum + (field.width || DEFAULT_COLUMN_WIDTH), 0);
       tableContainer.style.width = `${totalWidth}px`;
       this.tableContainer = tableContainer;
-      table.appendChild(tableContainer);
+      table?.appendChild(tableContainer);
 
       this.virtualStart = 0;
       this.virtualEnd = 0;
       this.updateVirtualRows(true);
     }
 
+    renderDetailForm() {
+      if (!this.detailFormContainer) return;
+      const visibleRows = this.getVisibleRows();
+      const row = visibleRows[0] || null;
+      const pendingDelete = Boolean(row && this.pendingDeletes.has(String(row.id || '').trim()));
+      const formContainer = this.detailFormContainer;
+      formContainer.textContent = '';
+      formContainer.classList.toggle('pb-overlay__detail-form--pending-delete', pendingDelete);
+      const table = document.createElement('div');
+      table.className = 'pb-overlay__detail-form-table';
+      const head = document.createElement('div');
+      head.className = 'pb-overlay__detail-form-head';
+      const fieldHead = document.createElement('span');
+      fieldHead.className = 'pb-overlay__detail-form-head-cell';
+      fieldHead.textContent = resolveText(this.language, 'formFieldHeader');
+      const valueHead = document.createElement('span');
+      valueHead.className = 'pb-overlay__detail-form-head-cell';
+      valueHead.textContent = resolveText(this.language, 'formValueHeader');
+      head.appendChild(fieldHead);
+      head.appendChild(valueHead);
+      table.appendChild(head);
+
+      const inputsRow = [];
+      if (row) {
+        this.fields.forEach((field, colIndex) => {
+          const rowLine = document.createElement('div');
+          rowLine.className = 'pb-overlay__detail-form-row';
+          const fieldCell = document.createElement('div');
+          fieldCell.className = 'pb-overlay__detail-form-field';
+          fieldCell.textContent = field.label || field.code;
+          fieldCell.title = field.label || field.code;
+
+          const valueCell = document.createElement('div');
+          valueCell.className = 'pb-overlay__detail-form-value';
+          const cell = document.createElement('div');
+          cell.className = 'pb-overlay__cell pb-overlay__detail-form-data-cell';
+          cell.dataset.fieldCode = String(field.code || '');
+          const input = this.createInputBase(field);
+          this.bindInputToRow(input, field, row, 0, colIndex);
+          cell.appendChild(input);
+          if (this.isSubtableField(field)) {
+            valueCell.classList.add('pb-overlay__detail-form-value--subtable');
+            cell.classList.add('pb-overlay__detail-form-data-cell--subtable');
+            valueCell.title = resolveText(this.language, 'btnSubtableEdit');
+            const activate = (event) => {
+              this.activateDetailFormSubtable(event, input, 0, colIndex);
+            };
+            valueCell.addEventListener('mousedown', activate);
+            valueCell.addEventListener('click', activate);
+          }
+          this.applyCellVisualState(input, row, field.code);
+          valueCell.appendChild(cell);
+
+          rowLine.appendChild(fieldCell);
+          rowLine.appendChild(valueCell);
+          table.appendChild(rowLine);
+          inputsRow[colIndex] = input;
+        });
+        this.inputsByRow.set(0, inputsRow);
+      }
+      formContainer.appendChild(table);
+      this.virtualStart = 0;
+      this.virtualEnd = row ? 1 : 0;
+      this.repaintSelection();
+      this.restorePendingFocus();
+    }
+
     updateVirtualRows(force = false) {
+      if (this.isDetailFormLayoutMode()) {
+        if (force) {
+          this.renderDetailForm();
+        } else {
+          this.restorePendingFocus();
+        }
+        return;
+      }
       if (!this.bodyScroll || !this.tableContainer || !this.rowHeaderContainer) return;
       const visibleRows = this.getVisibleRows();
       const totalRows = visibleRows.length;
@@ -2925,7 +3796,7 @@
       this.rowHeaderContainer.textContent = '';
       this.rowHeaderContainer.style.height = `${totalRows * this.rowHeight}px`;
       this.tableContainer.textContent = '';
-      const totalWidth = this.fields.length * 160;
+      const totalWidth = this.fields.reduce((sum, field) => sum + (field.width || DEFAULT_COLUMN_WIDTH), 0);
       this.tableContainer.style.width = `${totalWidth}px`;
 
       const headerFrag = document.createDocumentFragment();
@@ -2938,7 +3809,9 @@
         const pendingDelete = this.pendingDeletes.has(recordId);
         const rowEditable = this.isOverlayEditable() && this.permissionService.canEditRecord(recordId);
         const rowEditableVisual = this.isOverlayViewOnly() ? true : rowEditable;
-        const rowDeletable = this.isOverlayEditable() && this.permissionService.canDeleteRecord(recordId);
+        const rowDeletable = !this.isDetailSingleRowMode()
+          && this.isOverlayEditable()
+          && this.permissionService.canDeleteRecord(recordId);
         const top = rowIndex * this.rowHeight;
 
         const header = document.createElement('div');
@@ -3044,10 +3917,20 @@
       input.className = 'pb-overlay__input';
       input.spellcheck = false;
       if (field.type === 'NUMBER') input.inputMode = 'decimal';
+      if (field.type === 'LINK') input.inputMode = 'url';
       if (field.type === 'DATE') input.type = 'date';
       else input.type = 'text';
       if (this.isChoiceField(field)) {
         input.placeholder = field.choices?.[0] || '';
+      }
+      if (this.isMultiChoiceField(field)) {
+        input.placeholder = resolveText(this.language, 'multiChoiceTitle');
+      }
+      if (this.isMultiLineField(field)) {
+        input.placeholder = resolveText(this.language, 'multilineTitle');
+      }
+      if (this.isRichTextField(field)) {
+        input.placeholder = resolveText(this.language, 'richTextReadonly');
       }
       if (this.isSubtableField(field)) {
         input.placeholder = resolveText(this.language, 'btnSubtableEdit');
@@ -3063,8 +3946,8 @@
       input.addEventListener('blur', (event) => {
         this.handleInputBlur(event, input);
       });
-      input.addEventListener('click', () => {
-        this.handleChoiceInputClick(input);
+      input.addEventListener('click', (event) => {
+        this.handleChoiceInputClick(event, input);
       });
       return input;
     }
@@ -3089,6 +3972,11 @@
       const lookupReadonly = permission.reason === 'lookup_readonly';
       const isDropdown = field?.type === 'DROP_DOWN';
       const isRadio = field?.type === 'RADIO_BUTTON';
+      const isMultiChoice = this.isMultiChoiceField(field);
+      const isLink = this.isLinkField(field);
+      const isMultiLine = this.isMultiLineField(field);
+      const isCalc = this.isCalcField(field);
+      const isRichText = this.isRichTextField(field);
       const isLookupKey = field?.type === 'SINGLE_LINE_TEXT' && Boolean(field?.lookup);
       const fieldDeniedByAcl = permission.reason === 'field_readonly';
       this.setInputEditingVisual(input, editing);
@@ -3106,6 +3994,11 @@
         input.parentElement.classList.toggle('pb-overlay__cell--readonly', !editableVisual);
         input.parentElement.classList.toggle('pb-overlay__cell--dropdown', isDropdown);
         input.parentElement.classList.toggle('pb-overlay__cell--radio', isRadio);
+        input.parentElement.classList.toggle('pb-overlay__cell--multichoice', isMultiChoice);
+        input.parentElement.classList.toggle('pb-overlay__cell--link', isLink);
+        input.parentElement.classList.toggle('pb-overlay__cell--multiline', isMultiLine);
+        input.parentElement.classList.toggle('pb-overlay__cell--calc', isCalc);
+        input.parentElement.classList.toggle('pb-overlay__cell--richtext', isRichText);
         input.parentElement.classList.toggle('pb-overlay__cell--lookup', isLookupKey);
       }
     }
@@ -3163,6 +4056,11 @@
       const lookupReadonly = permission.reason === 'lookup_readonly';
       const isDropdown = field?.type === 'DROP_DOWN';
       const isRadio = field?.type === 'RADIO_BUTTON';
+      const isMultiChoice = this.isMultiChoiceField(field);
+      const isLink = this.isLinkField(field);
+      const isMultiLine = this.isMultiLineField(field);
+      const isCalc = this.isCalcField(field);
+      const isRichText = this.isRichTextField(field);
       const isLookupKey = field?.type === 'SINGLE_LINE_TEXT' && Boolean(field?.lookup);
       const fieldDeniedByAcl = permission.reason === 'field_readonly';
       this.setInputEditingVisual(input, editing);
@@ -3179,6 +4077,11 @@
       cell.classList.toggle('pb-overlay__cell--lookup-auto', lookupReadonly);
       cell.classList.toggle('pb-overlay__cell--dropdown', isDropdown);
       cell.classList.toggle('pb-overlay__cell--radio', isRadio);
+      cell.classList.toggle('pb-overlay__cell--multichoice', isMultiChoice);
+      cell.classList.toggle('pb-overlay__cell--link', isLink);
+      cell.classList.toggle('pb-overlay__cell--multiline', isMultiLine);
+      cell.classList.toggle('pb-overlay__cell--calc', isCalc);
+      cell.classList.toggle('pb-overlay__cell--richtext', isRichText);
       cell.classList.toggle('pb-overlay__cell--lookup', isLookupKey);
       cell.classList.toggle('pb-overlay__cell--editing', editing);
     }
@@ -3200,6 +4103,10 @@
         this.ensureCellVisible(r, c);
       }
       this.pendingFocus = { rowIndex: r, colIndex: c };
+      if (this.isDetailFormLayoutMode()) {
+        this.restorePendingFocus();
+        return;
+      }
       if (r < this.virtualStart || r >= this.virtualEnd) {
         if (this.bodyScroll) {
           this.updateVirtualRows(true);
@@ -3223,29 +4130,33 @@
     }
 
     ensureCellVisible(rowIndex, colIndex) {
-      if (!this.bodyScroll) return;
+      const scroller = this.getGridScrollElement();
+      if (!scroller) return;
       const rowTop = rowIndex * this.rowHeight;
       const rowBottom = rowTop + this.rowHeight;
-      const viewTop = this.bodyScroll.scrollTop;
-      const viewBottom = viewTop + this.bodyScroll.clientHeight;
+      const viewTop = scroller.scrollTop;
+      const viewBottom = viewTop + scroller.clientHeight;
       if (rowTop < viewTop) {
-        this.bodyScroll.scrollTop = rowTop;
+        scroller.scrollTop = rowTop;
       } else if (rowBottom > viewBottom) {
-        this.bodyScroll.scrollTop = rowBottom - this.bodyScroll.clientHeight;
+        scroller.scrollTop = rowBottom - scroller.clientHeight;
       }
 
       const colLeft = this.getColumnLeft(colIndex);
       const colRight = colLeft + this.getColumnWidth(colIndex);
-      const viewLeft = this.bodyScroll.scrollLeft;
-      const viewRight = viewLeft + this.bodyScroll.clientWidth;
+      const viewLeft = scroller.scrollLeft;
+      const viewRight = viewLeft + scroller.clientWidth;
       if (colLeft < viewLeft) {
-        this.bodyScroll.scrollLeft = colLeft;
+        scroller.scrollLeft = colLeft;
       } else if (colRight > viewRight) {
-        this.bodyScroll.scrollLeft = colRight - this.bodyScroll.clientWidth;
+        scroller.scrollLeft = colRight - scroller.clientWidth;
       }
     }
 
     getGridScrollElement() {
+      if (this.isDetailFormLayoutMode() && this.detailFormContainer) {
+        return this.detailFormContainer;
+      }
       return this.bodyScroll || null;
     }
 
@@ -3483,6 +4394,238 @@
       }
     }
 
+    openMultiChoicePicker(rowIndex, colIndex, input) {
+      if (!this.root || !input) return;
+      const field = this.fields[colIndex];
+      const row = this.getVisibleRowAt(rowIndex);
+      if (!field || !row || !this.isMultiChoiceField(field)) return;
+      const choices = Array.from(new Set((Array.isArray(field.choices) ? field.choices : [])
+        .map((choice) => String(choice || '').trim())
+        .filter(Boolean)));
+      if (!choices.length) return;
+
+      this.closeMultiChoicePicker();
+      const draftValues = new Set(this.normalizeMultiValue(row.values[field.code], field));
+
+      const panel = document.createElement('div');
+      panel.className = 'pb-overlay__choice-panel pb-overlay__choice-panel--multi';
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-label', field.label || field.code || resolveText(this.language, 'multiChoiceTitle'));
+
+      const title = document.createElement('div');
+      title.className = 'pb-overlay__choice-panel-title';
+      title.textContent = field.label || resolveText(this.language, 'multiChoiceTitle');
+      panel.appendChild(title);
+
+      const list = document.createElement('div');
+      list.className = 'pb-overlay__choice-list';
+      choices.forEach((choice) => {
+        const label = document.createElement('label');
+        label.className = 'pb-overlay__choice-check';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = choice;
+        checkbox.checked = draftValues.has(choice);
+        checkbox.addEventListener('change', () => {
+          if (checkbox.checked) draftValues.add(choice);
+          else draftValues.delete(choice);
+        });
+        const text = document.createElement('span');
+        text.textContent = choice;
+        label.appendChild(checkbox);
+        label.appendChild(text);
+        list.appendChild(label);
+      });
+      panel.appendChild(list);
+
+      const actions = document.createElement('div');
+      actions.className = 'pb-overlay__choice-actions';
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'pb-overlay__btn';
+      clearBtn.textContent = resolveText(this.language, 'multiChoiceClear');
+      clearBtn.addEventListener('click', () => {
+        draftValues.clear();
+        panel.querySelectorAll('input[type="checkbox"]').forEach((el) => {
+          if (el instanceof HTMLInputElement) el.checked = false;
+        });
+      });
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'pb-overlay__btn';
+      cancelBtn.textContent = resolveText(this.language, 'subtableCancel');
+      cancelBtn.addEventListener('click', () => this.closeMultiChoicePicker(true));
+      const applyBtn = document.createElement('button');
+      applyBtn.type = 'button';
+      applyBtn.className = 'pb-overlay__btn pb-overlay__btn--primary';
+      applyBtn.textContent = resolveText(this.language, 'multiChoiceApply');
+      applyBtn.addEventListener('click', () => {
+        const nextValues = choices.filter((choice) => draftValues.has(choice));
+        this.applyEditorValueChange(String(row.id || ''), field, nextValues, {
+          historyType: 'cell-edit',
+          pushHistory: true,
+          applyFilters: true
+        });
+        this.closeMultiChoicePicker(true);
+      });
+      actions.appendChild(clearBtn);
+      actions.appendChild(cancelBtn);
+      actions.appendChild(applyBtn);
+      panel.appendChild(actions);
+
+      panel.style.visibility = 'hidden';
+      panel.style.left = '0px';
+      panel.style.top = '0px';
+      this.root.appendChild(panel);
+      this.positionRadioPicker(panel, input);
+      panel.style.visibility = 'visible';
+
+      const focusTarget = panel.querySelector('input[type="checkbox"]');
+      if (focusTarget instanceof HTMLElement) {
+        requestAnimationFrame(() => {
+          try {
+            focusTarget.focus();
+          } catch (_e) { /* noop */ }
+        });
+      }
+      this.multiChoicePicker = { panel, input, rowIndex, colIndex };
+      if (this.bodyScroll) {
+        this.bodyScroll.addEventListener('scroll', this.boundMultiChoicePickerScrollHandler, { passive: true });
+      }
+      window.addEventListener('resize', this.boundMultiChoicePickerResizeHandler);
+      document.addEventListener('mousedown', this.boundMultiChoicePickerOutsideClick, true);
+    }
+
+    repositionMultiChoicePicker() {
+      if (!this.multiChoicePicker?.panel || !this.multiChoicePicker.input) return;
+      if (!this.root || !this.root.contains(this.multiChoicePicker.input)) {
+        this.closeMultiChoicePicker();
+        return;
+      }
+      this.positionRadioPicker(this.multiChoicePicker.panel, this.multiChoicePicker.input);
+    }
+
+    closeMultiChoicePicker(focusInput = false) {
+      if (!this.multiChoicePicker) return;
+      const { panel, input } = this.multiChoicePicker;
+      if (panel?.parentElement) {
+        panel.remove();
+      }
+      this.multiChoicePicker = null;
+      if (this.bodyScroll) {
+        this.bodyScroll.removeEventListener('scroll', this.boundMultiChoicePickerScrollHandler);
+      }
+      window.removeEventListener('resize', this.boundMultiChoicePickerResizeHandler);
+      document.removeEventListener('mousedown', this.boundMultiChoicePickerOutsideClick, true);
+      if (focusInput && input) {
+        try {
+          input.focus();
+        } catch (_e) { /* noop */ }
+      }
+    }
+
+    openMultilineEditor(rowIndex, colIndex, anchorInput = null) {
+      if (!this.root) return;
+      const row = this.getVisibleRowAt(rowIndex);
+      const field = this.fields[colIndex];
+      if (!row || !field || !this.isMultiLineField(field)) return;
+      const recordId = String(row.id || '').trim();
+      if (!recordId) return;
+      const editable = this.isOverlayEditable() && this.permissionService.canEditCell(recordId, field.code);
+      if (!editable) {
+        this.notifyViewOnlyBlocked();
+        return;
+      }
+
+      this.closeMultilineEditor();
+      this.closeRadioPicker();
+      this.closeMultiChoicePicker();
+      this.exitEditMode();
+
+      const layer = document.createElement('div');
+      layer.className = 'pb-overlay__multiline-layer';
+      const panel = document.createElement('div');
+      panel.className = 'pb-overlay__multiline-panel';
+      panel.addEventListener('click', (event) => event.stopPropagation());
+
+      const head = document.createElement('div');
+      head.className = 'pb-overlay__multiline-head';
+      const title = document.createElement('div');
+      title.className = 'pb-overlay__multiline-title';
+      title.textContent = `${resolveText(this.language, 'multilineTitle')}: ${field.label || field.code}`;
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'pb-overlay__multiline-close';
+      closeBtn.textContent = '×';
+      closeBtn.title = resolveText(this.language, 'multilineCancel');
+      closeBtn.setAttribute('aria-label', resolveText(this.language, 'multilineCancel'));
+      closeBtn.addEventListener('click', () => this.closeMultilineEditor(true));
+      head.appendChild(title);
+      head.appendChild(closeBtn);
+
+      const body = document.createElement('div');
+      body.className = 'pb-overlay__multiline-body';
+      const textarea = document.createElement('textarea');
+      textarea.className = 'pb-overlay__multiline-input';
+      textarea.value = String(row.values[field.code] ?? '');
+      body.appendChild(textarea);
+
+      const footer = document.createElement('div');
+      footer.className = 'pb-overlay__multiline-foot';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'pb-overlay__btn';
+      cancelBtn.textContent = resolveText(this.language, 'multilineCancel');
+      cancelBtn.addEventListener('click', () => this.closeMultilineEditor(true));
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.className = 'pb-overlay__btn pb-overlay__btn--primary';
+      saveBtn.textContent = resolveText(this.language, 'multilineSave');
+      saveBtn.addEventListener('click', () => {
+        this.applyEditorValueChange(recordId, field, textarea.value ?? '', {
+          historyType: 'cell-edit',
+          pushHistory: true,
+          applyFilters: true
+        });
+        this.closeMultilineEditor(true);
+      });
+      footer.appendChild(cancelBtn);
+      footer.appendChild(saveBtn);
+
+      layer.addEventListener('click', () => this.closeMultilineEditor(true));
+      panel.appendChild(head);
+      panel.appendChild(body);
+      panel.appendChild(footer);
+      layer.appendChild(panel);
+      this.root.appendChild(layer);
+      this.multilineEditor = {
+        layer,
+        panel,
+        textarea,
+        anchorInput: anchorInput || this.getInput(rowIndex, colIndex)
+      };
+      requestAnimationFrame(() => {
+        try {
+          textarea.focus();
+          textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        } catch (_e) { /* noop */ }
+      });
+    }
+
+    closeMultilineEditor(focusInput = false) {
+      if (!this.multilineEditor) return;
+      const { layer, anchorInput } = this.multilineEditor;
+      if (layer?.parentElement) {
+        layer.remove();
+      }
+      this.multilineEditor = null;
+      if (focusInput && anchorInput) {
+        try {
+          anchorInput.focus();
+        } catch (_e) { /* noop */ }
+      }
+    }
+
     moveRadioPickerFocus(delta, currentTarget) {
       if (!this.radioPicker?.panel) return;
       const buttons = Array.from(this.radioPicker.panel.querySelectorAll('.pb-overlay__choice-item'));
@@ -3530,7 +4673,7 @@
       return '';
     }
 
-    openSubtableEditor(rowIndex, colIndex, anchorInput = null) {
+    async openSubtableEditor(rowIndex, colIndex, anchorInput = null) {
       if (this.saving) return;
       if (!this.root) return;
       const row = this.getVisibleRowAt(rowIndex);
@@ -3553,6 +4696,7 @@
         id: item?.id ? String(item.id) : '',
         value: item && typeof item.value === 'object' ? JSON.parse(JSON.stringify(item.value)) : {}
       }));
+      let currentColumnWidths = await this.getInitialSubtableColumnWidths(field.code, childFields, editorRows);
 
       const layer = document.createElement('div');
       layer.className = 'pb-overlay__subtable-layer';
@@ -3582,6 +4726,17 @@
       tableWrap.className = 'pb-subtable-wrap';
       const table = document.createElement('table');
       table.className = 'pb-subtable';
+      const colgroup = document.createElement('colgroup');
+      childFields.forEach((child) => {
+        const col = document.createElement('col');
+        col.dataset.fieldCode = String(child.code || '');
+        colgroup.appendChild(col);
+      });
+      const opCol = document.createElement('col');
+      opCol.className = 'pb-subtable__col-op';
+      opCol.style.width = '44px';
+      colgroup.appendChild(opCol);
+      table.appendChild(colgroup);
       const thead = document.createElement('thead');
       const theadRow = document.createElement('tr');
       childFields.forEach((child) => {
@@ -3608,6 +4763,11 @@
       addBtn.className = 'pb-overlay__btn';
       addBtn.dataset.subtableAction = 'add';
       addBtn.textContent = resolveText(this.language, 'subtableAddRow');
+      const autoBtn = document.createElement('button');
+      autoBtn.type = 'button';
+      autoBtn.className = 'pb-overlay__btn';
+      autoBtn.dataset.subtableAction = 'autowidth';
+      autoBtn.textContent = resolveText(this.language, 'subtableAutoWidth');
       const cancelBtn = document.createElement('button');
       cancelBtn.type = 'button';
       cancelBtn.className = 'pb-overlay__btn';
@@ -3619,8 +4779,28 @@
       saveBtn.dataset.subtableAction = 'save';
       saveBtn.textContent = resolveText(this.language, 'subtableSave');
       footer.appendChild(addBtn);
+      footer.appendChild(autoBtn);
       footer.appendChild(cancelBtn);
       footer.appendChild(saveBtn);
+
+      const applySubtableWidthStyles = () => {
+        childFields.forEach((child, index) => {
+          const code = String(child.code || '').trim();
+          if (!code) return;
+          const width = this.normalizeSubtableColumnWidth(currentColumnWidths?.[code], child.type);
+          currentColumnWidths[code] = width;
+          const col = colgroup.children[index];
+          if (col) {
+            col.style.width = `${width}px`;
+            col.style.minWidth = `${width}px`;
+          }
+          const headCell = theadRow.children[index];
+          if (headCell instanceof HTMLElement) {
+            headCell.style.width = `${width}px`;
+            headCell.style.minWidth = `${width}px`;
+          }
+        });
+      };
 
       const renderRows = () => {
         tbody.textContent = '';
@@ -3649,6 +4829,10 @@
             if (child.type === 'RADIO_BUTTON' || child.type === 'DROP_DOWN') {
               input.placeholder = Array.isArray(child.choices) ? (child.choices[0] || '') : '';
             }
+            const width = this.normalizeSubtableColumnWidth(currentColumnWidths?.[child.code], child.type);
+            cell.style.width = `${width}px`;
+            cell.style.minWidth = `${width}px`;
+            input.style.width = `${Math.max(80, width - 16)}px`;
             const rawCell = item.value?.[child.code]?.value;
             input.value = rawCell === undefined || rawCell === null ? '' : String(rawCell);
             input.disabled = readOnlyMode;
@@ -3696,6 +4880,13 @@
           value
         });
         renderRows();
+      });
+
+      autoBtn.addEventListener('click', () => {
+        currentColumnWidths = this.computeSubtableAutoWidths(childFields, editorRows);
+        applySubtableWidthStyles();
+        renderRows();
+        void this.persistSubtableColumnWidths(field.code, currentColumnWidths);
       });
 
       cancelBtn.addEventListener('click', () => this.closeSubtableEditor(true));
@@ -3750,9 +4941,11 @@
         }
         this.updateDirtyBadge();
         this.updateStats();
+        void this.persistSubtableColumnWidths(field.code, currentColumnWidths);
         this.closeSubtableEditor(true);
       });
       addBtn.disabled = readOnlyMode;
+      autoBtn.disabled = false;
       saveBtn.disabled = readOnlyMode;
 
       layer.addEventListener('click', () => this.closeSubtableEditor(true));
@@ -3762,19 +4955,26 @@
       panel.appendChild(body);
       panel.appendChild(footer);
       this.root.appendChild(layer);
+      applySubtableWidthStyles();
       renderRows();
       this.subtableEditor = {
         layer,
         panel,
         rowIndex,
         colIndex,
-        anchorInput: anchorInput || this.getInput(rowIndex, colIndex)
+        anchorInput: anchorInput || this.getInput(rowIndex, colIndex),
+        subtableFieldCode: String(field.code || ''),
+        getCurrentWidths: () => ({ ...currentColumnWidths })
       };
     }
 
     closeSubtableEditor(focusInput = false) {
       if (!this.subtableEditor) return;
-      const { layer, anchorInput } = this.subtableEditor;
+      const { layer, anchorInput, subtableFieldCode, getCurrentWidths } = this.subtableEditor;
+      const widths = typeof getCurrentWidths === 'function' ? getCurrentWidths() : null;
+      if (subtableFieldCode && widths && Object.keys(widths).length) {
+        void this.persistSubtableColumnWidths(subtableFieldCode, widths);
+      }
       if (layer?.parentElement) layer.remove();
       this.subtableEditor = null;
       if (focusInput && anchorInput) {
@@ -3784,11 +4984,49 @@
       }
     }
 
+    isDetailFormSubtableInput(input) {
+      if (!input || !this.isDetailFormLayoutMode()) return false;
+      const fieldCode = String(input.dataset.fieldCode || '').trim();
+      if (!fieldCode) return false;
+      const field = this.fieldMap.get(fieldCode);
+      return Boolean(field && this.isSubtableField(field));
+    }
+
+    activateDetailFormSubtable(event, input, rowIndex, colIndex) {
+      if (!input || this.saving) return;
+      if (event && typeof event.button === 'number' && event.button !== 0) return;
+      const now = Date.now();
+      if (now - this.subtableActivationTs < 150) {
+        if (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (typeof event.stopImmediatePropagation === 'function') {
+            event.stopImmediatePropagation();
+          }
+        }
+        return;
+      }
+      this.subtableActivationTs = now;
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof event.stopImmediatePropagation === 'function') {
+          event.stopImmediatePropagation();
+        }
+      }
+      this.dragSelecting = false;
+      void this.openSubtableEditor(rowIndex, colIndex, input);
+    }
+
     handleCellMouseDown(event, input) {
       if (this.saving) return;
       if (event.button !== 0) return;
       const rowIndex = Number(input.dataset.rowIndex || '0');
       const colIndex = Number(input.dataset.colIndex || '0');
+      if (this.isDetailFormSubtableInput(input)) {
+        this.activateDetailFormSubtable(event, input, rowIndex, colIndex);
+        return;
+      }
       const editing = this.isEditingCell(rowIndex, colIndex);
 
       if (editing) {
@@ -3821,7 +5059,7 @@
       this.updateSelectionRange(rowIndex, colIndex);
     }
 
-    handleChoiceInputClick(input) {
+    handleChoiceInputClick(event, input) {
       if (this.saving) return;
       if (!input) return;
       const fieldCode = input.dataset.fieldCode;
@@ -3831,8 +5069,35 @@
       const rowIndex = Number(input.dataset.rowIndex || '0');
       const colIndex = Number(input.dataset.colIndex || '0');
       if (!field) return;
+      if (this.isLinkField(field) && input.readOnly) {
+        const wantsOpen = Boolean(event?.ctrlKey || event?.metaKey);
+        if (wantsOpen) {
+          const raw = String((this.rowMap.get(recordId)?.values?.[fieldCode] ?? input.value ?? '') || '').trim();
+          if (raw) {
+            let href = raw;
+            if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(href)) {
+              href = `https://${href}`;
+            }
+            try {
+              window.open(href, '_blank', 'noopener,noreferrer');
+            } catch (_err) {
+              // noop
+            }
+          }
+          event?.preventDefault?.();
+          event?.stopPropagation?.();
+        }
+        return;
+      }
       if (this.isSubtableField(field)) {
+        if (this.isDetailFormLayoutMode()) return;
         this.openSubtableEditor(rowIndex, colIndex, input);
+        return;
+      }
+      if (this.isMultiChoiceField(field)) {
+        if (!this.permissionService.canEditCell(recordId, fieldCode) || !this.isOverlayEditable()) return;
+        if (!this.isEditingCell(rowIndex, colIndex)) return;
+        this.openMultiChoicePicker(rowIndex, colIndex, input);
         return;
       }
       if (!this.isChoiceField(field)) return;
@@ -3880,8 +5145,13 @@
       if (row) {
         row.values[fieldCode] = normalized;
       }
+      if (this.isMultiValueField(field)) {
+        input.value = this.formatCellDisplayValue(field, normalized);
+      } else if (this.isRichTextField(field)) {
+        input.value = this.formatCellDisplayValue(field, normalized);
+      }
 
-      if (normalized === originalValue) {
+      if (this.valuesEqual(normalized, originalValue)) {
         cell.classList.remove('pb-overlay__cell--dirty');
         this.removeDiff(recordId, fieldCode);
       } else {
@@ -3929,6 +5199,20 @@
       return { matrix, rowCount, colCount };
     }
 
+    getFormClipboardLinesFromSelection(selection) {
+      if (!selection) return [];
+      const row = this.getVisibleRowAt(selection.startRow);
+      if (!row) return [];
+      const lines = [];
+      for (let c = selection.startCol; c <= selection.endCol; c += 1) {
+        const field = this.fields[c];
+        if (!field) continue;
+        const value = row.values[field.code];
+        lines.push(this.formatCellDisplayValue(field, value));
+      }
+      return lines;
+    }
+
     getPasteStartCell() {
       if (this.selection) {
         return {
@@ -3967,6 +5251,10 @@
     applyPastedMatrixAt(matrix, startRow, startCol) {
       if (!this.canMutateOverlay(true)) return;
       if (!Array.isArray(matrix) || !matrix.length) return;
+      if (this.isDetailFormLayoutMode()) {
+        this.applyFormPastedMatrixAt(matrix, startCol);
+        return;
+      }
       const rowCount = this.getVisibleRowCount();
       const colCount = this.fields.length;
       let attemptedRows = 0;
@@ -4033,6 +5321,67 @@
       }
     }
 
+    applyFormPastedMatrixAt(matrix, startCol) {
+      if (!this.canMutateOverlay(true)) return;
+      if (!Array.isArray(matrix) || !matrix.length) return;
+      const colCount = this.fields.length;
+      if (!this.getVisibleRowCount() || !colCount) return;
+      const targetRowIndex = 0;
+      const normalizedStartCol = Math.max(0, Math.min(colCount - 1, Number(startCol || 0)));
+      const values = matrix.map((row) => (Array.isArray(row) && row.length ? row[0] : ''));
+      const targets = [];
+      for (let i = 0; i < values.length; i += 1) {
+        const targetColIndex = normalizedStartCol + i;
+        if (targetColIndex >= colCount) break;
+        const row = this.getVisibleRowAt(targetRowIndex);
+        const field = this.fields[targetColIndex];
+        if (!row || !field) continue;
+        targets.push({
+          recordId: String(row.id || '').trim(),
+          fieldCode: String(field.code || '').trim(),
+          rowIndex: targetRowIndex,
+          colIndex: targetColIndex,
+          value: values[i]
+        });
+      }
+
+      const filteredTargets = this.permissionService.filterPasteTargets(targets);
+      const applicableTargets = Array.isArray(filteredTargets?.applicable) ? filteredTargets.applicable : [];
+      const skippedTargets = Array.isArray(filteredTargets?.skipped) ? filteredTargets.skipped : [];
+      const pasteChanges = [];
+      applicableTargets.forEach((target) => {
+        const change = this.applyPastedValue(target.rowIndex, target.colIndex, target.value);
+        if (change) pasteChanges.push(change);
+      });
+
+      if (skippedTargets.length) {
+        this.notify(resolveText(this.language, 'toastPasteSkipped', skippedTargets.length));
+      }
+      if (!applicableTargets.length) return;
+      if (pasteChanges.length) {
+        this.pushHistory({
+          type: 'paste',
+          payload: { changes: pasteChanges }
+        });
+      }
+      const endCol = Math.min(colCount - 1, normalizedStartCol + Math.max(0, values.length - 1));
+      this.selection = {
+        startRow: targetRowIndex,
+        endRow: targetRowIndex,
+        startCol: normalizedStartCol,
+        endCol,
+        anchorRow: targetRowIndex,
+        anchorCol: normalizedStartCol
+      };
+      this.repaintSelection();
+      this.updateStats();
+      this.flashPastedRange(targetRowIndex, targetRowIndex, normalizedStartCol, endCol);
+      if (this.hasActiveFilters()) {
+        this.needsFilterReapply = false;
+        this.applyFilters();
+      }
+    }
+
     flashPastedRange(startRow, endRow, startCol, endCol) {
       const flashedCells = [];
       for (let r = startRow; r <= endRow; r += 1) {
@@ -4090,7 +5439,7 @@
       this.invalidValueCache.delete(key);
       const normalized = validation.value;
       row.values[fieldCode] = normalized;
-      if (normalized === row.original[fieldCode]) {
+      if (this.valuesEqual(normalized, row.original[fieldCode])) {
         this.removeDiff(recordId, fieldCode);
       } else {
         this.addDiff(recordId, fieldCode, normalized, field.type);
@@ -4338,8 +5687,21 @@
       this.setSelectionSingle(r, c);
       this.armedCell = null;
       this.pendingEdit = null;
-      this.editingCell = this.createEditingState(r, c, !!selectAll);
       const targetInput = input || this.getInput(r, c);
+      if (this.isMultiLineField(field)) {
+        this.closeRadioPicker();
+        this.closeMultiChoicePicker();
+        this.editingCell = null;
+        this.openMultilineEditor(r, c, targetInput);
+        return;
+      }
+      if (this.isMultiChoiceField(field)) {
+        this.closeRadioPicker();
+        this.editingCell = null;
+        this.openMultiChoicePicker(r, c, targetInput);
+        return;
+      }
+      this.editingCell = this.createEditingState(r, c, !!selectAll);
       if (targetInput) {
         this.setInputEditingVisual(targetInput, true);
         requestAnimationFrame(() => {
@@ -4359,6 +5721,7 @@
       const previousEditingCell = this.editingCell;
       const { rowIndex, colIndex } = previousEditingCell;
       this.closeRadioPicker();
+      this.closeMultiChoicePicker();
       const input = this.getInput(rowIndex, colIndex);
       if (input) {
         this.setInputEditingVisual(input, false);
@@ -4406,6 +5769,65 @@
       });
     }
 
+    applyEditorValueChange(recordId, field, nextRawValue, options = {}) {
+      const key = String(recordId || '').trim();
+      const fieldCode = String(field?.code || '').trim();
+      if (!key || !fieldCode || !field) return false;
+      const row = this.rowMap.get(key);
+      if (!row) return false;
+      const before = this.deepClone(row.values[fieldCode]);
+      let nextValue;
+      if (this.isMultiValueField(field)) {
+        nextValue = this.normalizeMultiValue(nextRawValue, field);
+      } else if (this.isRichTextField(field)) {
+        nextValue = String(nextRawValue ?? '');
+      } else {
+        const validation = this.validate(nextRawValue, field);
+        if (!validation.ok) return false;
+        nextValue = validation.value;
+      }
+      if (this.valuesEqual(before, nextValue)) return false;
+
+      row.values[fieldCode] = this.deepClone(nextValue);
+      const original = row.original[fieldCode];
+      if (this.valuesEqual(nextValue, original)) {
+        this.removeDiff(key, fieldCode);
+      } else {
+        this.addDiff(key, fieldCode, nextValue, field.type);
+      }
+
+      const invalidKey = `${key}:${fieldCode}`;
+      this.invalidCells.delete(invalidKey);
+      this.invalidValueCache.delete(invalidKey);
+
+      const input = this.findInput(key, fieldCode);
+      if (input) {
+        input.dataset.originalValue = this.formatCellDisplayValue(field, row.original[fieldCode]);
+        input.value = this.formatCellDisplayValue(field, row.values[fieldCode]);
+        this.applyCellVisualState(input, row, fieldCode);
+      }
+
+      if (options.pushHistory !== false) {
+        this.pushHistory({
+          type: options.historyType || 'cell-edit',
+          payload: {
+            recordId: key,
+            fieldCode,
+            before,
+            after: this.deepClone(nextValue)
+          }
+        });
+      }
+
+      this.updateDirtyBadge();
+      if (this.hasActiveFilters() && options.applyFilters !== false) {
+        this.applyFilters();
+      } else {
+        this.updateStats();
+      }
+      return true;
+    }
+
     async copySelectionToClipboard() {
       this.exitEditMode();
       let sel = this.selection;
@@ -4424,18 +5846,22 @@
         sel = this.selection;
       }
       if (!sel) return;
-      const rowsOut = [];
-      for (let r = sel.startRow; r <= sel.endRow; r += 1) {
-        const rowVals = [];
-        const rowData = this.getVisibleRowAt(r);
-        for (let c = sel.startCol; c <= sel.endCol; c += 1) {
-          const field = this.fields[c];
-          const value = rowData && field ? rowData.values[field.code] : '';
-          rowVals.push(value === undefined || value === null ? '' : String(value));
-        }
-        rowsOut.push(rowVals.join('\t'));
-      }
-      const text = rowsOut.join('\n');
+      const text = this.isDetailFormLayoutMode()
+        ? this.getFormClipboardLinesFromSelection(sel).join('\n')
+        : (() => {
+          const rowsOut = [];
+          for (let r = sel.startRow; r <= sel.endRow; r += 1) {
+            const rowVals = [];
+            const rowData = this.getVisibleRowAt(r);
+            for (let c = sel.startCol; c <= sel.endCol; c += 1) {
+              const field = this.fields[c];
+              const value = rowData && field ? rowData.values[field.code] : '';
+              rowVals.push(field ? this.formatCellDisplayValue(field, value) : '');
+            }
+            rowsOut.push(rowVals.join('\t'));
+          }
+          return rowsOut.join('\n');
+        })();
       try {
         if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
           await navigator.clipboard.writeText(text);
@@ -4600,6 +6026,16 @@
           return { ok: false, error: 'Invalid choice' };
         }
         return { ok: true, value: trimmed };
+      }
+      if (type === 'CHECK_BOX' || type === 'MULTI_SELECT') {
+        if (Array.isArray(value)) {
+          return { ok: true, value: this.normalizeMultiValue(value, field) };
+        }
+        const normalized = this.normalizeMultiValue(trimmed, field);
+        return { ok: true, value: normalized };
+      }
+      if (type === 'RICH_TEXT') {
+        return { ok: true, value: String(value ?? '') };
       }
       return { ok: true, value: value ?? '' };
     }
@@ -4815,10 +6251,14 @@
 
     syncScroll() {
       if (!this.bodyScroll) return;
+      if (this.isDetailFormLayoutMode()) return;
       const scrollLeft = this.bodyScroll.scrollLeft;
       const scrollTop = this.bodyScroll.scrollTop;
       if (this.columnHeaderScroll) {
-        this.columnHeaderScroll.style.transform = `translateX(${-scrollLeft}px)`;
+        const headRow = this.columnHeaderScroll.querySelector('.pb-overlay__col-row');
+        if (headRow) {
+          headRow.style.transform = `translateX(${-scrollLeft}px)`;
+        }
       }
       if (this.rowHeaderScroll) {
         this.rowHeaderScroll.scrollTop = scrollTop;
@@ -4975,6 +6415,10 @@
         }
       }
 
+      if (this.handleEscapeForFrontLayer(event)) {
+        return;
+      }
+
       if (this.columnPanelLayer && this.columnPanelLayer.contains(target)) {
         if (event.key === 'Escape') {
           event.preventDefault();
@@ -5012,6 +6456,26 @@
         return;
       }
 
+      if (this.multilineEditor?.panel && this.multilineEditor.panel.contains(target)) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          this.closeMultilineEditor(true);
+        }
+        return;
+      }
+
+      if (this.multiChoicePicker?.panel && this.multiChoicePicker.panel.contains(target)) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          this.closeMultiChoicePicker(true);
+        }
+        return;
+      }
+
       if (this.radioPicker?.panel && this.radioPicker.panel.contains(target)) {
         if (event.key === 'Escape') {
           event.preventDefault();
@@ -5033,6 +6497,7 @@
       const field = fieldCode ? this.fieldMap.get(fieldCode) : null;
       const recordId = targetInput?.dataset.recordId || '';
       const isChoiceField = this.isChoiceField(field);
+      const isMultiChoiceField = this.isMultiChoiceField(field);
       const isSubtableField = this.isSubtableField(field);
       const isEditableField = this.permissionService.canEditCell(recordId, fieldCode);
       const isSpaceKey = event.key === ' ' || event.key === 'Spacebar';
@@ -5083,6 +6548,19 @@
         }
       }
 
+      if (targetInput && targetInput.readOnly && isMultiChoiceField && isEditableField) {
+        const wantsDirectOpen = !event.ctrlKey && !event.metaKey && !event.altKey && (event.key === 'Enter' || isSpaceKey);
+        if (wantsDirectOpen) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          const rowIndex = Number(targetInput.dataset.rowIndex || '0');
+          const colIndex = Number(targetInput.dataset.colIndex || '0');
+          this.enterEditMode(rowIndex, colIndex, targetInput, false);
+          return;
+        }
+      }
+
       if (targetInput && !targetInput.readOnly) {
         if (isChoiceField) {
           const wantsPicker = isSpaceKey && !event.ctrlKey && !event.metaKey && !event.altKey;
@@ -5107,10 +6585,7 @@
           return;
         }
         if (isArrowKey) {
-          event.preventDefault();
-          event.stopPropagation();
-          event.stopImmediatePropagation();
-          this.navigateSelectionByArrow(event.key, event.shiftKey, targetInput);
+          // While editing, arrow keys should move the text caret, not cell focus.
           return;
         }
         if (event.key === 'Escape') {
@@ -5212,6 +6687,54 @@
       }
     }
 
+    handleEscapeForFrontLayer(event) {
+      if (!event || event.key !== 'Escape') return false;
+      // Close only the front-most transient UI and stop bubbling to overlay close.
+      if (this.columnPanelLayer) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        this.closeColumnManager();
+        return true;
+      }
+      if (this.filterPanel?.panel) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        this.closeFilterPanel();
+        return true;
+      }
+      if (this.subtableEditor?.panel) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        this.closeSubtableEditor(true);
+        return true;
+      }
+      if (this.multilineEditor?.panel) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        this.closeMultilineEditor(true);
+        return true;
+      }
+      if (this.multiChoicePicker?.panel) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        this.closeMultiChoicePicker(true);
+        return true;
+      }
+      if (this.radioPicker?.panel) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        this.closeRadioPicker(true);
+        return true;
+      }
+      return false;
+    }
+
     isOverlayArrowKey(event) {
       const key = String(event?.key || '');
       return key === 'ArrowUp'
@@ -5245,11 +6768,14 @@
       if (!this.isOpen) return false;
       if (!this.isOverlayArrowKey(event)) return false;
       if (!this.isFocusInsideOverlay(event.target)) return false;
+      if (this.shouldUseNativeArrowNavigation(input, event.target)) return false;
 
       const target = event.target;
       if (this.columnPanelLayer && this.columnPanelLayer.contains(target)) return false;
       if (this.filterPanel?.panel && this.filterPanel.panel.contains(target)) return false;
       if (this.subtableEditor?.panel && this.subtableEditor.panel.contains(target)) return false;
+      if (this.multilineEditor?.panel && this.multilineEditor.panel.contains(target)) return false;
+      if (this.multiChoicePicker?.panel && this.multiChoicePicker.panel.contains(target)) return false;
       if (this.radioPicker?.panel && this.radioPicker.panel.contains(target)) return false;
       if (this.editingCell) return false;
 
@@ -5275,6 +6801,34 @@
       }
       this.setSelection(next.row, next.col, { extend: event.shiftKey, focus: true });
       return true;
+    }
+
+    shouldUseNativeArrowNavigation(input, target) {
+      const isEditableInput = (node) => {
+        if (!node) return false;
+        if (node instanceof HTMLInputElement) {
+          return !node.readOnly && !node.disabled;
+        }
+        if (node instanceof HTMLTextAreaElement) {
+          return !node.readOnly && !node.disabled;
+        }
+        if (node instanceof HTMLElement && node.isContentEditable) {
+          return true;
+        }
+        return false;
+      };
+
+      if (isEditableInput(input)) return true;
+      const active = document.activeElement;
+      if (active && this.root?.contains(active) && isEditableInput(active)) return true;
+
+      if (target instanceof HTMLElement && this.root?.contains(target)) {
+        const editableHost = target.closest('textarea,input,[contenteditable="true"]');
+        if (editableHost && isEditableInput(editableHost)) {
+          return true;
+        }
+      }
+      return false;
     }
 
     computeNextCoords(rowIndex, colIndex, rowDelta, colDelta) {
@@ -5428,6 +6982,9 @@
           return row;
         });
       }
+      if (this.isMultiValueField(field)) {
+        return this.normalizeMultiValue(value, field);
+      }
       return value ?? '';
     }
 
@@ -5436,7 +6993,7 @@
       if (!fields) return null;
       const record = {};
       Object.keys(fields).forEach((fieldCode) => {
-        const field = this.fieldMap.get(fieldCode);
+        const field = this.getFieldDefinition(fieldCode);
         if (!field) return;
         const item = fields[fieldCode];
         if (!item) return;
@@ -5617,6 +7174,18 @@
       if (this.columnButton) {
         this.columnButton.disabled = saving || !this.fields.length;
       }
+      if (this.fieldScopeViewButton) {
+        this.fieldScopeViewButton.disabled = saving;
+      }
+      if (this.fieldScopeAllButton) {
+        this.fieldScopeAllButton.disabled = saving;
+      }
+      if (this.gridLayoutButton) {
+        this.gridLayoutButton.disabled = saving;
+      }
+      if (this.formLayoutButton) {
+        this.formLayoutButton.disabled = saving;
+      }
       this.updateHistoryButtons();
 
       if (this.saveButtonLabel) {
@@ -5641,11 +7210,7 @@
     }
 
     getRefetchFieldCodes() {
-      const codes = new Set(
-        this.fields
-          .map((field) => String(field?.code || '').trim())
-          .filter(Boolean)
-      );
+      const codes = new Set(this.getRecordFetchFieldCodes());
       this.fieldsMeta.forEach((field) => {
         if (!field || field.type !== 'SUBTABLE') return;
         const code = String(field.code || '').trim();
@@ -5796,7 +7361,13 @@
           anySaved = true;
         }
         if (anySaved) {
-          if (savedIds.size) {
+          if (this.isListMode()) {
+            try {
+              await this.refreshListRowsAfterSave();
+            } catch (error) {
+              console.warn('[kintone-excel-overlay] failed to refresh list rows after save', error);
+            }
+          } else if (savedIds.size) {
             await this.refetchRowsByIds(Array.from(savedIds));
           }
           this.notify(resolveText(this.language, 'toastSaveSuccess'));
@@ -5832,7 +7403,7 @@
         const row = this.rowMap.get(entry.id);
         if (!row) return;
         Object.keys(entry.record).forEach((fieldCode) => {
-          const field = this.fieldMap.get(fieldCode);
+          const field = this.getFieldDefinition(fieldCode);
           const value = this.cloneFieldValue(field, entry.record[fieldCode].value);
           row.original[fieldCode] = this.cloneFieldValue(field, value);
           row.values[fieldCode] = this.cloneFieldValue(field, value);
@@ -5866,7 +7437,7 @@
         if (!row) return;
         const newRevision = revisions[index] != null ? String(revisions[index]) : undefined;
         Object.keys(entry.record || {}).forEach((fieldCode) => {
-          const field = this.fieldMap.get(fieldCode);
+          const field = this.getFieldDefinition(fieldCode);
           const value = this.cloneFieldValue(field, entry.record[fieldCode]?.value);
           row.original[fieldCode] = this.cloneFieldValue(field, value);
           row.values[fieldCode] = this.cloneFieldValue(field, value);
@@ -5962,6 +7533,8 @@
       this.closeColumnManager(true);
       this.closeFilterPanel();
       this.closeRadioPicker();
+      this.closeMultiChoicePicker();
+      this.closeMultilineEditor();
       this.closeSubtableEditor();
       if (this.requireReload) {
         this.requireReload = false;
@@ -6004,6 +7577,12 @@
       this.addRowButton = null;
       this.undoButton = null;
       this.redoButton = null;
+      this.layoutToggleWrap = null;
+      this.gridLayoutButton = null;
+      this.formLayoutButton = null;
+      this.fieldScopeToggleWrap = null;
+      this.fieldScopeViewButton = null;
+      this.fieldScopeAllButton = null;
       this.prevPageButton = null;
       this.nextPageButton = null;
       this.pageLabelElement = null;
@@ -6013,6 +7592,12 @@
       this.appName = '';
       this.baseQuery = '';
       this.query = '';
+      this.runtimeMode = OVERLAY_RUNTIME_MODE_LIST;
+      this.overlayLayoutMode = OVERLAY_LAYOUT_MODE_GRID;
+      this.listFieldScopeMode = LIST_FIELD_SCOPE_VIEW_ONLY;
+      this.detailRecordId = '';
+      this.detailAppId = '';
+      this.detailSourceUrl = '';
       this.pageOffset = 0;
       this.totalCount = 0;
       this.paging = false;
@@ -6027,6 +7612,9 @@
       };
       this.fields = [];
       this.fieldsMeta = [];
+      this.listAllFields = [];
+      this.viewFieldOrder = [];
+      this.recordFetchFieldCodes = [];
       this.fieldMap.clear();
       this.fieldsMetaMap.clear();
       this.fieldIndexMap.clear();
@@ -6057,11 +7645,17 @@
       this.invalidValueCache.clear();
       this.rowHeaderContainer = null;
       this.tableContainer = null;
+      this.gridRoot = null;
+      this.gridHead = null;
+      this.gridBody = null;
+      this.detailFormContainer = null;
       this.virtualStart = 0;
       this.virtualEnd = 0;
       this.pendingFocus = null;
       this.pendingEdit = null;
       this.pasteFlashTimer = null;
+      this.multiChoicePicker = null;
+      this.multilineEditor = null;
       this.needsFilterReapply = false;
       this.sortState = { fieldCode: '', direction: '' };
       this.editingCell = null;
@@ -6218,7 +7812,7 @@
     async handleConflict(batch) {
       const ids = Array.from(new Set(batch.map((entry) => entry.id).filter(Boolean))).map(String);
       if (!ids.length) return 'fail';
-      const fieldCodes = this.fields.map((f) => f.code);
+      const fieldCodes = this.getRefetchFieldCodes();
       const response = await this.postFn('EXCEL_GET_RECORDS_BY_IDS', {
         appId: this.appId,
         ids,
@@ -6243,29 +7837,132 @@
     }
   }
 
-  const overlayController = new ExcelOverlayController(postToPage);
+  overlayController = new ExcelOverlayController(postToPage);
+
+  function resolveOverlayLaunchContext(rawUrl) {
+    const detailContext = parseDetailOverlayContext(rawUrl);
+    if (detailContext?.recordId) {
+      return {
+        pageType: 'detail',
+        runtimeMode: OVERLAY_RUNTIME_MODE_DETAIL_SINGLE_ROW,
+        detailRecordId: detailContext.recordId,
+        detailAppId: detailContext.appId,
+        detailSourceUrl: detailContext.href || String(rawUrl || location.href)
+      };
+    }
+    const listContext = parseListOverlayContext(rawUrl);
+    if (listContext?.appId) {
+      return {
+        pageType: 'list',
+        runtimeMode: OVERLAY_RUNTIME_MODE_LIST,
+        detailRecordId: '',
+        detailAppId: '',
+        detailSourceUrl: String(rawUrl || location.href)
+      };
+    }
+    return {
+      pageType: 'unsupported',
+      runtimeMode: null,
+      detailRecordId: '',
+      detailAppId: '',
+      detailSourceUrl: String(rawUrl || location.href)
+    };
+  }
+
+  async function getOverlayLaunchState() {
+    if (!overlayController) {
+      return {
+        ok: false,
+        reason: 'overlay_not_ready',
+        pageType: 'unsupported',
+        canEditOverlay: false,
+        canSaveOverlay: false
+      };
+    }
+    await overlayController.loadOverlayMode();
+    const context = resolveOverlayLaunchContext(location.href);
+    return {
+      ok: true,
+      pageType: context.pageType,
+      canEditOverlay: overlayController.canEditOverlay(),
+      canSaveOverlay: overlayController.canSaveOverlay()
+    };
+  }
+
+  let overlayLaunchNoticeTimer = null;
+  function showOverlayLaunchNotice(message) {
+    const text = String(message || '').trim();
+    if (!text) return;
+    let node = document.getElementById('pb-overlay-launch-notice');
+    if (!node) {
+      node = document.createElement('div');
+      node.id = 'pb-overlay-launch-notice';
+      node.style.position = 'fixed';
+      node.style.right = '24px';
+      node.style.bottom = '24px';
+      node.style.zIndex = '2147483647';
+      node.style.padding = '8px 12px';
+      node.style.borderRadius = '8px';
+      node.style.border = '1px solid #d0d7e2';
+      node.style.background = '#ffffff';
+      node.style.color = '#2f3a4a';
+      node.style.fontSize = '12px';
+      node.style.boxShadow = '0 8px 24px rgba(15, 23, 42, 0.14)';
+      document.body.appendChild(node);
+    }
+    node.textContent = text;
+    node.style.display = 'block';
+    if (overlayLaunchNoticeTimer) clearTimeout(overlayLaunchNoticeTimer);
+    overlayLaunchNoticeTimer = setTimeout(() => {
+      if (node) node.style.display = 'none';
+    }, 2400);
+  }
+
+  async function openOverlayByCurrentPage(source = 'unknown') {
+    if (!overlayController) {
+      return { ok: false, reason: 'overlay_not_ready', source, pageType: 'unsupported' };
+    }
+    const context = resolveOverlayLaunchContext(location.href);
+    if (context.pageType === 'unsupported') {
+      const uiLanguage = await resolveOverlayUiLanguage();
+      const language = uiLanguage?.language || DEFAULT_OVERLAY_LANGUAGE;
+      return {
+        ok: false,
+        reason: 'unsupported_page',
+        source,
+        pageType: context.pageType,
+        message: resolveText(language, 'overlayUnsupportedPage')
+      };
+    }
+    await overlayController.open({
+      runtimeMode: context.runtimeMode,
+      detailRecordId: context.detailRecordId,
+      detailAppId: context.detailAppId,
+      detailSourceUrl: context.detailSourceUrl
+    });
+    return {
+      ok: overlayController.isOpen,
+      reason: overlayController.isOpen ? 'opened' : 'open_failed',
+      source,
+      pageType: context.pageType,
+      runtimeMode: context.runtimeMode,
+      canEditOverlay: overlayController.canEditOverlay(),
+      canSaveOverlay: overlayController.canSaveOverlay()
+    };
+  }
 
   document.addEventListener('keydown', (event) => {
     if (overlayController.isOpen) return;
-    if (event.key.toLowerCase() === 'e' && event.shiftKey && (event.ctrlKey || event.metaKey)) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      overlayController.open();
-    }
+    if (event.key.toLowerCase() !== 'e' || !event.shiftKey || (!event.ctrlKey && !event.metaKey)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    void (async () => {
+      const result = await openOverlayByCurrentPage('shortcut');
+      if (!result?.ok && result?.message) {
+        showOverlayLaunchNotice(result.message);
+      }
+    })();
   }, true);
 
 })();
-
-
-
-
-
-
-
-
-
-
-
-
-

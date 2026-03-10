@@ -35,6 +35,13 @@
             </select>
           </div>
           <p class="hint" data-i18n="general_language_help">Auto はPCまたはブラウザの表示言語に合わせます。</p>
+          <div id="developer_pro_override_row" class="kp-setting-row developer-pro-override-row" hidden>
+            <label class="developer-pro-override-label">
+              <input id="developer_pro_override" type="checkbox" />
+              <span data-i18n="developer_pro_override_label">Developer Pro override</span>
+            </label>
+            <p class="hint" data-i18n="developer_pro_override_hint">開発用の一時スイッチです。一般ユーザー向け公開ではオフのままにしてください。</p>
+          </div>
         </section>
         <section class="card">
           <h2 data-i18n="general_tips_title">使い方のヒント</h2>
@@ -87,7 +94,7 @@
 
         <section class="card">
           <h2 data-i18n="overlay_layout_title">列レイアウト設定</h2>
-          <p class="hint" data-i18n="overlay_layout_desc">一覧画面で保存された列並び・列幅を管理します。Standard モードでも列レイアウト保存は利用できます。</p>
+          <p class="hint" data-i18n="overlay_layout_desc">一覧画面・詳細画面で保存された列並び・列幅を管理します。保存済みレイアウトは画面タイプごとに区別して表示されます。</p>
           <div class="actions actions--end">
             <button id="excel_columns_clear" type="button" data-i18n="reset_all">すべてリセット</button>
           </div>

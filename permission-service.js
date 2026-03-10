@@ -17,10 +17,14 @@
 
   const EDITABLE_FIELD_TYPES = new Set([
     'SINGLE_LINE_TEXT',
+    'MULTI_LINE_TEXT',
     'NUMBER',
     'DATE',
+    'LINK',
     'DROP_DOWN',
-    'RADIO_BUTTON'
+    'RADIO_BUTTON',
+    'CHECK_BOX',
+    'MULTI_SELECT'
   ]);
 
   function toTrimmedString(value) {

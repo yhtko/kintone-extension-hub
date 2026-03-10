@@ -112,6 +112,7 @@ const DEV_COPY_QUERY_MENU_ID = 'kf-dev-copy-query';
 const DEV_COPY_FIELDS_LIST_MENU_ID = 'kf-dev-copy-fields-list';
 const DEV_COPY_APP_ID_MENU_ID = 'kf-dev-copy-app-id';
 const DEV_COPY_VIEW_ID_MENU_ID = 'kf-dev-copy-view-id';
+const PRO_INSTALL_TYPE_MESSAGE_ID = 'PB_GET_INSTALL_TYPE';
 const UI_LANGUAGE_KEY = 'uiLanguage';
 const UI_LANGUAGE_VALUES = new Set(['auto', 'ja', 'en']);
 const latestPageContextByTab = new Map();
@@ -148,6 +149,39 @@ const MENU_MESSAGES = {
     menu_copy_view_id: 'Copy viewId'
   }
 };
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type !== PRO_INSTALL_TYPE_MESSAGE_ID) return;
+  (async () => {
+    try {
+      if (chrome.management?.getSelf) {
+        const info = await chrome.management.getSelf();
+        sendResponse({
+          ok: true,
+          installType: String(info?.installType || ''),
+          source: 'management'
+        });
+        return;
+      }
+      const manifest = chrome.runtime?.getManifest?.() || {};
+      const fallbackDevelopment = !Object.prototype.hasOwnProperty.call(manifest, 'update_url');
+      sendResponse({
+        ok: false,
+        reason: 'management_api_unavailable',
+        fallbackDevelopment
+      });
+    } catch (error) {
+      const manifest = chrome.runtime?.getManifest?.() || {};
+      const fallbackDevelopment = !Object.prototype.hasOwnProperty.call(manifest, 'update_url');
+      sendResponse({
+        ok: false,
+        reason: String(error?.message || error || 'management_get_self_failed'),
+        fallbackDevelopment
+      });
+    }
+  })();
+  return true;
+});
 
 function normalizeUiLanguage(raw) {
   const value = String(raw || '').trim().toLowerCase();

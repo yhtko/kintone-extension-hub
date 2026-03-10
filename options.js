@@ -68,6 +68,8 @@ const I18N_MESSAGES = {
     general_language_ja: '日本語',
     general_language_en: 'English',
     general_language_help: 'Auto はPCまたはブラウザの表示言語に合わせます。',
+    developer_pro_override_label: 'Developer Pro override',
+    developer_pro_override_hint: '開発用の一時スイッチです。一般ユーザー向け公開ではオフのままにしてください。',
     shortcuts_section_title: 'ショートカット',
     watchlist_section_title: 'ウォッチリスト',
     pins_section_title: 'ピン止め',
@@ -82,7 +84,7 @@ const I18N_MESSAGES = {
     overlay_mode_pro_desc: '編集機能を利用できる上位モードです。近日公開予定。',
     overlay_mode_pro_notice: 'Proモードは近日公開予定です。現在はStandardをご利用ください。',
     overlay_layout_title: '列レイアウト設定',
-    overlay_layout_desc: '一覧画面で保存された列並び・列幅を管理します。Standard モードでも列レイアウト保存は利用できます。',
+    overlay_layout_desc: '一覧画面・詳細画面で保存された列並び・列幅を管理します。保存済みレイアウトは画面タイプごとに区別して表示されます。',
     overlay_note_title: '補足',
     overlay_note_desc: '今後、列表示設定や固定列などもこのセクションに追加予定です。',
     host_perm_title: 'ホストアクセス許可',
@@ -225,7 +227,10 @@ const I18N_MESSAGES = {
     layout_empty_desc: '一覧画面で列並びや列幅を変更すると、ここに保存されます。',
     layout_meta_order: '列順',
     layout_meta_width: '幅設定',
-    layout_meta_saved: '保存'
+    layout_meta_saved: '保存',
+    layout_meta_scope: '対象',
+    layout_scope_list: '一覧',
+    layout_scope_detail: '詳細'
   },
   en: {
     settings_title: 'kintone Base Settings',
@@ -247,6 +252,8 @@ const I18N_MESSAGES = {
     general_language_ja: 'Japanese',
     general_language_en: 'English',
     general_language_help: 'Auto follows your PC or browser language.',
+    developer_pro_override_label: 'Developer Pro override',
+    developer_pro_override_hint: 'Temporary switch for developer testing. Keep this OFF in public releases.',
     shortcuts_section_title: 'Shortcuts',
     watchlist_section_title: 'Watchlist',
     pins_section_title: 'Pins',
@@ -261,7 +268,7 @@ const I18N_MESSAGES = {
     overlay_mode_pro_desc: 'Advanced mode with editing features. Coming soon.',
     overlay_mode_pro_notice: 'Pro mode is coming soon. Please use Standard for now.',
     overlay_layout_title: 'Column Layout Settings',
-    overlay_layout_desc: 'Manage saved column order and widths for list pages. Layout saving is available in Standard mode as well.',
+    overlay_layout_desc: 'Manage saved column order and widths for list/detail pages. Saved layouts are shown with their screen type.',
     overlay_note_title: 'Notes',
     overlay_note_desc: 'Column visibility and fixed columns are planned to be added here in future updates.',
     host_perm_title: 'Host Access Permission',
@@ -404,13 +411,18 @@ const I18N_MESSAGES = {
     layout_empty_desc: 'Saved column order and widths from list pages will appear here.',
     layout_meta_order: 'Order',
     layout_meta_width: 'Widths',
-    layout_meta_saved: 'Saved'
+    layout_meta_saved: 'Saved',
+    layout_meta_scope: 'Target',
+    layout_scope_list: 'List',
+    layout_scope_detail: 'Detail'
   }
 };
 
 const UI_LANGUAGE_KEY = 'uiLanguage';
 const UI_LANGUAGE_VALUES = ['auto', 'ja', 'en'];
 const DEFAULT_UI_LANGUAGE = 'auto';
+const DEVELOPER_PRO_OVERRIDE_KEY = 'pbDeveloperProOverride';
+const DEVELOPER_UI_QUERY_PARAM = 'dev';
 
 let currentLang = 'ja';
 let currentUiLanguageSetting = DEFAULT_UI_LANGUAGE;
@@ -484,6 +496,34 @@ async function initializeI18n() {
   await applyUiLanguageSetting(setting, { persist: false });
 }
 
+function isDeveloperUiEnabled() {
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    return params.get(DEVELOPER_UI_QUERY_PARAM) === '1';
+  } catch (_err) {
+    return false;
+  }
+}
+
+function updateDeveloperProOverrideVisibility() {
+  if (!developerProOverrideRowEl) return false;
+  const enabled = isDeveloperUiEnabled();
+  developerProOverrideRowEl.hidden = !enabled;
+  return enabled;
+}
+
+async function loadDeveloperProOverride() {
+  if (!developerProOverrideEl) return;
+  const visible = updateDeveloperProOverrideVisibility();
+  if (!visible) return;
+  try {
+    const stored = await chrome.storage.local.get(DEVELOPER_PRO_OVERRIDE_KEY);
+    developerProOverrideEl.checked = Boolean(stored?.[DEVELOPER_PRO_OVERRIDE_KEY]);
+  } catch (_err) {
+    developerProOverrideEl.checked = false;
+  }
+}
+
 const labelEl = document.getElementById('label');
 const urlEl = document.getElementById('url');
 const appIdEl = document.getElementById('appId');
@@ -504,6 +544,8 @@ const shortcutSearchModeInputs = Array.from(document.querySelectorAll('input[nam
 const excelListEl = document.getElementById('excel_columns_list');
 const excelClearBtn = document.getElementById('excel_columns_clear');
 const uiLanguageEl = document.getElementById('ui_language');
+const developerProOverrideRowEl = document.getElementById('developer_pro_override_row');
+const developerProOverrideEl = document.getElementById('developer_pro_override');
 const excelModeInputs = Array.from(document.querySelectorAll('input[name="excel_overlay_mode"]'));
 const excelModeNoticeEl = document.getElementById('excel_mode_notice');
 const EXCEL_COLUMN_PREF_KEY = 'kfavExcelColumns';
@@ -2050,7 +2092,8 @@ addBtn.addEventListener('click', async () => {
   await Promise.all([
     loadExcelColumnPrefs(),
     loadExcelOverlayMode(),
-    loadShortcutSearchOpenMode()
+    loadShortcutSearchOpenMode(),
+    loadDeveloperProOverride()
   ]);
   optionsDataReady = true;
   console.log('[options][state] loaded keys', ['kintoneFavorites', 'kfavPins', 'kfavShortcuts', UI_LANGUAGE_KEY]);
@@ -2067,6 +2110,11 @@ if (chrome?.storage?.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, UI_LANGUAGE_KEY)) {
       void applyUiLanguageSetting(changes[UI_LANGUAGE_KEY].newValue, { persist: false });
+    }
+    if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, DEVELOPER_PRO_OVERRIDE_KEY)) {
+      if (developerProOverrideEl && isDeveloperUiEnabled()) {
+        developerProOverrideEl.checked = Boolean(changes[DEVELOPER_PRO_OVERRIDE_KEY].newValue);
+      }
     }
     if (area === 'sync' && Object.prototype.hasOwnProperty.call(changes, 'kfavPins')) {
       const next = changes.kfavPins.newValue;
@@ -2171,6 +2219,7 @@ async function applyUiLanguageSetting(settingValue, { persist = false } = {}) {
     console.log('[options][i18n] uiLanguage saved', setting);
   }
   applyI18n(document);
+  updateDeveloperProOverrideVisibility();
   if (uiLanguageEl) {
     uiLanguageEl.value = setting;
   }
@@ -2274,6 +2323,13 @@ uiLanguageEl?.addEventListener('change', async () => {
   await applyUiLanguageSetting(setting, { persist: true });
 });
 
+developerProOverrideEl?.addEventListener('change', async () => {
+  if (!isDeveloperUiEnabled()) return;
+  await chrome.storage.local.set({
+    [DEVELOPER_PRO_OVERRIDE_KEY]: Boolean(developerProOverrideEl.checked)
+  });
+});
+
 // ---- Excel column prefs ----
 function normalizeExcelColumnPrefs(raw) {
   if (!raw || typeof raw !== 'object') return {};
@@ -2305,6 +2361,17 @@ function formatPrefDate(ts) {
   return `${yyyy}/${mm}/${dd} ${hh}:${mi}`;
 }
 
+function inferExcelLayoutScope(entry) {
+  const viewKey = String(entry?.viewKey || '').trim().toLowerCase();
+  const viewName = String(entry?.viewName || '').trim();
+  if (!viewKey && !viewName) return 'list';
+  if (viewKey.startsWith('id:detail:')) return 'detail';
+  if (viewKey.startsWith('param:detail')) return 'detail';
+  if (viewKey.includes('detail:')) return 'detail';
+  if (!viewName && viewKey.includes('detail')) return 'detail';
+  return 'list';
+}
+
 function renderExcelColumnPrefs() {
   if (!excelListEl) return;
   excelListEl.innerHTML = '';
@@ -2314,6 +2381,7 @@ function renderExcelColumnPrefs() {
     appName: value.appName || '',
     viewName: value.viewName || '',
     viewKey: value.viewKey || '',
+    scope: inferExcelLayoutScope(value),
     savedAt: value.savedAt || 0,
     count: Array.isArray(value.order) ? value.order.length : 0,
     widthCount: value.widths ? Object.keys(value.widths).length : 0
@@ -2337,15 +2405,25 @@ function renderExcelColumnPrefs() {
     title.className = 'excel-columns-title';
     const appLabel = entry.appName || (entry.appId ? `${t('app_prefix')} ${entry.appId}` : t('app_unspecified'));
     const viewLabel = entry.viewName || t('view_unspecified');
-    title.textContent = `${appLabel} / ${viewLabel}`;
+    const scopeLabel = entry.scope === 'detail' ? t('layout_scope_detail') : t('layout_scope_list');
+    title.textContent = entry.scope === 'detail'
+      ? `${appLabel} / ${scopeLabel}`
+      : `${appLabel} / ${viewLabel} (${scopeLabel})`;
+    const scopeBadge = document.createElement('span');
+    scopeBadge.className = `excel-layout-scope excel-layout-scope--${entry.scope}`;
+    scopeBadge.textContent = scopeLabel;
+    title.appendChild(scopeBadge);
     const meta = document.createElement('div');
     meta.className = 'excel-columns-meta';
+    const scope = document.createElement('span');
+    scope.textContent = `${t('layout_meta_scope')}: ${scopeLabel}`;
     const count = document.createElement('span');
     count.textContent = `${t('layout_meta_order')}: ${entry.count}`;
     const widthInfo = document.createElement('span');
     widthInfo.textContent = `${t('layout_meta_width')}: ${entry.widthCount}`;
     const saved = document.createElement('span');
     saved.textContent = `${t('layout_meta_saved')}: ${formatPrefDate(entry.savedAt)}`;
+    meta.appendChild(scope);
     meta.appendChild(count);
     meta.appendChild(widthInfo);
     meta.appendChild(saved);

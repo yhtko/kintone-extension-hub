@@ -385,6 +385,28 @@ ul {
   margin-top: 14px;
 }
 
+.developer-pro-override-row {
+  margin-top: 12px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.developer-pro-override-label {
+  margin: 0;
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.developer-pro-override-label input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
 .general-language-label {
   margin: 0;
   width: auto;
@@ -444,6 +466,30 @@ ul {
   font-size: 14px;
   font-weight: 600;
   color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.excel-layout-scope {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid #d5dde8;
+  background: #f8fafc;
+  color: #5b6778;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.excel-layout-scope--detail {
+  border-color: #d4d7f4;
+  background: #f4f5ff;
+  color: #4f46e5;
 }
 
 .excel-columns-meta {

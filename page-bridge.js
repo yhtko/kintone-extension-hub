@@ -323,7 +323,21 @@ function markLookupAutoFields(properties, metas) {
     }
   }
 
-  const EDITABLE_TYPES = new Set(['SINGLE_LINE_TEXT', 'NUMBER', 'DATE', 'RADIO_BUTTON', 'DROP_DOWN']);
+  const EDITABLE_TYPES = new Set([
+    'SINGLE_LINE_TEXT',
+    'MULTI_LINE_TEXT',
+    'NUMBER',
+    'DATE',
+    'LINK',
+    'RADIO_BUTTON',
+    'DROP_DOWN',
+    'CHECK_BOX',
+    'MULTI_SELECT',
+    'CALC',
+    'RICH_TEXT',
+    'SUBTABLE',
+    'LOOKUP'
+  ]);
 
   function extractQueryFromViews(viewsObj, viewIdOrName) {
     const entries = Object.entries(viewsObj || {});
@@ -1163,5 +1177,4 @@ function markLookupAutoFields(properties, metas) {
     }
   });
 })();
-
 

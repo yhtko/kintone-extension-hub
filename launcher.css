@@ -354,7 +354,7 @@ body.launcher {
   color: #fff;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  z-index: 9999;
+  z-index: 10010;
   pointer-events: none;
   display: none;
 }
@@ -365,6 +365,10 @@ body.launcher {
 
 .shortcut-button.tooltip-open .shortcut-tooltip {
   display: block;
+}
+
+.shortcut-button.tooltip-open {
+  z-index: 10001;
 }
 
 .shortcut-button.tooltip-align-left .shortcut-tooltip {
@@ -498,13 +502,17 @@ body.launcher {
   color: #fff;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  z-index: 9999;
+  z-index: 10010;
   pointer-events: none;
   display: none;
 }
 
 .collapsed-tray-item.tray-tooltip-open .collapsed-tray-tooltip {
   display: block;
+}
+
+.collapsed-tray-item.tray-tooltip-open {
+  z-index: 10001;
 }
 
 .collapsed-tray-item.tray-tooltip-align-left .collapsed-tray-tooltip {
