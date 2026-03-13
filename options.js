@@ -49,7 +49,7 @@ activatePane(window.location.hash.slice(1) || DEFAULT_PANE, { updateHash: false 
 
 const I18N_MESSAGES = {
   ja: {
-    settings_title: 'kintone Base 設定',
+    settings_title: 'PlugBits Launcher 設定',
     settings_menu_aria: '設定メニュー',
     nav_general: '全般',
     nav_shortcuts: 'ショートカット',
@@ -57,7 +57,7 @@ const I18N_MESSAGES = {
     nav_pins: 'ピン止め',
     nav_excel_overlay: 'スプレッドシート',
     general_section_title: '全般',
-    general_intro_1: 'kintone Base は、kintone を横断的に閲覧・操作するための Chrome 拡張機能です。各機能は左メニューから切り替えて設定できます。',
+    general_intro_1: 'PlugBits Launcher は、kintone を横断的に閲覧・操作するための Chrome 拡張機能です。各機能は左メニューから切り替えて設定できます。',
     general_intro_2: '設定は自動で保存され、同期が有効になっている場合は同じ Google アカウントで Chrome を使用する他端末にも共有されます。',
     general_tips_title: '使い方のヒント',
     general_tip_watchlist: 'ウォッチリストに登録したアプリはサイドパネルから素早く開けます。',
@@ -309,7 +309,7 @@ const I18N_MESSAGES = {
     watchlist_debug_storage_local: '保存先: local (fallback)'
   },
   en: {
-    settings_title: 'kintone Base Settings',
+    settings_title: 'PlugBits Launcher Settings',
     settings_menu_aria: 'Settings menu',
     nav_general: 'General',
     nav_shortcuts: 'Shortcuts',
@@ -317,7 +317,7 @@ const I18N_MESSAGES = {
     nav_pins: 'Pins',
     nav_excel_overlay: 'Spreadsheet',
     general_section_title: 'General',
-    general_intro_1: 'kintone Base is a Chrome extension for browsing and operating kintone more efficiently across apps.',
+    general_intro_1: 'PlugBits Launcher is a Chrome extension for browsing and operating kintone more efficiently across apps.',
     general_intro_2: 'Settings are saved automatically and synced across devices signed in with the same Google account when sync is enabled.',
     general_tips_title: 'Tips',
     general_tip_watchlist: 'Apps in your watchlist can be opened quickly from the side panel.',
