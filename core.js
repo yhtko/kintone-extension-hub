@@ -87,8 +87,13 @@ export async function sendRunInKintone(host, forward) {
   });
 }
 
-export async function sendCountBulk(host, items) {
-  return await sendRunInKintone(host, { type: 'COUNT_BULK', payload: { items } });
+export async function sendCountBulk(host, items, options = {}) {
+  const trigger = String(options?.trigger || '').trim();
+  const source = String(options?.source || '').trim();
+  const payload = { items };
+  if (trigger) payload.__pbTrigger = trigger;
+  if (source) payload.__pbSource = source;
+  return await sendRunInKintone(host, { type: 'COUNT_BULK', payload });
 }
 
 export async function getActiveTab() {
@@ -108,7 +113,7 @@ export function isKintoneUrl(url) {
 export function parseKintoneUrl(u) {
   try {
     const url = new URL(u);
-    const match = url.pathname.match(/\/k\/(\d+)\//);
+    const match = url.pathname.match(/\/k\/(\d+)(?:\/|$)/);
     const appId = match ? match[1] : '';
     const viewParam = url.searchParams.get('view') || '';
     const host = url.origin;
@@ -118,7 +123,14 @@ export function parseKintoneUrl(u) {
       const recMatch = hash.match(/record=(\d+)/);
       if (recMatch) recordId = recMatch[1];
     }
-    return { host, appId, viewIdOrName: viewParam, recordId, url: u };
+    return {
+      host,
+      appId,
+      viewId: viewParam,
+      viewIdOrName: viewParam,
+      recordId,
+      url: url.href
+    };
   } catch (_e) {
     return {};
   }

@@ -7,6 +7,188 @@
   const ORIGIN = location.origin;
 const viewsCache = new Map(); // appId -> views
 const fieldsCache = new Map(); // appId -> fields metadata cache
+const appMetaCache = new Map(); // appId -> { name, raw }
+const PB_API_USAGE_EVENT = '__kfav_api_usage__';
+const PB_DEBUG_FLAG_KEY = '__PB_DEBUG_API__';
+const PB_DEBUG_DEFAULT = true; // temporary debug for API trigger investigation
+const PB_DOM_METADATA_FALLBACK_FLAG_KEY = '__PB_ENABLE_DOM_METADATA_FALLBACK__';
+const PB_DOM_METADATA_FALLBACK_DEFAULT = false;
+
+function normalizeEndpointForTelemetry(path) {
+  const raw = String(path || '').trim();
+  if (!raw) return '';
+  if (!raw.startsWith('/k/v1/')) return raw;
+  if (raw.endsWith('.json')) return raw;
+  return `${raw}.json`;
+}
+
+function normalizeApiMeta(meta = {}) {
+  return {
+    feature: String(meta?.feature || 'other').trim().toLowerCase() || 'other',
+    trigger: String(meta?.trigger || 'unknown').trim().toLowerCase() || 'unknown',
+    source: String(meta?.source || 'page_bridge').trim() || 'page_bridge',
+    logGroup: String(meta?.logGroup || '').trim().toLowerCase() || '',
+    cache: String(meta?.cache || '').trim().toLowerCase() || '',
+    flow: String(meta?.flow || '').trim().toLowerCase() || ''
+  };
+}
+
+function isPbDebugEnabled() {
+  try {
+    return PB_DEBUG_DEFAULT || Boolean(window?.[PB_DEBUG_FLAG_KEY]);
+  } catch (_err) {
+    return PB_DEBUG_DEFAULT;
+  }
+}
+
+function pbDebug(message, extra) {
+  if (!isPbDebugEnabled()) return;
+  if (extra === undefined) {
+    console.debug(message);
+  } else {
+    console.debug(message, extra);
+  }
+}
+
+function isDomMetadataFallbackEnabled() {
+  try {
+    if (Boolean(window?.[PB_DOM_METADATA_FALLBACK_FLAG_KEY])) return true;
+  } catch (_err) {
+    // ignore
+  }
+  return PB_DOM_METADATA_FALLBACK_DEFAULT;
+}
+
+function logDomFallbackUsed(scope) {
+  try {
+    console.debug(`PB DOM fallback used: ${String(scope || 'unknown')}`);
+  } catch (_err) {
+    // ignore
+  }
+}
+
+function emitApiUsage(payload) {
+  try {
+    window.postMessage({ [PB_API_USAGE_EVENT]: true, payload }, ORIGIN);
+  } catch (_err) {
+    // ignore telemetry emit failures
+  }
+}
+
+function resolveRequestKind(endpoint) {
+  const path = String(endpoint || '').trim().toLowerCase();
+  if (path.includes('/records/acl/evaluate')) return 'acl';
+  if (path.includes('/records')) return 'records';
+  if (path.includes('/app/form/fields')) return 'metadata_fields';
+  if (path.includes('/app/views')) return 'metadata_views';
+  if (path.includes('/app.json')) return 'metadata_app';
+  return 'rest';
+}
+
+function resolveApiCategory(feature) {
+  const value = String(feature || '').trim().toLowerCase();
+  if (value.startsWith('watchlist')) return 'watchlist';
+  if (value.startsWith('overlay')) return 'overlay';
+  if (value.startsWith('metadata') || value === 'bootstrap' || value === 'admin') return 'admin';
+  if (value === 'record_pin') return 'record_pin';
+  if (value === 'recent') return 'recent';
+  return 'other';
+}
+
+function normalizeAppIdForBulk(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (!/^\d+$/.test(text)) return text;
+  const normalized = String(Number(text));
+  return normalized === 'NaN' ? text : normalized;
+}
+
+function cacheAppMeta(appId, payload) {
+  const key = String(appId || '').trim();
+  if (!key) return '';
+  const name = String(payload?.name || payload?.app?.name || '').trim();
+  const raw = payload && typeof payload === 'object' ? payload : undefined;
+  if (!name && !raw) return '';
+  appMetaCache.set(key, { name, raw });
+  return name;
+}
+
+function getCachedAppName(appId) {
+  const key = String(appId || '').trim();
+  if (!key) return '';
+  return String(appMetaCache.get(key)?.name || '').trim();
+}
+
+function resolveAppIdForApiSend(endpoint, payload) {
+  if (Object.prototype.hasOwnProperty.call(payload || {}, 'app')) {
+    return normalizeAppIdForBulk(payload?.app);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload || {}, 'id')) {
+    return normalizeAppIdForBulk(payload?.id);
+  }
+  return '';
+}
+
+async function callKintoneApi(path, method, payload, apiMeta = {}) {
+  const sdk = window.kintone;
+  if (!sdk?.api) throw new Error('kintone api unavailable');
+  const meta = normalizeApiMeta(apiMeta);
+  const endpoint = normalizeEndpointForTelemetry(path);
+  const verb = String(method || 'GET').trim().toUpperCase() || 'GET';
+  const requestKind = resolveRequestKind(endpoint);
+  const appId = resolveAppIdForApiSend(endpoint, payload);
+  const category = resolveApiCategory(meta.feature);
+  pbDebug(
+    `[API_SEND] endpoint=${endpoint} method=${verb} appId=${appId || '-'} category=${category} feature=${meta.feature} requestCount=1 cache=${meta.cache || 'miss'} flow=${meta.flow || 'main'} trigger=${meta.trigger}`
+  );
+  try {
+    const response = await sdk.api(sdk.api.url(path, true), verb, payload);
+    emitApiUsage({
+      feature: meta.feature,
+      endpoint,
+      method: verb,
+      trigger: meta.trigger,
+      source: meta.source,
+      ok: true,
+      sent: true,
+      requestCount: 1,
+      requestKind
+    });
+    if (meta.logGroup) {
+      const cacheText = meta.cache ? ` cache=${meta.cache}` : '';
+      pbDebug(`[PB][${meta.logGroup}] endpoint=${endpoint} trigger=${meta.trigger}${cacheText}`);
+    }
+    return response;
+  } catch (error) {
+    emitApiUsage({
+      feature: meta.feature,
+      endpoint,
+      method: verb,
+      trigger: meta.trigger,
+      source: meta.source,
+      ok: false,
+      sent: true,
+      requestCount: 1,
+      requestKind,
+      error: String(error?.message || error || 'api_failed')
+    });
+    if (meta.logGroup) {
+      pbDebug(
+        `[PB][${meta.logGroup}] endpoint=${endpoint} trigger=${meta.trigger} error=${String(error?.message || error || 'api_failed')}`
+      );
+    }
+    throw error;
+  }
+}
+
+function logApiCache(meta, endpointPath, cacheState) {
+  const normalized = normalizeApiMeta({ ...meta, cache: cacheState });
+  if (!normalized.logGroup) return;
+  const endpoint = normalizeEndpointForTelemetry(endpointPath);
+  pbDebug(
+    `[PB][${normalized.logGroup}] endpoint=${endpoint} trigger=${normalized.trigger} cache=${normalized.cache}`
+  );
+}
 
 function normalizeChoiceList(prop) {
   if (!prop || typeof prop !== 'object' || !prop.options) return [];
@@ -124,16 +306,7 @@ function markLookupAutoFields(properties, metas) {
   });
 }
 
-  async function getAppName(appId) {
-    if (!appId) return '';
-    const sdk = window.kintone;
-    if (!sdk?.api) return '';
-    try {
-      const resp = await sdk.api(sdk.api.url('/k/v1/app.json', true), 'GET', { id: String(appId) });
-      if (resp?.app?.name) return resp.app.name;
-      if (resp?.name) return resp.name;
-    } catch (_e) { /* ignore */ }
-
+  function pickAppNameFromDom() {
     const selectors = [
       '.gaia-argoui-app-index-appname span',
       '.gaia-argoui-app-index-toolbar-title span',
@@ -157,42 +330,132 @@ function markLookupAutoFields(properties, metas) {
       if (parts.length) return parts[0].trim();
       return docTitle.trim();
     }
-
     return '';
   }
 
-  async function getViews(appId) {
-    const resp = await window.kintone.api(window.kintone.api.url('/k/v1/app/views', true), 'GET', { app: String(appId) });
+  function pickAppNameFromPayload(payload) {
+    return String(payload?.name || payload?.app?.name || '').trim();
+  }
+
+  async function fetchAppJson(appId, apiMeta = {}) {
+    const safeAppId = String(appId || '').trim();
+    if (!safeAppId) throw new Error('appId is required');
+    const meta = normalizeApiMeta({
+      feature: 'metadata_app',
+      logGroup: 'bootstrap',
+      ...apiMeta
+    });
+    const response = await callKintoneApi('/k/v1/app.json', 'GET', { id: safeAppId }, meta);
+    cacheAppMeta(safeAppId, response);
+    return response;
+  }
+
+  async function getAppName(appId, options = {}) {
+    const allowApi = options?.allowApi !== false;
+    if (!appId) return '';
+    try {
+      if (typeof window.kintone?.app?.getName === 'function') {
+        const fromRuntime = String(window.kintone.app.getName() || '').trim();
+        if (fromRuntime) return fromRuntime;
+      }
+    } catch (_e) { /* ignore */ }
+    const fromCache = getCachedAppName(appId);
+    if (fromCache) return fromCache;
+    if (!allowApi) return '';
+    try {
+      const resp = await fetchAppJson(appId, options?.apiMeta || {});
+      const name = pickAppNameFromPayload(resp);
+      if (name) return name;
+    } catch (_e) { /* ignore */ }
+    const fromDom = pickAppNameFromDom();
+    if (fromDom) {
+      logDomFallbackUsed('pickAppNameFromDom');
+      return fromDom;
+    }
+    return '';
+  }
+
+  async function getAppMeta(appId, apiMeta = {}) {
+    const cacheName = getCachedAppName(appId);
+    if (cacheName) {
+      const key = String(appId || '').trim();
+      return {
+        name: cacheName,
+        raw: appMetaCache.get(key)?.raw
+      };
+    }
+    const resp = await fetchAppJson(appId, apiMeta);
+    cacheAppMeta(appId, resp);
+    return {
+      name: pickAppNameFromPayload(resp),
+      raw: resp && typeof resp === 'object' ? resp : undefined
+    };
+  }
+
+  async function getViews(appId, apiMeta = {}) {
+    const meta = normalizeApiMeta({
+      feature: 'metadata_views',
+      logGroup: 'overlay',
+      cache: 'miss',
+      ...apiMeta
+    });
+    const resp = await callKintoneApi('/k/v1/app/views', 'GET', { app: String(appId) }, meta);
     return resp.views || {};
   }
 
-  async function getViewsCached(appId) {
+  async function getViewsCached(appId, apiMeta = {}) {
     const key = String(appId);
-    if (!viewsCache.has(key)) {
-      viewsCache.set(key, await getViews(appId));
+    if (viewsCache.has(key)) {
+      logApiCache(
+        { feature: 'metadata_views', logGroup: 'overlay', ...apiMeta },
+        '/k/v1/app/views',
+        'hit'
+      );
+      return viewsCache.get(key) || {};
     }
+    logApiCache(
+      { feature: 'metadata_views', logGroup: 'overlay', ...apiMeta },
+      '/k/v1/app/views',
+      'miss'
+    );
+    viewsCache.set(key, await getViews(appId, { ...apiMeta, cache: 'miss' }));
     return viewsCache.get(key) || {};
   }
 
-  async function getFields(appId) {
+  async function getFields(appId, apiMeta = {}) {
     const key = String(appId || '');
     if (!key) return [];
     if (fieldsCache.has(key)) {
+      logApiCache(
+        { feature: 'metadata_fields', logGroup: 'overlay', ...apiMeta },
+        '/k/v1/app/form/fields',
+        'hit'
+      );
       return fieldsCache.get(key).map((field) => ({ ...field }));
     }
 
-    const fields = await fetchFieldsWithFallback(key);
+    logApiCache(
+      { feature: 'metadata_fields', logGroup: 'overlay', ...apiMeta },
+      '/k/v1/app/form/fields',
+      'miss'
+    );
+    const fields = await fetchFieldsWithFallback(key, apiMeta);
     fieldsCache.set(key, fields);
     return fields.map((field) => ({ ...field }));
   }
 
-  async function getFieldsMeta(appId) {
+  async function getFieldsMeta(appId, apiMeta = {}) {
     const key = String(appId || '');
     if (!key) return [];
     const sdk = window.kintone;
     if (!sdk?.api) return [];
     try {
-      const resp = await sdk.api(sdk.api.url('/k/v1/app/form/fields', true), 'GET', { app: key });
+      const meta = normalizeApiMeta({
+        feature: 'metadata_fields',
+        logGroup: 'overlay',
+        ...apiMeta
+      });
+      const resp = await callKintoneApi('/k/v1/app/form/fields', 'GET', { app: key }, meta);
       return normalizeFieldMetaFromProperties(resp?.properties || {});
     } catch (error) {
       if (typeof console !== 'undefined' && console.warn) {
@@ -209,12 +472,52 @@ function markLookupAutoFields(properties, metas) {
     }
   }
 
-  async function fetchFieldsWithFallback(appId) {
+  async function getFieldsMetaBundle(appId, apiMeta = {}) {
+    const key = String(appId || '');
+    if (!key) return { normalized: [], raw: {} };
+    const sdk = window.kintone;
+    if (!sdk?.api) return { normalized: [], raw: {} };
+    try {
+      const meta = normalizeApiMeta({
+        feature: 'metadata_fields',
+        logGroup: 'overlay',
+        ...apiMeta
+      });
+      const resp = await callKintoneApi('/k/v1/app/form/fields', 'GET', { app: key }, meta);
+      const raw = resp && typeof resp === 'object' ? resp : {};
+      return {
+        normalized: normalizeFieldMetaFromProperties(raw?.properties || {}),
+        raw
+      };
+    } catch (error) {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('[kintone-favorites] getFieldsMetaBundle failed via form API, falling back to getFields', error);
+      }
+      const fallback = await getFields(key);
+      return {
+        normalized: fallback.map((field) => ({
+          code: field.code,
+          label: field.label || '',
+          type: field.type || '',
+          required: false,
+          choices: Array.isArray(field.choices) ? field.choices : []
+        })),
+        raw: {}
+      };
+    }
+  }
+
+  async function fetchFieldsWithFallback(appId, apiMeta = {}) {
     const sdk = window.kintone;
     if (!sdk?.api) return [];
     try {
       // 繧｢繝励Μ縺ｮ繝輔ぅ繝ｼ繝ｫ繝牙ｮ夂ｾｩ繧貞叙蠕暦ｼ域ｨｩ髯舌′縺ｪ縺・ｴ蜷医・萓句､問・蜻ｼ縺ｳ蜃ｺ縺怜・縺ｧ繝輔か繝ｼ繝ｫ繝舌ャ繧ｯ・・
-      const resp = await sdk.api(sdk.api.url('/k/v1/app/form/fields', true), 'GET', { app: String(appId) });
+      const meta = normalizeApiMeta({
+        feature: 'metadata_fields',
+        logGroup: 'overlay',
+        ...apiMeta
+      });
+      const resp = await callKintoneApi('/k/v1/app/form/fields', 'GET', { app: String(appId) }, meta);
       // 霑泌唆: { code, label, type } 縺ｮ驟榊・
       const props = resp?.properties || {};
       return Object.keys(props).map((code) => ({
@@ -227,13 +530,17 @@ function markLookupAutoFields(properties, metas) {
       if (typeof console !== 'undefined' && console.warn) {
         console.warn('[kintone-favorites] getFields failed via form API, falling back to records API', error);
       }
-      const fallback = await fetchFieldsFromRecords(appId);
+      const fallback = await fetchFieldsFromRecords(appId, {
+        ...apiMeta,
+        skipRestFieldLabelLookup: true
+      });
       if (fallback.length) return fallback;
       throw error;
     }
   }
 
   function collectFieldLabelsFromDom() {
+    logDomFallbackUsed('collectFieldLabelsFromDom');
     const labels = new Map();
     const selectors = [
       'th[data-field-code]',
@@ -256,6 +563,7 @@ function markLookupAutoFields(properties, metas) {
   }
 
   function collectViewColumnsFromDom() {
+    logDomFallbackUsed('collectViewColumnsFromDom');
     const columns = [];
     const selectors = [
       'thead th[data-field-code]',
@@ -290,7 +598,53 @@ function markLookupAutoFields(properties, metas) {
     return columns;
   }
 
-  async function fetchFieldsFromRecords(appId) {
+  async function getFieldLabelMapByPriority(appId, apiMeta = {}) {
+    const appKey = String(appId || '').trim();
+    const skipRest = Boolean(apiMeta?.skipRestFieldLabelLookup);
+    if (!appKey) return new Map();
+
+    const cachedFields = fieldsCache.get(appKey);
+    if (Array.isArray(cachedFields) && cachedFields.length) {
+      const labelMapFromCache = new Map();
+      cachedFields.forEach((field) => {
+        const code = String(field?.code || '').trim();
+        const label = String(field?.label || '').trim();
+        if (code && label && !labelMapFromCache.has(code)) labelMapFromCache.set(code, label);
+      });
+      if (labelMapFromCache.size) return labelMapFromCache;
+    }
+
+    if (!skipRest) {
+      try {
+        const meta = normalizeApiMeta({
+          feature: 'metadata_fields',
+          logGroup: 'overlay',
+          ...apiMeta
+        });
+        const resp = await callKintoneApi('/k/v1/app/form/fields', 'GET', { app: appKey }, meta);
+        const normalized = normalizeFieldMetaFromProperties(resp?.properties || {});
+        if (normalized.length) {
+          fieldsCache.set(appKey, normalized);
+          const labelMapFromRest = new Map();
+          normalized.forEach((field) => {
+            const code = String(field?.code || '').trim();
+            const label = String(field?.label || '').trim();
+            if (code && label && !labelMapFromRest.has(code)) labelMapFromRest.set(code, label);
+          });
+          if (labelMapFromRest.size) return labelMapFromRest;
+        }
+      } catch (_err) {
+        // fall through to debug fallback
+      }
+    }
+
+    if (isDomMetadataFallbackEnabled()) {
+      return collectFieldLabelsFromDom();
+    }
+    return new Map();
+  }
+
+  async function fetchFieldsFromRecords(appId, apiMeta = {}) {
     const sdk = window.kintone;
     if (!sdk?.api) return [];
     try {
@@ -299,10 +653,15 @@ function markLookupAutoFields(properties, metas) {
         query: 'limit 1',
         totalCount: false
       };
-      const resp = await sdk.api(sdk.api.url('/k/v1/records', true), 'GET', params);
+      const meta = normalizeApiMeta({
+        feature: 'metadata_fields',
+        logGroup: 'overlay',
+        ...apiMeta
+      });
+      const resp = await callKintoneApi('/k/v1/records', 'GET', params, meta);
       const firstRecord = Array.isArray(resp?.records) && resp.records.length ? resp.records[0] : null;
       if (!firstRecord) return [];
-      const labels = collectFieldLabelsFromDom();
+      const labels = await getFieldLabelMapByPriority(appId, apiMeta);
       const fields = [];
       for (const [code, meta] of Object.entries(firstRecord)) {
         if (!code || code.startsWith('$')) continue;
@@ -488,7 +847,6 @@ function markLookupAutoFields(properties, metas) {
     const chosen = pickCurrentViewFromViews(views, viewId || getCurrentViewIdFromUrl());
     const selectedView = chosen.selectedView;
     const selectedViewName = chosen.selectedViewName;
-    const domColumns = collectViewColumnsFromDom();
     const fieldOrder = extractColumnOrder(selectedView);
 
     let fieldLabelMap = new Map();
@@ -498,17 +856,19 @@ function markLookupAutoFields(properties, metas) {
     } catch (_err) {
       // ignore
     }
-    const columns = domColumns.length
-      ? domColumns.map((column, index) => ({
-          index: Number.isInteger(column.index) ? column.index : index,
-          fieldCode: String(column.fieldCode || ''),
-          label: String(column.label || fieldLabelMap.get(column.fieldCode) || '')
-        }))
-      : fieldOrder.map((code, index) => ({
-          index,
-          fieldCode: String(code || ''),
-          label: String(fieldLabelMap.get(code) || '')
-        }));
+    const columnsFromView = fieldOrder.map((code, index) => ({
+      index,
+      fieldCode: String(code || ''),
+      label: String(fieldLabelMap.get(code) || '')
+    }));
+    let columns = columnsFromView;
+    if (!columns.length && isDomMetadataFallbackEnabled()) {
+      columns = collectViewColumnsFromDom().map((column, index) => ({
+        index: Number.isInteger(column.index) ? column.index : index,
+        fieldCode: String(column.fieldCode || ''),
+        label: String(column.label || fieldLabelMap.get(column.fieldCode) || '')
+      }));
+    }
     return {
       viewId: selectedView?.id ? String(selectedView.id) : '',
       viewName: selectedViewName || '',
@@ -516,11 +876,60 @@ function markLookupAutoFields(properties, metas) {
     };
   }
 
-  async function countRecords(appId, query) {
+  async function countRecords(appId, query, apiMeta = {}) {
     const params = { app: String(appId), totalCount: true, size: 1 };
     if (query && query.trim()) params.query = query;
-    const resp = await window.kintone.api(window.kintone.api.url('/k/v1/records', true), 'GET', params);
+    const resp = await callKintoneApi('/k/v1/records', 'GET', params, {
+      feature: 'watchlist',
+      trigger: 'watchlist_refresh',
+      logGroup: 'watchlist',
+      ...apiMeta
+    });
     return parseInt(resp.totalCount || '0', 10);
+  }
+
+  async function countRecordsBulk(entries, apiMeta = {}) {
+    const normalizedEntries = (Array.isArray(entries) ? entries : [])
+      .map((entry) => ({
+        id: String(entry?.id || '').trim(),
+        appId: normalizeAppIdForBulk(entry?.appId),
+        query: String(entry?.query || '').trim()
+      }))
+      .filter((entry) => entry.id && entry.appId);
+    const counts = {};
+    const errors = {};
+    if (!normalizedEntries.length) return { counts, errors };
+    const trigger = String(apiMeta?.trigger || 'watchlist_refresh');
+    const source = String(apiMeta?.source || 'watchlist');
+    const logGroup = String(apiMeta?.logGroup || 'watchlist');
+    const flow = String(apiMeta?.flow || 'parallel_get');
+    const results = await Promise.all(
+      normalizedEntries.map(async (entry) => {
+        try {
+          const count = await countRecords(entry.appId, entry.query, {
+            feature: 'watchlist',
+            trigger,
+            source,
+            logGroup,
+            flow
+          });
+          if (!Number.isFinite(count)) {
+            return { id: entry.id, count: null, error: 'missing_total_count' };
+          }
+          return { id: entry.id, count };
+        } catch (error) {
+          return { id: entry.id, count: null, error: String(error?.message || error) };
+        }
+      })
+    );
+    results.forEach((result) => {
+      if (!result?.id) return;
+      counts[result.id] = result.count;
+      if (result.error) {
+        errors[result.id] = result.error;
+      }
+    });
+    return { counts, errors };
   }
 
   function normalizePermissionState(value, fallback = 'unknown') {
@@ -618,7 +1027,7 @@ function markLookupAutoFields(properties, metas) {
     return [];
   }
 
-  async function fetchAppPermissions(appId) {
+  async function fetchAppPermissions(appId, apiMeta = {}) {
     const fallback = { view: 'unknown', add: 'unknown', edit: 'unknown', delete: 'unknown', source: 'unknown' };
     const sdk = window.kintone;
     if (!sdk?.api) return fallback;
@@ -633,7 +1042,12 @@ function markLookupAutoFields(properties, metas) {
 
     for (const attempt of attempts) {
       try {
-        const resp = await sdk.api(sdk.api.url(attempt.path, true), attempt.method, attempt.payload);
+        const resp = await callKintoneApi(attempt.path, attempt.method, attempt.payload, {
+          feature: 'overlay_acl',
+          trigger: 'acl_check',
+          logGroup: 'overlay',
+          ...apiMeta
+        });
         console.debug('[excel-permission-api]', {
           appId: app,
           type: 'app',
@@ -654,7 +1068,7 @@ function markLookupAutoFields(properties, metas) {
     return fallback;
   }
 
-  async function fetchRecordPermissions(appId, ids) {
+  async function fetchRecordPermissions(appId, ids, apiMeta = {}) {
     const idList = (ids || []).map((id) => String(id || '').trim()).filter(Boolean);
     const fallback = emptyRecordPermissionMap(idList);
     const sdk = window.kintone;
@@ -669,7 +1083,12 @@ function markLookupAutoFields(properties, metas) {
 
     for (const attempt of attempts) {
       try {
-        const resp = await sdk.api(sdk.api.url(attempt.path, true), attempt.method, attempt.payload);
+        const resp = await callKintoneApi(attempt.path, attempt.method, attempt.payload, {
+          feature: 'overlay_acl',
+          trigger: 'acl_check',
+          logGroup: 'overlay',
+          ...apiMeta
+        });
         console.debug('[excel-permission-api]', {
           appId: app,
           type: 'record',
@@ -706,17 +1125,23 @@ function markLookupAutoFields(properties, metas) {
     return fallback;
   }
 
-  async function fetchEvaluatedRecordAcl(appId, ids) {
+  async function fetchEvaluatedRecordAcl(appId, ids, apiMeta = {}) {
     const idList = (ids || []).map((id) => String(id || '').trim()).filter(Boolean);
     if (!idList.length) return [];
     const sdk = window.kintone;
     if (!sdk?.api) return [];
     const app = String(appId || '').trim();
     if (!app) return [];
-    const resp = await sdk.api(
-      sdk.api.url('/k/v1/records/acl/evaluate.json', true),
+    const resp = await callKintoneApi(
+      '/k/v1/records/acl/evaluate.json',
       'GET',
-      { app, ids: idList }
+      { app, ids: idList },
+      {
+        feature: 'overlay_acl',
+        trigger: 'acl_check',
+        logGroup: 'overlay',
+        ...apiMeta
+      }
     );
     console.debug('[excel-permission-api]', {
       appId: app,
@@ -752,9 +1177,50 @@ function markLookupAutoFields(properties, metas) {
         const query = window.kintone?.app?.getQuery?.() || '';
         let appName = '';
         if (appId) {
-          appName = await getAppName(appId);
+          appName = await getAppName(appId, { allowApi: false });
         }
         window.postMessage({ __kfav__: true, replyTo: id, ok: true, appId, query, appName }, ORIGIN);
+        return;
+      }
+
+      if (type === 'META_GET_APP') {
+        const appId = String(payload?.appId || '').trim();
+        if (!appId) throw new Error('appId is required');
+        const source = String(payload?.source || 'metadata_bundle');
+        const feature = source.includes('launcher') ? 'bootstrap' : 'metadata_app';
+        const app = await getAppMeta(appId, {
+          feature,
+          trigger: String(payload?.trigger || 'panel_open'),
+          source,
+          logGroup: 'bootstrap'
+        });
+        window.postMessage({ __kfav__: true, replyTo: id, ok: true, app }, ORIGIN);
+        return;
+      }
+
+      if (type === 'META_GET_VIEWS') {
+        const appId = String(payload?.appId || '').trim();
+        if (!appId) throw new Error('appId is required');
+        const views = await getViews(appId, {
+          feature: 'metadata_views',
+          trigger: String(payload?.trigger || 'overlay_open'),
+          source: String(payload?.source || 'metadata_bundle'),
+          logGroup: 'overlay'
+        });
+        window.postMessage({ __kfav__: true, replyTo: id, ok: true, views }, ORIGIN);
+        return;
+      }
+
+      if (type === 'META_GET_FIELDS') {
+        const appId = String(payload?.appId || '').trim();
+        if (!appId) throw new Error('appId is required');
+        const fields = await getFieldsMetaBundle(appId, {
+          feature: 'metadata_fields',
+          trigger: String(payload?.trigger || 'overlay_open'),
+          source: String(payload?.source || 'metadata_bundle'),
+          logGroup: 'overlay'
+        });
+        window.postMessage({ __kfav__: true, replyTo: id, ok: true, fields }, ORIGIN);
         return;
       }
 
@@ -870,7 +1336,11 @@ function markLookupAutoFields(properties, metas) {
       if (type === 'EXCEL_GET_FIELDS_META') {
         const appId = payload?.appId;
         if (!appId) throw new Error('appId is required');
-        const fieldsMeta = await getFieldsMeta(appId);
+        const fieldsMeta = await getFieldsMeta(appId, {
+          feature: 'metadata_fields',
+          trigger: String(payload?.__pbTrigger || payload?.trigger || 'overlay_open'),
+          source: 'overlay'
+        });
         window.postMessage({ __kfav__: true, replyTo: id, ok: true, fieldsMeta }, ORIGIN);
         return;
       }
@@ -886,7 +1356,12 @@ function markLookupAutoFields(properties, metas) {
         };
         const query = String(payload?.query || '');
         if (query.trim()) params.query = query.trim();
-        const resp = await window.kintone.api(window.kintone.api.url('/k/v1/records', true), 'GET', params);
+        const resp = await callKintoneApi('/k/v1/records', 'GET', params, {
+          feature: 'overlay_records',
+          trigger: String(payload?.__pbTrigger || payload?.trigger || 'overlay_open'),
+          source: 'overlay',
+          logGroup: 'overlay'
+        });
         window.postMessage({
           __kfav__: true,
           replyTo: id,
@@ -911,7 +1386,12 @@ function markLookupAutoFields(properties, metas) {
           ids: ids.map(String),
           fields: Array.from(new Set(['$id', '$revision'].concat(fields)))
         };
-        const resp = await window.kintone.api(window.kintone.api.url('/k/v1/records', true), 'GET', params);
+        const resp = await callKintoneApi('/k/v1/records', 'GET', params, {
+          feature: 'overlay_records',
+          trigger: String(payload?.__pbTrigger || payload?.trigger || 'save_refetch'),
+          source: 'overlay',
+          logGroup: 'overlay'
+        });
         window.postMessage({ __kfav__: true, replyTo: id, ok: true, records: resp.records || [] }, ORIGIN);
         return;
       }
@@ -921,7 +1401,12 @@ function markLookupAutoFields(properties, metas) {
         if (!appId) throw new Error('appId is required');
         const currentQuery = String(payload?.currentQuery || '');
         const viewId = payload?.viewId ? String(payload.viewId) : '';
-        const views = await getViewsCached(appId);
+        const views = await getViewsCached(appId, {
+          feature: 'metadata_views',
+          trigger: String(payload?.__pbTrigger || payload?.trigger || 'overlay_open'),
+          source: 'overlay',
+          logGroup: 'overlay'
+        });
         const entries = Object.entries(views || {});
         let selectedView = null;
         let selectedViewName = '';
@@ -978,7 +1463,12 @@ function markLookupAutoFields(properties, metas) {
         const records = Array.isArray(payload?.records) ? payload.records : null;
         if (!appId || !records) throw new Error('appId and records are required');
         const req = { app: String(appId), records };
-        const resp = await window.kintone.api(window.kintone.api.url('/k/v1/records', true), 'PUT', req);
+        const resp = await callKintoneApi('/k/v1/records', 'PUT', req, {
+          feature: 'overlay_records',
+          trigger: String(payload?.__pbTrigger || payload?.trigger || 'save_click'),
+          source: 'overlay',
+          logGroup: 'overlay'
+        });
         window.postMessage({ __kfav__: true, replyTo: id, ok: true, result: resp }, ORIGIN);
         return;
       }
@@ -988,7 +1478,12 @@ function markLookupAutoFields(properties, metas) {
         const records = Array.isArray(payload?.records) ? payload.records : null;
         if (!appId || !records) throw new Error('appId and records are required');
         const req = { app: String(appId), records };
-        const resp = await window.kintone.api(window.kintone.api.url('/k/v1/records', true), 'POST', req);
+        const resp = await callKintoneApi('/k/v1/records', 'POST', req, {
+          feature: 'overlay_records',
+          trigger: String(payload?.__pbTrigger || payload?.trigger || 'save_click'),
+          source: 'overlay',
+          logGroup: 'overlay'
+        });
         window.postMessage({ __kfav__: true, replyTo: id, ok: true, result: resp }, ORIGIN);
         return;
       }
@@ -1002,7 +1497,12 @@ function markLookupAutoFields(properties, metas) {
           return;
         }
         const req = { app: String(appId), ids };
-        const resp = await window.kintone.api(window.kintone.api.url('/k/v1/records', true), 'DELETE', req);
+        const resp = await callKintoneApi('/k/v1/records', 'DELETE', req, {
+          feature: 'overlay_records',
+          trigger: String(payload?.__pbTrigger || payload?.trigger || 'save_click'),
+          source: 'overlay',
+          logGroup: 'overlay'
+        });
         window.postMessage({ __kfav__: true, replyTo: id, ok: true, result: resp || { ids } }, ORIGIN);
         return;
       }
@@ -1011,23 +1511,43 @@ function markLookupAutoFields(properties, metas) {
         const appId = payload?.appId;
         const ids = Array.isArray(payload?.ids) ? payload.ids : [];
         if (!appId) throw new Error('appId is required');
-        const rights = await fetchEvaluatedRecordAcl(appId, ids);
+        const rights = await fetchEvaluatedRecordAcl(appId, ids, {
+          feature: 'overlay_acl',
+          trigger: String(payload?.__pbTrigger || payload?.trigger || 'acl_check'),
+          source: 'overlay',
+          logGroup: 'overlay'
+        });
         window.postMessage({ __kfav__: true, replyTo: id, ok: true, rights }, ORIGIN);
         return;
       }
 
       if (type === 'COUNT_VIEW') {
         const { appId, viewIdOrName } = payload;
-        const views = await getViews(appId);
+        const views = await getViews(appId, {
+          feature: 'watchlist',
+          trigger: String(payload?.__pbTrigger || payload?.trigger || 'watchlist_refresh'),
+          source: 'watchlist',
+          logGroup: 'watchlist'
+        });
         const query = extractQueryFromViews(views, viewIdOrName);
-        const count = await countRecords(appId, query);
+        const count = await countRecords(appId, query, {
+          feature: 'watchlist',
+          trigger: String(payload?.__pbTrigger || payload?.trigger || 'watchlist_refresh'),
+          source: 'watchlist',
+          logGroup: 'watchlist'
+        });
         window.postMessage({ __kfav__: true, replyTo: id, ok: true, count }, ORIGIN);
         return;
       }
 
       if (type === 'COUNT_APP_QUERY') {
         const { appId, query } = payload;
-        const count = await countRecords(appId, query || '');
+        const count = await countRecords(appId, query || '', {
+          feature: 'watchlist',
+          trigger: String(payload?.__pbTrigger || payload?.trigger || 'watchlist_refresh'),
+          source: 'watchlist',
+          logGroup: 'watchlist'
+        });
         window.postMessage({ __kfav__: true, replyTo: id, ok: true, count }, ORIGIN);
         return;
       }
@@ -1035,16 +1555,19 @@ function markLookupAutoFields(properties, metas) {
       if (type === 'GET_APP_NAME') {
         const appId = payload?.appId;
         if (!appId) throw new Error('appId is required');
-        const resp = await window.kintone.api(
-          window.kintone.api.url('/k/v1/app.json', true),
-          'GET',
-          { id: String(appId) }
-        );
+        const source = String(payload?.source || 'launcher');
+        const feature = source.includes('launcher') ? 'bootstrap' : 'metadata_app';
+        const app = await getAppMeta(appId, {
+          feature,
+          trigger: String(payload?.__pbTrigger || payload?.trigger || 'panel_open'),
+          source,
+          logGroup: 'bootstrap'
+        });
         window.postMessage({
           __kfav__: true,
           replyTo: id,
           ok: true,
-          name: String(resp?.name || '')
+          name: String(app?.name || '')
         }, ORIGIN);
         return;
       }
@@ -1053,6 +1576,7 @@ function markLookupAutoFields(properties, metas) {
         const items = Array.isArray(payload?.items) ? payload.items : [];
         const counts = {};
         const errors = {};
+        const bulkTargets = [];
         for (const item of items) {
           const key = item?.id;
           if (!key) continue;
@@ -1063,19 +1587,38 @@ function markLookupAutoFields(properties, metas) {
               continue;
             }
             const appId = String(item.appId);
-            let finalQuery = String(item.query || '').trim();
-            if (item.viewIdOrName) {
-              const views = await getViewsCached(appId);
-              const base = filterCondFromViews(views, item.viewIdOrName);
-              finalQuery = combineQuery(base, finalQuery);
+            const normalizedAppId = normalizeAppIdForBulk(appId);
+            if (!normalizedAppId) {
+              counts[key] = null;
+              errors[key] = 'appId is invalid';
+              continue;
             }
-            const count = await countRecords(appId, finalQuery);
-            counts[key] = count;
+            const queryRaw = item?.query;
+            const finalQuery = String(queryRaw == null ? '' : queryRaw).trim();
+            if (finalQuery === '-') {
+              counts[key] = null;
+              errors[key] = 'query is not set';
+              continue;
+            }
+            bulkTargets.push({
+              id: key,
+              appId: normalizedAppId,
+              query: finalQuery
+            });
           } catch (e) {
             counts[key] = null;
             errors[key] = String(e?.message || e);
           }
         }
+        const bulkResult = await countRecordsBulk(bulkTargets, {
+          feature: 'watchlist',
+          trigger: String(payload?.__pbTrigger || payload?.trigger || 'watchlist_refresh'),
+          source: 'watchlist',
+          logGroup: 'watchlist',
+          flow: 'parallel_get'
+        });
+        Object.assign(counts, bulkResult.counts || {});
+        Object.assign(errors, bulkResult.errors || {});
         const payloadOut = { __kfav__: true, replyTo: id, ok: true, counts };
         if (Object.keys(errors).length) payloadOut.errors = errors;
         window.postMessage(payloadOut, ORIGIN);
@@ -1084,7 +1627,12 @@ function markLookupAutoFields(properties, metas) {
 
       if (type === 'LIST_VIEWS') {
         const { appId } = payload;
-        const views = await getViews(appId);
+        const views = await getViews(appId, {
+          feature: 'watchlist',
+          trigger: String(payload?.__pbTrigger || payload?.trigger || 'watchlist_refresh'),
+          source: 'watchlist',
+          logGroup: 'watchlist'
+        });
         window.postMessage({ __kfav__: true, replyTo: id, ok: true, views }, ORIGIN);
         return;
       }
@@ -1120,8 +1668,14 @@ function markLookupAutoFields(properties, metas) {
         q += ` order by ${dateField} asc limit ${Math.max(1, Math.min(100, limit))}`;
 
         const fields = Array.from(new Set(['$id', dateField].concat(titleField ? [titleField] : [])));
-        const resp = await window.kintone.api(window.kintone.api.url('/k/v1/records', true), 'GET',
-          { app: String(appId), query: q, fields });
+        const resp = await callKintoneApi('/k/v1/records', 'GET',
+          { app: String(appId), query: q, fields },
+          {
+            feature: 'watchlist',
+            trigger: String(payload?.__pbTrigger || payload?.trigger || 'watchlist_refresh'),
+            source: 'watchlist',
+            logGroup: 'watchlist'
+          });
         //縺昴・縺ｾ縺ｾ霑斐☆・域紛蠖｢縺ｯ諡｡蠑ｵ蛛ｴ縺ｧ・・
         window.postMessage({ __kfav__: true, replyTo: id, ok: true, records: resp.records || [] }, ORIGIN);
         return;
@@ -1152,7 +1706,12 @@ function markLookupAutoFields(properties, metas) {
             if (Array.isArray(item.fields) && item.fields.length) {
               params.fields = item.fields;
             }
-            const resp = await window.kintone.api(window.kintone.api.url('/k/v1/record', true), 'GET', params);
+            const resp = await callKintoneApi('/k/v1/record', 'GET', params, {
+              feature: 'record_pin',
+              trigger: String(payload?.__pbTrigger || payload?.trigger || 'panel_open'),
+              source: 'record_pin',
+              logGroup: 'record_pin'
+            });
             results[key] = { ok: true, record: resp.record || {} };
           } catch (error) {
             results[key] = { ok: false, error: String(error?.message || error) };
@@ -1177,4 +1736,3 @@ function markLookupAutoFields(properties, metas) {
     }
   });
 })();
-

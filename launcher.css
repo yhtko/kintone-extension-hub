@@ -661,11 +661,13 @@ body.launcher {
 
 .launcher-notice {
   margin: 0 18px 6px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border-radius: 10px;
-  background: rgba(250, 204, 21, 0.16);
+  border: 1px solid rgba(250, 204, 21, 0.35);
+  background: rgba(250, 204, 21, 0.18);
   color: var(--launcher-text);
   font-size: 12px;
+  line-height: 1.45;
 }
 
 .hidden {
@@ -756,6 +758,13 @@ body.launcher {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: -0.02em;
+}
+
+.watchlist-updated {
+  margin: -1px 2px 5px;
+  font-size: 11px;
+  color: var(--launcher-muted);
+  letter-spacing: 0.01em;
 }
 
 .icon-toggle {

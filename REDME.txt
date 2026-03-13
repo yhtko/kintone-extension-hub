@@ -1,0 +1,188 @@
+# PlugBits Launcher for kintone
+
+PlugBits Launcher for kintone は  
+kintoneの作業効率を向上させる Chrome Extension です。
+
+サイドパネル型ランチャーと Excelライクな編集UI を提供し  
+kintone操作の **スピード・視認性・操作性** を改善します。
+
+---
+
+# Features
+
+## Side Panel Launcher
+
+kintone画面から直接アクセスできる作業ランチャー。
+
+主な機能
+
+- Shortcuts
+- WatchList（ビュー件数確認）
+- Record Pin（レコード固定）
+- Recent Records（最近のレコード）
+
+画面遷移を減らし、日常作業を高速化します。
+
+---
+
+## WatchList
+
+登録したビューのレコード件数を確認できます。
+
+特徴
+
+- API使用量を抑えたTTL更新
+- 手動更新
+- キャッシュ表示
+
+ダッシュボード的にビュー状況を確認できます。
+
+---
+
+## Record Pin
+
+任意のレコードを固定保存できます。
+
+特徴
+
+- 完全ローカル保存
+- API使用なし
+- コメント付き保存
+
+頻繁に使うレコードへワンクリックでアクセスできます。
+
+---
+
+## Recent Records
+
+最近開いたレコードを自動記録します。
+
+特徴
+
+- URL解析ベース
+- API使用なし
+
+直前の作業へすぐ戻ることができます。
+
+---
+
+## Excel Overlay
+
+kintoneをExcelライクなUIで表示します。
+
+起動
+Ctrl + Shift + E
+
+
+対応画面
+
+- レコード一覧
+- レコード詳細
+
+Free版
+
+- 閲覧のみ
+
+Pro版
+
+- 編集可能
+
+対応フィールド
+
+- Single line text
+- Number
+- Date
+- Dropdown
+- Radio
+
+---
+
+## API Usage Monitor
+
+kintone API使用量を可視化します。
+
+表示
+
+- Today
+- 7 days
+- 30 days
+
+機能ごとに分類して確認できます。
+
+---
+
+# Architecture
+
+
+Chrome Extension
+│
+├ service_worker.js
+├ content.js
+├ sidepanel.html
+├ launcher.js
+├ options.html
+├ options.js
+├ core.js
+├ pins.js
+├ page-bridge.js
+├ overlay.css
+└ vendor/
+
+
+主な役割
+
+| Component | Role |
+|---|---|
+| service_worker | background処理 |
+| content.js | kintoneページ連携 |
+| launcher.js | サイドパネルUI |
+| pins.js | レコードピン管理 |
+| page-bridge.js | ページスクリプト実行 |
+| core.js | 共通処理 |
+
+---
+
+# Design Philosophy
+
+PlugBits Launcher は次の原則で設計されています。
+
+### 1. kintone UIを壊さない
+
+- sidepanel主体
+- overlayで機能追加
+
+### 2. API消費を最小化
+
+例
+
+- Record Pin → API 0
+- Recent → API 0
+- WatchList → TTL更新
+
+### 3. Excelライク操作
+
+kintoneの一覧操作を高速化します。
+
+---
+
+# Roadmap
+
+優先課題
+
+- overlay metadata cache
+- bootstrap cache
+
+中期
+
+- content.js 分割
+- lucide軽量化
+
+長期
+
+- Pro認証
+
+---
+
+# License
+
+MIT

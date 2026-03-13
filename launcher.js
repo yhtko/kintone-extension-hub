@@ -12,17 +12,16 @@ import {
   parseKintoneUrl,
   isKintoneUrl,
   hasHostPermission,
+  sendRunInKintone,
   sendCountBulk,
   createId,
   loadRecordPinVisibility,
   loadRecentRecords,
   saveRecentRecords,
-  loadAppNameMap,
-  saveAppNameMap
+  loadAppNameMap
 } from './core.js';
 import { initPins } from './pins.js';
 
-const REFRESH_INTERVAL = 30000;
 const MAX_SHORTCUT_INITIAL_LENGTH = 2;
 const SHORTCUT_SEARCH_OPEN_MODE_KEY = 'shortcutSearchOpenMode';
 const SHORTCUT_SEARCH_OPEN_MODE_CURRENT_TAB = 'current_tab';
@@ -30,6 +29,37 @@ const SHORTCUT_SEARCH_OPEN_MODE_NEW_TAB = 'new_tab';
 const MESSAGE_OPEN_OVERLAY = 'EXCEL_OPEN_OVERLAY_FROM_SIDEPANEL';
 const MESSAGE_GET_OVERLAY_STATE = 'EXCEL_GET_OVERLAY_LAUNCH_STATE';
 const COLLAPSED_SECTIONS_KEY = 'kfavLauncherCollapsedSections';
+const WATCHLIST_COUNT_CACHE_KEY = 'kfavWatchlistCountCache';
+const WATCHLIST_REFRESH_PRESET_KEY = 'pb_watchlist_refresh_preset';
+const WATCHLIST_REFRESH_PRESET_VALUES = ['eco', 'normal', 'fast'];
+const WATCHLIST_REFRESH_PRESET_DEFAULT = 'normal';
+const WATCHLIST_LIMIT_KEY = 'pb_watchlist_limit';
+const DEFAULT_WATCHLIST_LIMIT = 3;
+const MAX_WATCHLIST_LIMIT = 5;
+const WATCHLIST_LIMIT_VALUES = [DEFAULT_WATCHLIST_LIMIT, MAX_WATCHLIST_LIMIT];
+const WATCHLIST_REFRESH_PRESET_CONFIGS = {
+  eco: {
+    visibleTickMs: 10 * 60 * 1000,
+    cooldownMs: 180 * 1000,
+    resumeThrottleMs: 10 * 1000
+  },
+  normal: {
+    visibleTickMs: 5 * 60 * 1000,
+    cooldownMs: 90 * 1000,
+    resumeThrottleMs: 5 * 1000
+  },
+  fast: {
+    visibleTickMs: 2 * 60 * 1000,
+    cooldownMs: 30 * 1000,
+    resumeThrottleMs: 3 * 1000
+  }
+};
+const WATCHLIST_SOFT_TTL_MS = 5 * 60 * 1000;
+const WATCHLIST_HARD_TTL_MS = 30 * 60 * 1000;
+const WATCHLIST_DEBUG_CONFIG_KEY = 'kfavWatchlistDebugConfig';
+const WATCHLIST_DEBUG_LOG_KEY = 'kfavWatchlistDebugLogs';
+const WATCHLIST_DEBUG_MAX_LOGS = 80;
+const WATCHLIST_DEBUG_DEFAULT = false;
 const UI_LANGUAGE_KEY = 'uiLanguage';
 const UI_LANGUAGE_VALUES = ['auto', 'ja', 'en'];
 const DEFAULT_UI_LANGUAGE = 'auto';
@@ -89,12 +119,18 @@ const I18N_MESSAGES = {
     panel_badge_fetch_failed: '件数取得に失敗しました',
     panel_notice_permission_missing_hosts: '次のホスト権限が不足しています: {hosts}',
     panel_notice_counts_failed: '一部ホストの件数取得に失敗しました。ログを確認してください。',
+    panel_watchlist_last_updated: '更新: {time}',
+    panel_watchlist_last_updated_none: '更新: -',
     panel_notice_shortcut_url_missing: 'ショートカットURLが設定されていません',
     panel_notice_open_kintone_first: '先にkintoneタブを開いてください',
     panel_notice_parse_url_failed: 'URLを解析できませんでした',
     panel_notice_already_registered: 'このビューは既に登録済みです',
+    panel_notice_added: 'ウォッチリストに追加しました',
     panel_notice_added_fetching: 'ウォッチリストに追加しました。件数を取得しています...',
     panel_notice_add_failed: 'ウォッチリストの追加に失敗しました',
+    panel_notice_watchlist_limit_reached: 'ウォッチリストは{limit}件まで登録できます',
+    panel_notice_watchlist_query_resolve_failed: 'ビューの Query を取得できませんでした。設定画面で再保存してください',
+    panel_notice_favorites_stale: '他のタブで更新がありました。最新状態を再読み込みしました。',
     panel_notice_overlay_unsupported: 'この画面では Excel Overlay を利用できません（一覧/詳細画面で利用できます）',
     panel_notice_overlay_open_failed: 'Excel Overlay の起動に失敗しました',
     panel_notice_url_required: 'URLは必須です',
@@ -163,12 +199,18 @@ const I18N_MESSAGES = {
     panel_badge_fetch_failed: 'Failed to fetch count',
     panel_notice_permission_missing_hosts: 'Permission is missing for hosts: {hosts}',
     panel_notice_counts_failed: 'Some hosts failed to fetch counts. Check the log for details.',
+    panel_watchlist_last_updated: 'Last updated: {time}',
+    panel_watchlist_last_updated_none: 'Last updated: -',
     panel_notice_shortcut_url_missing: 'Shortcut URL is not configured',
     panel_notice_open_kintone_first: 'Open a kintone tab first',
     panel_notice_parse_url_failed: 'Could not parse the URL',
     panel_notice_already_registered: 'This view is already registered',
+    panel_notice_added: 'Added to watchlist',
     panel_notice_added_fetching: 'Added to watchlist. Fetching counts...',
     panel_notice_add_failed: 'Failed to add watchlist item',
+    panel_notice_watchlist_limit_reached: 'Watchlist is limited to {limit} items',
+    panel_notice_watchlist_query_resolve_failed: 'Could not resolve view query. Re-save it from options',
+    panel_notice_favorites_stale: 'Another tab updated watchlist. Reloaded the latest state.',
     panel_notice_overlay_unsupported: 'Excel Overlay is only available on list/detail pages',
     panel_notice_overlay_open_failed: 'Failed to open Excel Overlay',
     panel_notice_url_required: 'URL is required',
@@ -214,6 +256,7 @@ const els = {
   favCategories: doc.getElementById('favCategories'),
   notice: doc.getElementById('notice'),
   refreshCounts: doc.getElementById('refreshCounts'),
+  watchlistUpdatedAt: doc.getElementById('watchlistUpdatedAt'),
   quickAdd: doc.getElementById('quickAdd'),
   openExcelOverlay: doc.getElementById('openExcelOverlay'),
   openOptions: doc.getElementById('openOptions'),
@@ -229,14 +272,44 @@ const state = {
   filterText: '',
   pinsOnly: false,
   badgeStatus: new Map(),
+  watchlistCountCache: new Map(),
+  watchlistRefreshInFlight: false,
+  watchlistLimit: DEFAULT_WATCHLIST_LIMIT,
+  watchlistAutoRefreshTimerId: null,
+  watchlistRefreshPreset: WATCHLIST_REFRESH_PRESET_DEFAULT,
+  watchlistRefreshConfig: { ...WATCHLIST_REFRESH_PRESET_CONFIGS[WATCHLIST_REFRESH_PRESET_DEFAULT] },
+  watchlistPanelMounted: true,
+  watchlistWindowFocused: typeof document?.hasFocus === 'function' ? Boolean(document.hasFocus()) : true,
+  watchlistFocusHandler: null,
+  watchlistBlurHandler: null,
+  watchlistVisibilityChangeHandler: null,
+  watchlistTabActivatedHandler: null,
+  watchlistPointerEnterHandler: null,
+  watchlistClickHandler: null,
+  watchlistLastResumeEventAt: 0,
+  watchlistDebugEnabled: false,
+  watchlistDebugLogs: [],
+  watchlistDebugStorageArea: 'memory',
+  watchlistSectionSync: {
+    inFlight: false,
+    queued: false,
+    lastStartedAt: 0,
+    lastCompletedAt: 0,
+    lastVisibleTickAt: 0,
+    activeRequestId: '',
+    pendingIgnoreCooldown: false,
+    pendingReasons: [],
+    pendingSources: {}
+  },
+  watchlistLifecycleToken: 0,
+  watchlistResumeSourceAt: new Map(),
+  favoritesStorageSignature: '',
   selectionIds: [],
   selectionIndex: -1,
-  countTimer: null,
   storageListener: null,
   dragging: null,
   shortcutToggleHandler: null,
   recentRecords: [],
-  recentHydrationSeq: 0,
   filterPanelVisible: false,
   recordPinsCollapsed: false,
   recentRecordsCollapsed: false,
@@ -292,6 +365,281 @@ function normalizeUiLanguageSetting(raw) {
   const value = String(raw || '').trim().toLowerCase();
   if (UI_LANGUAGE_VALUES.includes(value)) return value;
   return DEFAULT_UI_LANGUAGE;
+}
+
+function normalizeWatchlistRefreshPreset(raw) {
+  const value = String(raw || '').trim().toLowerCase();
+  if (WATCHLIST_REFRESH_PRESET_VALUES.includes(value)) return value;
+  return WATCHLIST_REFRESH_PRESET_DEFAULT;
+}
+
+function normalizeWatchlistLimit(raw) {
+  const value = Number(raw);
+  if (WATCHLIST_LIMIT_VALUES.includes(value)) return value;
+  return DEFAULT_WATCHLIST_LIMIT;
+}
+
+function extractQueryParamFromUrl(urlValue) {
+  try {
+    const url = new URL(String(urlValue || ''));
+    return String(url.searchParams.get('query') || '').trim();
+  } catch (_err) {
+    return '';
+  }
+}
+
+function isWatchlistQueryMissingValue(query) {
+  if (query == null) return true;
+  return String(query).trim() === '-';
+}
+
+function extractViewFilterFromViews(viewsObj, viewIdOrName) {
+  if (!viewsObj || typeof viewsObj !== 'object') {
+    return { matched: false, query: '', viewName: '', viewId: '', reason: 'missing_views' };
+  }
+  const entries = Object.entries(viewsObj);
+  if (!entries.length) {
+    return {
+      matched: true,
+      query: '',
+      viewName: 'All Records',
+      viewId: '',
+      reason: 'all_records_virtual'
+    };
+  }
+
+  const target = String(viewIdOrName || '').trim();
+  if (target) {
+    const byId = entries.find(([, view]) => String(view?.id || '').trim() === target);
+    if (byId) {
+      const queryRaw = byId[1]?.filterCond;
+      return {
+        matched: true,
+        query: queryRaw == null ? null : String(queryRaw).trim(),
+        viewName: String(byId[0] || '').trim(),
+        viewId: String(byId[1]?.id || '').trim(),
+        reason: 'matched_view_id'
+      };
+    }
+    const byName = entries.find(([name]) => String(name || '').trim() === target);
+    if (byName) {
+      const queryRaw = byName[1]?.filterCond;
+      return {
+        matched: true,
+        query: queryRaw == null ? null : String(queryRaw).trim(),
+        viewName: String(byName[0] || '').trim(),
+        viewId: String(byName[1]?.id || '').trim(),
+        reason: 'matched_view_name'
+      };
+    }
+    return { matched: false, query: '', viewName: '', viewId: '', reason: 'view_not_found' };
+  }
+
+  const indexed = entries
+    .map(([name, view], idx) => ({
+      name: String(name || '').trim(),
+      view: view || {},
+      idx,
+      order: Number(view?.index)
+    }))
+    .sort((a, b) => {
+      const aOrder = Number.isFinite(a.order) ? a.order : Number.POSITIVE_INFINITY;
+      const bOrder = Number.isFinite(b.order) ? b.order : Number.POSITIVE_INFINITY;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return a.idx - b.idx;
+    });
+  const picked = indexed[0];
+  const queryRaw = picked?.view?.filterCond;
+  return {
+    matched: true,
+    query: queryRaw == null ? null : String(queryRaw).trim(),
+    viewName: String(picked?.name || '').trim(),
+    viewId: String(picked?.view?.id || '').trim(),
+    reason: 'default_view'
+  };
+}
+
+async function getViewsForWatchlist(host, appId, cacheMap) {
+  const cacheKey = `${String(host || '').trim()}::${String(appId || '').trim()}`;
+  if (cacheMap?.has(cacheKey)) return cacheMap.get(cacheKey);
+  const response = await sendRunInKintone(host, {
+    type: 'LIST_VIEWS',
+    payload: {
+      appId: String(appId || '').trim(),
+      __pbTrigger: 'watchlist_register',
+      __pbSource: 'launcher_query_resolve'
+    }
+  });
+  if (!response?.ok || !response?.views || typeof response.views !== 'object') {
+    throw new Error(String(response?.error || 'LIST_VIEWS failed'));
+  }
+  if (cacheMap) cacheMap.set(cacheKey, response.views);
+  return response.views;
+}
+
+async function resolveWatchlistSavedQuery(entry, viewsCache = new Map()) {
+  const explicitRaw = entry?.query;
+  const explicit = String(explicitRaw == null ? '' : explicitRaw).trim();
+  const hasExplicitQuery = explicit.length > 0;
+  const viewIdOrName = String(entry?.viewId || entry?.viewIdOrName || '').trim();
+  const appId = String(entry?.appId || '').trim();
+  const host = String(entry?.host || '').trim();
+  if (!host || !appId) return { ok: false, query: '', viewId: '', viewName: '', reason: 'missing_host_or_app' };
+  try {
+    const views = await getViewsForWatchlist(host, appId, viewsCache);
+    const resolved = extractViewFilterFromViews(views, viewIdOrName);
+    if (!resolved.matched) {
+      return {
+        ok: false,
+        query: '',
+        viewId: '',
+        viewName: '',
+        reason: resolved.reason || 'view_not_found'
+      };
+    }
+    const resolvedQueryRaw = resolved?.query;
+    const finalQuery = hasExplicitQuery
+      ? explicit
+      : String(resolvedQueryRaw == null ? '' : resolvedQueryRaw).trim();
+    if (isWatchlistQueryMissingValue(finalQuery)) {
+      return {
+        ok: false,
+        query: '',
+        viewId: resolved.viewId,
+        viewName: resolved.viewName || '',
+        reason: 'query_not_found'
+      };
+    }
+    return {
+      ok: true,
+      query: finalQuery,
+      viewId: resolved.viewId,
+      viewName: resolved.viewName || ''
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      query: '',
+      viewId: '',
+      viewName: '',
+      reason: String(error?.message || error || 'view_resolve_failed')
+    };
+  }
+}
+
+function needsWatchlistQueryMigration(item) {
+  if (!item || typeof item !== 'object') return false;
+  if (!isWatchlistQueryMissingValue(item.query)) return false;
+  if (item.queryRepairRequired) return false;
+  if (!String(item.host || '').trim()) return false;
+  if (!String(item.appId || '').trim()) return false;
+  return true;
+}
+
+async function migrateFavoritesQueryIfNeeded(list) {
+  const source = Array.isArray(list) ? list.map((item) => ({ ...item })) : [];
+  const targets = source.filter((item) => needsWatchlistQueryMigration(item));
+  if (!targets.length) {
+    return { changed: false, items: source };
+  }
+  const viewsCache = new Map();
+  let changed = false;
+  for (const item of source) {
+    if (!needsWatchlistQueryMigration(item)) continue;
+    const resolved = await resolveWatchlistSavedQuery(item, viewsCache);
+    if (!resolved.ok) {
+      item.queryRepairRequired = true;
+      changed = true;
+      continue;
+    }
+    item.query = String(resolved.query || '');
+    item.viewId = String(resolved.viewId || item.viewId || '').trim();
+    item.viewIdOrName = item.viewId || String(item.viewIdOrName || '').trim();
+    item.queryRepairRequired = false;
+    const canonicalUrl = buildWatchlistUrl(item.host, item.appId, item.viewId);
+    if (canonicalUrl) item.url = canonicalUrl;
+    if (resolved.viewName) item.viewName = resolved.viewName;
+    changed = true;
+  }
+  if (changed) {
+    await saveFavoritesWithStaleGuard(source, {
+      source: 'query_migration',
+      expectedSignature: buildFavoritesSignature(list)
+    });
+  }
+  return { changed, items: source };
+}
+
+function buildWatchlistUrl(host, appId, viewId) {
+  const normalizedHost = String(host || '').trim().replace(/\/+$/, '');
+  const normalizedAppId = String(appId || '').trim();
+  const normalizedViewId = String(viewId || '').trim();
+  if (!normalizedHost || !normalizedAppId) return '';
+  const base = `${normalizedHost}/k/${encodeURIComponent(normalizedAppId)}/`;
+  if (!normalizedViewId) return base;
+  return `${base}?view=${encodeURIComponent(normalizedViewId)}`;
+}
+
+function getWatchlistRefreshPresetConfig(presetValue) {
+  const preset = normalizeWatchlistRefreshPreset(presetValue);
+  const config = WATCHLIST_REFRESH_PRESET_CONFIGS[preset] || WATCHLIST_REFRESH_PRESET_CONFIGS[WATCHLIST_REFRESH_PRESET_DEFAULT];
+  return {
+    preset,
+    visibleTickMs: Number(config.visibleTickMs),
+    cooldownMs: Number(config.cooldownMs),
+    resumeThrottleMs: Number(config.resumeThrottleMs)
+  };
+}
+
+function getWatchlistRefreshConfig() {
+  return state.watchlistRefreshConfig || WATCHLIST_REFRESH_PRESET_CONFIGS[WATCHLIST_REFRESH_PRESET_DEFAULT];
+}
+
+async function loadWatchlistLimit() {
+  try {
+    const stored = await chrome.storage.local.get(WATCHLIST_LIMIT_KEY);
+    const raw = stored?.[WATCHLIST_LIMIT_KEY];
+    const normalized = normalizeWatchlistLimit(raw);
+    state.watchlistLimit = normalized;
+    if (raw !== normalized) {
+      await chrome.storage.local.set({ [WATCHLIST_LIMIT_KEY]: normalized });
+    }
+  } catch (_err) {
+    state.watchlistLimit = DEFAULT_WATCHLIST_LIMIT;
+    try {
+      await chrome.storage.local.set({ [WATCHLIST_LIMIT_KEY]: DEFAULT_WATCHLIST_LIMIT });
+    } catch (_ignore) {
+      // ignore
+    }
+  }
+}
+
+function applyWatchlistRefreshPreset(presetValue, { persist = false } = {}) {
+  const next = getWatchlistRefreshPresetConfig(presetValue);
+  state.watchlistRefreshPreset = next.preset;
+  state.watchlistRefreshConfig = {
+    visibleTickMs: next.visibleTickMs,
+    cooldownMs: next.cooldownMs,
+    resumeThrottleMs: next.resumeThrottleMs
+  };
+  if (persist) {
+    return chrome.storage.local.set({ [WATCHLIST_REFRESH_PRESET_KEY]: next.preset });
+  }
+  return Promise.resolve();
+}
+
+async function loadWatchlistRefreshPreset() {
+  try {
+    const stored = await chrome.storage.local.get(WATCHLIST_REFRESH_PRESET_KEY);
+    const rawPreset = stored?.[WATCHLIST_REFRESH_PRESET_KEY];
+    const normalizedPreset = normalizeWatchlistRefreshPreset(rawPreset);
+    await applyWatchlistRefreshPreset(normalizedPreset, { persist: false });
+    if (rawPreset !== normalizedPreset) {
+      await applyWatchlistRefreshPreset(normalizedPreset, { persist: true });
+    }
+  } catch (_err) {
+    await applyWatchlistRefreshPreset(WATCHLIST_REFRESH_PRESET_DEFAULT, { persist: true });
+  }
 }
 
 function getBrowserUiLanguage() {
@@ -393,9 +741,10 @@ function rerenderLocalizedUi() {
   }
   setFilterPanelVisible(state.filterPanelVisible);
   applyShortcutVisibility(shortcutState.visible);
-  setWatchlistCollapsed(state.pinsOnly, { persist: false });
+  setWatchlistCollapsed(state.pinsOnly, { persist: false, source: 'i18n_rerender' });
   setRecordPinsCollapsed(state.recordPinsCollapsed, { persist: false });
   setRecentRecordsCollapsed(state.recentRecordsCollapsed, { persist: false });
+  renderWatchlistUpdatedLabel();
   renderLists();
   renderShortcuts();
   renderRecentRecords();
@@ -683,7 +1032,7 @@ function renderCollapsedSectionsTray() {
       icon: 'bookmark',
       label: t('panel_collapsed_watchlist'),
       count: state.favorites.length,
-      onClick: () => setWatchlistCollapsed(false)
+      onClick: () => setWatchlistCollapsed(false, { source: 'collapsed_tray' })
     });
   }
   if (state.recordPinsCollapsed && recordPinState.visible) {
@@ -740,7 +1089,8 @@ function setRecordPinsCollapsed(collapsed, { persist = true } = {}) {
   renderCollapsedSectionsTray();
 }
 
-function setWatchlistCollapsed(collapsed, { persist = true } = {}) {
+function setWatchlistCollapsed(collapsed, { persist = true, source = 'unknown' } = {}) {
+  const wasCollapsed = state.pinsOnly;
   state.pinsOnly = Boolean(collapsed);
   if (els.togglePinsOnly) {
     els.togglePinsOnly.checked = state.pinsOnly;
@@ -763,6 +1113,11 @@ function setWatchlistCollapsed(collapsed, { persist = true } = {}) {
     persistCollapsedSectionsState().catch(() => {});
   }
   renderCollapsedSectionsTray();
+  syncWatchlistAutoRefreshTimer(`set_watchlist_collapsed:${source}`).catch(() => {});
+  const expandedByAction = wasCollapsed && !state.pinsOnly;
+  if (expandedByAction) {
+    requestWatchListReconcile('expand', { source }).catch(() => {});
+  }
 }
 
 function setRecentRecordsCollapsed(collapsed, { persist = true } = {}) {
@@ -823,6 +1178,844 @@ async function persistCollapsedSectionsState() {
   } catch (_err) {
     // ignore persistence errors
   }
+}
+
+function getWatchlistDebugStorageBackend() {
+  if (chrome?.storage?.session) {
+    return { area: chrome.storage.session, name: 'session' };
+  }
+  if (chrome?.storage?.local) {
+    return { area: chrome.storage.local, name: 'local' };
+  }
+  return { area: null, name: 'memory' };
+}
+
+function normalizeWatchlistDebugConfig(raw) {
+  if (raw && typeof raw === 'object') {
+    return { enabled: Boolean(raw.enabled) };
+  }
+  return { enabled: Boolean(raw) };
+}
+
+function normalizeWatchlistDebugLogEntry(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const trigger = String(raw.trigger || 'unknown').trim() || 'unknown';
+  const source = String(raw.source || 'unknown').trim() || 'unknown';
+  const reason = String(raw.reason || 'unknown').trim() || 'unknown';
+  const pageUrl = String(raw.pageUrl || '').trim();
+  const host = String(raw.host || '').trim();
+  const appId = String(raw.appId || '').trim();
+  const viewId = String(raw.viewId || '').trim();
+  const tsRaw = Number(raw.ts);
+  const cacheAgeRaw = Number(raw.cacheAgeMs);
+  return {
+    ts: Number.isFinite(tsRaw) && tsRaw > 0 ? Math.floor(tsRaw) : Date.now(),
+    trigger,
+    source,
+    pageUrl,
+    didRequest: Boolean(raw.didRequest),
+    reason,
+    cacheAgeMs: Number.isFinite(cacheAgeRaw) && cacheAgeRaw >= 0 ? Math.floor(cacheAgeRaw) : null,
+    host,
+    appId,
+    viewId
+  };
+}
+
+function normalizeWatchlistDebugLogs(raw) {
+  if (!Array.isArray(raw)) return [];
+  const normalized = raw
+    .map((entry) => normalizeWatchlistDebugLogEntry(entry))
+    .filter(Boolean);
+  if (normalized.length <= WATCHLIST_DEBUG_MAX_LOGS) return normalized;
+  return normalized.slice(normalized.length - WATCHLIST_DEBUG_MAX_LOGS);
+}
+
+function buildWatchlistDebugContextFromUrl(urlValue) {
+  const pageUrl = String(urlValue || '').trim();
+  const context = {
+    pageUrl,
+    host: '',
+    appId: '',
+    viewId: ''
+  };
+  if (!pageUrl || !isKintoneUrl(pageUrl)) return context;
+  const parsed = parseKintoneUrl(pageUrl);
+  context.host = String(parsed?.host || '').trim();
+  context.appId = String(parsed?.appId || '').trim();
+  context.viewId = String(parsed?.viewIdOrName || '').trim();
+  return context;
+}
+
+async function resolveWatchlistDebugContext(base = {}) {
+  const basePageUrl = String(base.pageUrl || '').trim();
+  const normalizedBase = {
+    trigger: String(base.trigger || 'unknown').trim() || 'unknown',
+    source: String(base.source || 'unknown').trim() || 'unknown',
+    didRequest: Boolean(base.didRequest),
+    reason: String(base.reason || 'unknown').trim() || 'unknown',
+    cacheAgeMs: Number.isFinite(Number(base.cacheAgeMs)) && Number(base.cacheAgeMs) >= 0
+      ? Math.floor(Number(base.cacheAgeMs))
+      : null,
+    ...buildWatchlistDebugContextFromUrl(basePageUrl),
+    host: String(base.host || '').trim(),
+    appId: String(base.appId || '').trim(),
+    viewId: String(base.viewId || '').trim()
+  };
+  if (normalizedBase.pageUrl && normalizedBase.host) return normalizedBase;
+  try {
+    const tab = await getActiveTab();
+    const tabUrl = String(tab?.url || '').trim();
+    if (!tabUrl) return normalizedBase;
+    const tabContext = buildWatchlistDebugContextFromUrl(tabUrl);
+    return {
+      ...normalizedBase,
+      pageUrl: normalizedBase.pageUrl || tabContext.pageUrl,
+      host: normalizedBase.host || tabContext.host,
+      appId: normalizedBase.appId || tabContext.appId,
+      viewId: normalizedBase.viewId || tabContext.viewId
+    };
+  } catch (_err) {
+    return normalizedBase;
+  }
+}
+
+async function loadWatchlistDebugState() {
+  const backend = getWatchlistDebugStorageBackend();
+  state.watchlistDebugStorageArea = backend.name;
+  if (!backend.area) {
+    state.watchlistDebugEnabled = false;
+    state.watchlistDebugLogs = [];
+    return;
+  }
+  try {
+    const stored = await backend.area.get([WATCHLIST_DEBUG_CONFIG_KEY, WATCHLIST_DEBUG_LOG_KEY]);
+    state.watchlistDebugEnabled = normalizeWatchlistDebugConfig(stored?.[WATCHLIST_DEBUG_CONFIG_KEY]).enabled;
+    const normalizedLogs = normalizeWatchlistDebugLogs(stored?.[WATCHLIST_DEBUG_LOG_KEY]);
+    state.watchlistDebugLogs = normalizedLogs;
+    if (Array.isArray(stored?.[WATCHLIST_DEBUG_LOG_KEY]) && stored[WATCHLIST_DEBUG_LOG_KEY].length !== normalizedLogs.length) {
+      await backend.area.set({ [WATCHLIST_DEBUG_LOG_KEY]: normalizedLogs });
+    }
+  } catch (_err) {
+    state.watchlistDebugEnabled = false;
+    state.watchlistDebugLogs = [];
+  }
+}
+
+async function saveWatchlistDebugLogs() {
+  const backend = getWatchlistDebugStorageBackend();
+  state.watchlistDebugStorageArea = backend.name;
+  if (!backend.area) return;
+  try {
+    await backend.area.set({ [WATCHLIST_DEBUG_LOG_KEY]: state.watchlistDebugLogs });
+  } catch (_err) {
+    // ignore persistence errors
+  }
+}
+
+async function recordWatchlistDebugEvent(payload = {}) {
+  if (!state.watchlistDebugEnabled) return;
+  const resolved = await resolveWatchlistDebugContext(payload);
+  const entry = normalizeWatchlistDebugLogEntry({
+    ...resolved,
+    ts: Date.now()
+  });
+  if (!entry) return;
+  state.watchlistDebugLogs.push(entry);
+  if (state.watchlistDebugLogs.length > WATCHLIST_DEBUG_MAX_LOGS) {
+    state.watchlistDebugLogs = state.watchlistDebugLogs.slice(
+      state.watchlistDebugLogs.length - WATCHLIST_DEBUG_MAX_LOGS
+    );
+  }
+  await saveWatchlistDebugLogs();
+}
+
+function getWatchlistCacheAgeMs() {
+  const latest = getLatestWatchlistCacheTimestamp();
+  if (!latest) return null;
+  const age = Date.now() - latest;
+  if (!Number.isFinite(age) || age < 0) return 0;
+  return Math.floor(age);
+}
+
+function getWatchlistCacheSnapshot(now = Date.now()) {
+  const latest = getLatestWatchlistCacheTimestamp();
+  const cacheAgeMs = latest > 0
+    ? Math.max(0, Math.floor(now - latest))
+    : null;
+  const hasAnyCache = state.favorites.some((item) => state.watchlistCountCache.has(item.id));
+  const hasCompleteCache = state.favorites.length > 0
+    && state.favorites.every((item) => state.watchlistCountCache.has(item.id));
+  return {
+    updatedAt: latest > 0 ? latest : 0,
+    cacheAgeMs,
+    hasAnyCache,
+    hasCompleteCache
+  };
+}
+
+function isSoftFresh(updatedAt, now = Date.now()) {
+  const ts = Number(updatedAt);
+  if (!Number.isFinite(ts) || ts <= 0) return false;
+  return (now - ts) < WATCHLIST_SOFT_TTL_MS;
+}
+
+function isHardFresh(updatedAt, now = Date.now()) {
+  const ts = Number(updatedAt);
+  if (!Number.isFinite(ts) || ts <= 0) return false;
+  return (now - ts) < WATCHLIST_HARD_TTL_MS;
+}
+
+function shouldRefreshOnExpand(entry, now = Date.now()) {
+  if (!entry?.hasAnyCache) return true;
+  return !isSoftFresh(entry.updatedAt, now);
+}
+
+function shouldRefreshOnFocus(entry, now = Date.now()) {
+  if (!entry?.hasAnyCache) return true;
+  return !isSoftFresh(entry.updatedAt, now);
+}
+
+function shouldPollVisible(entry, context, now = Date.now()) {
+  if (!context?.isPanelVisible) return false;
+  if (!context?.isWatchListExpanded) return false;
+  if (!entry?.hasAnyCache) return true;
+  return !isSoftFresh(entry.updatedAt, now);
+}
+
+function shouldRunResumeCatchup(entry, now = Date.now()) {
+  if (!entry?.hasAnyCache) return true;
+  const completedAt = Number(state.watchlistSectionSync?.lastCompletedAt || 0);
+  const baseline = completedAt > 0 ? completedAt : Number(entry.updatedAt || 0);
+  if (!Number.isFinite(baseline) || baseline <= 0) return true;
+  const refresh = getWatchlistRefreshConfig();
+  return (now - baseline) >= Number(refresh.visibleTickMs || 0);
+}
+
+function isWatchlistPanelVisible() {
+  if (!state.watchlistPanelMounted) return false;
+  if (document?.visibilityState === 'hidden') return false;
+  return true;
+}
+
+async function getWatchlistRefreshContext() {
+  let isKintoneTabActive = false;
+  try {
+    const tab = await getActiveTab();
+    isKintoneTabActive = Boolean(tab?.id && isKintoneUrl(tab.url || ''));
+  } catch (_err) {
+    isKintoneTabActive = false;
+  }
+  return {
+    isPanelVisible: isWatchlistPanelVisible(),
+    isWatchListExpanded: !state.pinsOnly,
+    isKintoneTabActive
+  };
+}
+
+function getWatchlistRefreshingText() {
+  return 'refreshing...';
+}
+
+function getWatchlistStaleText() {
+  return 'may be stale';
+}
+
+function getWatchlistQueuedText() {
+  return 'sync queued';
+}
+
+function formatWatchlistRelativeAge(timestamp) {
+  const value = Number(timestamp);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  const deltaSeconds = Math.max(0, Math.floor((Date.now() - value) / 1000));
+  const locale = state.currentLang === 'en' ? 'en' : 'ja';
+  try {
+    const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'always' });
+    if (deltaSeconds < 60) return rtf.format(-deltaSeconds, 'second');
+    const deltaMinutes = Math.floor(deltaSeconds / 60);
+    if (deltaMinutes < 60) return rtf.format(-deltaMinutes, 'minute');
+    const deltaHours = Math.floor(deltaMinutes / 60);
+    if (deltaHours < 24) return rtf.format(-deltaHours, 'hour');
+    const deltaDays = Math.floor(deltaHours / 24);
+    return rtf.format(-deltaDays, 'day');
+  } catch (_err) {
+    return formatWatchlistTime(value);
+  }
+}
+
+function normalizeWatchListReconcileReason(value) {
+  const reason = String(value || '').trim().toLowerCase();
+  if (reason === 'panel_open') return 'panel_open';
+  if (reason === 'visible_tick') return 'visible_tick';
+  if (reason === 'resume_catchup') return 'resume_catchup';
+  if (reason === 'manual') return 'manual';
+  if (reason === 'expand') return 'expand';
+  if (reason === 'focus_resume') return 'focus_resume';
+  if (reason === 'tab_resume') return 'tab_resume';
+  return 'panel_open';
+}
+
+function mapWatchListReasonToTrigger(reason) {
+  const normalized = normalizeWatchListReconcileReason(reason);
+  if (normalized === 'panel_open') return 'watchlist_panel_open';
+  if (normalized === 'visible_tick') return 'watchlist_visible_tick';
+  if (normalized === 'resume_catchup') return 'watchlist_resume_catchup';
+  if (normalized === 'manual') return 'watchlist_manual';
+  if (normalized === 'expand') return 'watchlist_expand';
+  if (normalized === 'focus_resume') return 'watchlist_focus_resume';
+  if (normalized === 'tab_resume') return 'watchlist_tab_resume';
+  return 'watchlist_bulk';
+}
+
+function pickWatchListReconcileReason(reasons) {
+  const list = Array.isArray(reasons) ? reasons : [];
+  const priority = ['manual', 'panel_open', 'resume_catchup', 'expand', 'focus_resume', 'tab_resume', 'visible_tick'];
+  for (const name of priority) {
+    if (list.includes(name)) return name;
+  }
+  return list[0] || 'panel_open';
+}
+
+function queueWatchListPendingReason(reason, source) {
+  const syncState = state.watchlistSectionSync;
+  const normalizedReason = normalizeWatchListReconcileReason(reason);
+  if (!syncState.pendingReasons.includes(normalizedReason)) {
+    syncState.pendingReasons.push(normalizedReason);
+  }
+  syncState.pendingSources[normalizedReason] = String(source || 'unknown');
+  return normalizedReason;
+}
+
+function consumeWatchListPendingReasons() {
+  const syncState = state.watchlistSectionSync;
+  const reasons = syncState.pendingReasons.slice();
+  const sources = { ...(syncState.pendingSources || {}) };
+  syncState.pendingReasons = [];
+  syncState.pendingSources = {};
+  return { reasons, sources };
+}
+
+function getVisibleWatchListEntryIds() {
+  const ids = new Set();
+  const allEntries = Array.from(doc.querySelectorAll('.entry[data-id]'));
+  allEntries.forEach((entryEl) => {
+    if (!isSelectableEntry(entryEl)) return;
+    const id = String(entryEl.dataset.id || '').trim();
+    if (!id) return;
+    ids.add(id);
+  });
+  return ids;
+}
+
+function buildWatchListReconcileTargets() {
+  const now = Date.now();
+  const visibleIds = getVisibleWatchListEntryIds();
+  return state.favorites
+    .map((item, index) => {
+      const cached = state.watchlistCountCache.get(item.id);
+      const updatedAt = Number(cached?.updatedAt || 0);
+      const text = String(cached?.text || '').trim();
+      const parsedCount = Number.parseInt(text, 10);
+      const countValue = Number.isFinite(parsedCount) ? parsedCount : null;
+      const stale = !isSoftFresh(updatedAt, now);
+      const staleZero = stale && countValue === 0;
+      const visible = visibleIds.has(item.id);
+      let priority = 3;
+      if (staleZero) priority = 0;
+      else if (stale) priority = 1;
+      else if (visible) priority = 2;
+      return { item, index, priority };
+    })
+    .sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      return a.index - b.index;
+    })
+    .map((entry) => entry.item);
+}
+
+function shouldSkipReconcile(now, stateInput) {
+  const reason = normalizeWatchListReconcileReason(stateInput?.reason);
+  const context = stateInput?.context || {};
+  const snapshot = stateInput?.snapshot || {};
+  const ignoreCooldown = Boolean(stateInput?.ignoreCooldown);
+  const syncState = state.watchlistSectionSync;
+
+  if (!state.favorites.length) return { skip: true, reason: 'no_entries' };
+  if (reason !== 'manual' && !context.isPanelVisible) return { skip: true, reason: 'panel_hidden' };
+  if (reason !== 'manual' && !context.isWatchListExpanded) return { skip: true, reason: 'collapsed' };
+  if (reason === 'panel_open') return { skip: true, reason: 'panel_open_disabled' };
+  if ((reason === 'focus_resume' || reason === 'tab_resume') && !context.isKintoneTabActive) {
+    return { skip: true, reason: 'inactive_tab' };
+  }
+
+  const completedAt = Number(syncState.lastCompletedAt || 0);
+  const refresh = getWatchlistRefreshConfig();
+  const cooldownMs = Number(refresh.cooldownMs || 0);
+  if (!ignoreCooldown && completedAt > 0) {
+    const elapsed = now - completedAt;
+    if (elapsed >= 0 && elapsed < cooldownMs) {
+      return { skip: true, reason: 'cooldown' };
+    }
+  }
+
+  if (reason === 'visible_tick') {
+    if (!shouldPollVisible(snapshot, context, now)) {
+      return { skip: true, reason: 'ttl_fresh' };
+    }
+    const lastVisibleTickAt = Number(syncState.lastVisibleTickAt || 0);
+    const visibleTickMs = Number(refresh.visibleTickMs || 0);
+    if (lastVisibleTickAt > 0 && now - lastVisibleTickAt < visibleTickMs) {
+      return { skip: true, reason: 'visible_interval' };
+    }
+  } else if (reason === 'resume_catchup') {
+    if (!shouldRunResumeCatchup(snapshot, now)) {
+      return { skip: true, reason: 'resume_not_due' };
+    }
+  } else if (reason === 'expand' && !shouldRefreshOnExpand(snapshot, now)) {
+    return { skip: true, reason: 'ttl_fresh' };
+  } else if ((reason === 'focus_resume' || reason === 'tab_resume') && !shouldRefreshOnFocus(snapshot, now)) {
+    return { skip: true, reason: 'ttl_fresh' };
+  }
+
+  return { skip: false, reason: 'run' };
+}
+
+function stopWatchlistAutoRefreshTimer() {
+  if (state.watchlistAutoRefreshTimerId == null) return;
+  window.clearInterval(state.watchlistAutoRefreshTimerId);
+  state.watchlistAutoRefreshTimerId = null;
+}
+
+async function syncWatchlistAutoRefreshTimer(source = 'unknown') {
+  const context = await getWatchlistRefreshContext();
+  const shouldRun = state.favorites.length > 0
+    && context.isPanelVisible
+    && context.isWatchListExpanded;
+  if (!shouldRun) {
+    stopWatchlistAutoRefreshTimer();
+    return context;
+  }
+  if (state.watchlistAutoRefreshTimerId != null) return context;
+  const refresh = getWatchlistRefreshConfig();
+  const visibleTickMs = Number(refresh.visibleTickMs || 0);
+  state.watchlistAutoRefreshTimerId = window.setInterval(() => {
+    requestWatchListReconcile('visible_tick', {
+      source: `visible_tick:${source}`
+    }).catch(() => {});
+  }, visibleTickMs);
+  return context;
+}
+
+async function requestWatchListResumeCatchup(source = 'resume_event') {
+  const now = Date.now();
+  if (shouldThrottleResumeBySource(source, now)) {
+    await recordWatchlistDebugEvent({
+      trigger: 'resume_catchup',
+      source,
+      didRequest: false,
+      reason: 'resume_source_throttled',
+      cacheAgeMs: getWatchlistCacheAgeMs()
+    });
+    logWatchlistApiDebug('skip resume source throttle', `source=${source}`);
+    return { queued: false, reason: 'resume_source_throttled' };
+  }
+  const refresh = getWatchlistRefreshConfig();
+  const resumeThrottleMs = Number(refresh.resumeThrottleMs || 0);
+  const lastResumeEventAt = Number(state.watchlistLastResumeEventAt || 0);
+  if (lastResumeEventAt > 0 && (now - lastResumeEventAt) < resumeThrottleMs) {
+    await recordWatchlistDebugEvent({
+      trigger: 'resume_catchup',
+      source,
+      didRequest: false,
+      reason: 'resume_event_throttled',
+      cacheAgeMs: getWatchlistCacheAgeMs()
+    });
+    return { queued: false, reason: 'resume_event_throttled' };
+  }
+  const context = await getWatchlistRefreshContext();
+  const snapshot = getWatchlistCacheSnapshot(now);
+  if (!context.isPanelVisible) {
+    await recordWatchlistDebugEvent({
+      trigger: 'resume_catchup',
+      source,
+      didRequest: false,
+      reason: 'skip_panel_hidden',
+      cacheAgeMs: snapshot.cacheAgeMs
+    });
+    return { queued: false, reason: 'panel_hidden' };
+  }
+  if (!context.isWatchListExpanded) {
+    await recordWatchlistDebugEvent({
+      trigger: 'resume_catchup',
+      source,
+      didRequest: false,
+      reason: 'skip_collapsed',
+      cacheAgeMs: snapshot.cacheAgeMs
+    });
+    return { queued: false, reason: 'collapsed' };
+  }
+  state.watchlistLastResumeEventAt = now;
+  return requestWatchListReconcile('resume_catchup', { source });
+}
+
+async function requestWatchListReconcile(reason, options = {}) {
+  const normalizedReason = normalizeWatchListReconcileReason(reason);
+  const source = String(options?.source || 'unknown');
+  const ignoreCooldown = Boolean(options?.ignoreCooldown);
+  const delayMsRaw = Number(options?.delayMs);
+  const delayMs = Number.isFinite(delayMsRaw) && delayMsRaw > 0 ? Math.floor(delayMsRaw) : 0;
+  const cacheAgeMs = getWatchlistCacheAgeMs();
+  const syncState = state.watchlistSectionSync;
+
+  if (!state.favorites.length) {
+    await recordWatchlistDebugEvent({
+      trigger: normalizedReason,
+      source,
+      didRequest: false,
+      reason: 'no_entries',
+      cacheAgeMs
+    });
+    return { queued: false, reason: 'no_entries' };
+  }
+
+  queueWatchListPendingReason(normalizedReason, source);
+  if (ignoreCooldown) {
+    syncState.pendingIgnoreCooldown = true;
+  }
+  await recordWatchlistDebugEvent({
+    trigger: normalizedReason,
+    source,
+    didRequest: false,
+    reason: 'queued',
+    cacheAgeMs
+  });
+
+  if (syncState.inFlight) {
+    logWatchlistApiDebug('join in-flight', `feature=watchlist trigger=${normalizedReason}`);
+    await recordWatchlistDebugEvent({
+      trigger: normalizedReason,
+      source,
+      didRequest: false,
+      reason: 'join_inflight',
+      cacheAgeMs
+    });
+    return { queued: true, reason: 'join_inflight' };
+  }
+  if (syncState.queued) {
+    logWatchlistApiDebug('join queued', `feature=watchlist trigger=${normalizedReason}`);
+    return { queued: true, reason: 'queued' };
+  }
+
+  syncState.queued = true;
+  window.setTimeout(() => {
+    syncState.queued = false;
+    runWatchListReconcileJob().catch(() => {});
+  }, delayMs);
+  return { queued: true, reason: 'queued' };
+}
+
+async function runWatchListReconcileJob() {
+  const syncState = state.watchlistSectionSync;
+  if (syncState.inFlight) return { ok: false, reason: 'join_inflight' };
+
+  while (syncState.pendingReasons.length) {
+    const { reasons, sources } = consumeWatchListPendingReasons();
+    const primaryReason = pickWatchListReconcileReason(reasons);
+    const source = String(sources?.[primaryReason] || sources?.manual || 'watchlist_reconcile');
+    const now = Date.now();
+    const context = await syncWatchlistAutoRefreshTimer(`job:${primaryReason}`);
+    const snapshot = getWatchlistCacheSnapshot(now);
+    const ignoreCooldown = Boolean(syncState.pendingIgnoreCooldown || reasons.includes('manual'));
+    syncState.pendingIgnoreCooldown = false;
+    const skip = shouldSkipReconcile(now, {
+      reason: primaryReason,
+      context,
+      snapshot,
+      ignoreCooldown
+    });
+    if (skip.skip) {
+      logWatchlistApiDebug('skip reconcile', `feature=watchlist trigger=${primaryReason} reason=${skip.reason}`);
+      await recordWatchlistDebugEvent({
+        trigger: primaryReason,
+        source,
+        didRequest: false,
+        reason: `skip_${skip.reason}`,
+        cacheAgeMs: snapshot.cacheAgeMs
+      });
+      continue;
+    }
+
+    const trigger = mapWatchListReasonToTrigger(primaryReason);
+    const targets = buildWatchListReconcileTargets();
+    const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    const lifecycleToken = state.watchlistLifecycleToken;
+    await recordWatchlistDebugEvent({
+      trigger: primaryReason,
+      source,
+      didRequest: true,
+      reason: 'reconcile_start',
+      cacheAgeMs: snapshot.cacheAgeMs
+    });
+
+    syncState.inFlight = true;
+    syncState.activeRequestId = requestId;
+    syncState.lastStartedAt = Date.now();
+    state.watchlistRefreshInFlight = true;
+    logWatchlistApiDebug('start', `feature=watchlist trigger=${primaryReason} requestId=${requestId}`);
+    renderWatchlistUpdatedLabel();
+    try {
+      const results = await performWatchListBulkRefresh(targets, {
+        reason: primaryReason,
+        trigger,
+        source: `watchlist_reconcile:${source}`,
+        requestId,
+        lifecycleToken
+      });
+      if (!isActiveWatchlistRequest(requestId, lifecycleToken)) {
+        logWatchlistApiDebug('drop stale response', `feature=watchlist trigger=${primaryReason} requestId=${requestId}`);
+        continue;
+      }
+      await applyWatchListResults(results, {
+        reason: primaryReason,
+        trigger,
+        source
+      });
+      const completedAt = Date.now();
+      syncState.lastCompletedAt = completedAt;
+      if (primaryReason === 'visible_tick') {
+        syncState.lastVisibleTickAt = completedAt;
+      }
+      const updatedCount = Number(results?.updatedCount || 0);
+      const unchangedCount = Number(results?.unchangedCount || 0);
+      await recordWatchlistDebugEvent({
+        trigger: primaryReason,
+        source,
+        didRequest: true,
+        reason: `reconcile_done_u${updatedCount}_n${unchangedCount}`,
+        cacheAgeMs: getWatchlistCacheAgeMs()
+      });
+    } catch (_err) {
+      syncState.lastCompletedAt = Date.now();
+      await recordWatchlistDebugEvent({
+        trigger: primaryReason,
+        source,
+        didRequest: true,
+        reason: 'reconcile_error',
+        cacheAgeMs: getWatchlistCacheAgeMs()
+      });
+    } finally {
+      syncState.inFlight = false;
+      if (normalizeRequestId(syncState.activeRequestId) === requestId) {
+        syncState.activeRequestId = '';
+      }
+      state.watchlistRefreshInFlight = false;
+      renderWatchlistUpdatedLabel();
+    }
+  }
+  return { ok: true };
+}
+
+async function performWatchListBulkRefresh(targets, context = {}) {
+  return refreshCounts({
+    trigger: String(context?.trigger || 'watchlist_bulk'),
+    source: String(context?.source || 'watchlist_reconcile'),
+    targets: Array.isArray(targets) ? targets : [],
+    requestId: String(context?.requestId || ''),
+    lifecycleToken: Number(context?.lifecycleToken || 0)
+  });
+}
+
+async function applyWatchListResults(_results, _context = {}) {
+  renderWatchlistUpdatedLabel();
+}
+
+function normalizeWatchlistCountCacheEntry(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'number' || typeof raw === 'string') {
+    return {
+      text: String(raw),
+      updatedAt: 0
+    };
+  }
+  if (typeof raw !== 'object') return null;
+  const textSource = Object.prototype.hasOwnProperty.call(raw, 'text')
+    ? raw.text
+    : raw.count;
+  if (textSource == null) return null;
+  const text = String(textSource);
+  if (!text) return null;
+  const updatedAtRaw = Number(raw.updatedAt);
+  return {
+    text,
+    updatedAt: Number.isFinite(updatedAtRaw) && updatedAtRaw > 0 ? Math.floor(updatedAtRaw) : 0
+  };
+}
+
+function normalizeWatchlistCountCache(raw) {
+  const map = new Map();
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const entries = source && typeof source.entries === 'object' && source.entries
+    ? source.entries
+    : source;
+  if (!entries || typeof entries !== 'object') return map;
+  Object.entries(entries).forEach(([id, value]) => {
+    const key = String(id || '');
+    if (!key) return;
+    const normalized = normalizeWatchlistCountCacheEntry(value);
+    if (!normalized) return;
+    map.set(key, normalized);
+  });
+  return map;
+}
+
+async function loadWatchlistCountCache() {
+  if (!chrome?.storage?.local) {
+    state.watchlistCountCache = new Map();
+    return;
+  }
+  try {
+    const stored = await chrome.storage.local.get(WATCHLIST_COUNT_CACHE_KEY);
+    state.watchlistCountCache = normalizeWatchlistCountCache(stored?.[WATCHLIST_COUNT_CACHE_KEY]);
+  } catch (_err) {
+    state.watchlistCountCache = new Map();
+  }
+}
+
+async function saveWatchlistCountCache() {
+  if (!chrome?.storage?.local) return;
+  const payload = {};
+  const validIds = new Set(state.favorites.map((item) => String(item.id || '').trim()).filter(Boolean));
+  const localMap = new Map();
+  state.watchlistCountCache.forEach((entry, id) => {
+    if (!entry || typeof entry !== 'object') return;
+    const key = String(id || '').trim();
+    if (!key || (validIds.size && !validIds.has(key))) return;
+    localMap.set(key, {
+      text: String(entry.text || ''),
+      updatedAt: Number.isFinite(entry.updatedAt) && entry.updatedAt > 0
+        ? Math.floor(entry.updatedAt)
+        : 0
+    });
+  });
+  try {
+    const stored = await chrome.storage.local.get(WATCHLIST_COUNT_CACHE_KEY);
+    const storedMap = normalizeWatchlistCountCache(stored?.[WATCHLIST_COUNT_CACHE_KEY]);
+    const mergedMap = new Map();
+    storedMap.forEach((entry, id) => {
+      const key = String(id || '').trim();
+      if (!key || (validIds.size && !validIds.has(key))) return;
+      mergedMap.set(key, { text: String(entry.text || ''), updatedAt: Number(entry.updatedAt || 0) });
+    });
+    localMap.forEach((entry, id) => {
+      const merged = mergeWatchlistCacheEntry(mergedMap.get(id), entry, true);
+      if (merged) mergedMap.set(id, { text: String(merged.text || ''), updatedAt: Number(merged.updatedAt || 0) });
+    });
+    state.watchlistCountCache = mergedMap;
+    mergedMap.forEach((entry, id) => {
+      payload[id] = {
+        text: String(entry.text || ''),
+        updatedAt: Number.isFinite(entry.updatedAt) && entry.updatedAt > 0 ? Math.floor(entry.updatedAt) : 0
+      };
+    });
+    logWatchlistApiDebug('storage save', `key=${WATCHLIST_COUNT_CACHE_KEY} entries=${Object.keys(payload).length}`);
+    await chrome.storage.local.set({ [WATCHLIST_COUNT_CACHE_KEY]: { entries: payload } });
+  } catch (_err) {
+    // ignore persistence errors
+  }
+}
+
+async function pruneWatchlistCountCache(validIds) {
+  if (!(validIds instanceof Set)) return;
+  let changed = false;
+  Array.from(state.watchlistCountCache.keys()).forEach((id) => {
+    if (validIds.has(id)) return;
+    state.watchlistCountCache.delete(id);
+    changed = true;
+  });
+  if (changed) {
+    await saveWatchlistCountCache();
+  }
+}
+
+function formatWatchlistTime(timestamp) {
+  const value = Number(timestamp);
+  if (!Number.isFinite(value) || value <= 0) return '--:--';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--:--';
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function getLatestWatchlistCacheTimestamp() {
+  let latest = 0;
+  state.favorites.forEach((item) => {
+    const cached = state.watchlistCountCache.get(item.id);
+    const ts = Number(cached?.updatedAt || 0);
+    if (ts > latest) latest = ts;
+  });
+  return latest;
+}
+
+function renderWatchlistUpdatedLabel() {
+  if (!els.watchlistUpdatedAt) return;
+  const lastSyncedAt = Number(state.watchlistSectionSync.lastCompletedAt || 0);
+  const latestCache = getLatestWatchlistCacheTimestamp();
+  const displayTs = lastSyncedAt > 0 ? lastSyncedAt : latestCache;
+  const baseText = displayTs > 0
+    ? t('panel_watchlist_last_updated', { time: formatWatchlistRelativeAge(displayTs) || formatWatchlistTime(displayTs) })
+    : t('panel_watchlist_last_updated_none');
+  let status = '';
+  if (state.watchlistRefreshInFlight) {
+    status = getWatchlistRefreshingText();
+  } else if (state.watchlistSectionSync.pendingReasons.length > 0) {
+    status = getWatchlistQueuedText();
+  } else if (displayTs > 0 && !isHardFresh(displayTs, Date.now())) {
+    status = getWatchlistStaleText();
+  }
+  els.watchlistUpdatedAt.textContent = status ? `${baseText} \u00b7 ${status}` : baseText;
+}
+
+function buildWatchlistBadgeTitle(updatedAt) {
+  const ts = Number(updatedAt);
+  if (!Number.isFinite(ts) || ts <= 0) return '';
+  return t('panel_watchlist_last_updated', { time: formatWatchlistTime(ts) });
+}
+
+function applyWatchlistCountCacheToBadges() {
+  state.favorites.forEach((item) => {
+    const cached = state.watchlistCountCache.get(item.id);
+    if (!cached) return;
+    state.badgeStatus.set(item.id, {
+      text: String(cached.text),
+      title: buildWatchlistBadgeTitle(cached.updatedAt),
+      loading: false
+    });
+  });
+  renderWatchlistUpdatedLabel();
+}
+
+function setWatchlistCountCacheValue(id, value, updatedAt) {
+  const key = String(id || '');
+  if (!key) return false;
+  if (value == null) return false;
+  const text = String(value);
+  if (!text) return false;
+  const ts = Number(updatedAt);
+  const normalizedTs = Number.isFinite(ts) && ts > 0 ? Math.floor(ts) : 0;
+  const prev = state.watchlistCountCache.get(key);
+  if (prev && prev.text === text && Number(prev.updatedAt || 0) === normalizedTs) {
+    return false;
+  }
+  state.watchlistCountCache.set(key, { text, updatedAt: normalizedTs });
+  return true;
+}
+
+function removeWatchlistCountCacheValue(id) {
+  const key = String(id || '');
+  if (!key) return false;
+  return state.watchlistCountCache.delete(key);
 }
 
 async function loadShortcutSearchOpenMode() {
@@ -963,12 +2156,6 @@ function normalizeRecentHost(host) {
   }
 }
 
-function cssEscapeValue(value) {
-  const raw = String(value || '');
-  if (globalThis.CSS?.escape) return globalThis.CSS.escape(raw);
-  return raw.replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch}`);
-}
-
 function normalizeHostOrigin(host) {
   const raw = String(host || '').trim();
   if (!raw) return '';
@@ -1020,19 +2207,59 @@ async function loadHostAppNameMap(host) {
   if (cached.fresh && Object.keys(cachedMap).length) {
     return { map: cachedMap, ok: true };
   }
+  const favoriteAppIds = collectFavoriteHostAppIds(safeHost);
+  let metadataMap = {};
+  if (favoriteAppIds.length) {
+    metadataMap = await fetchAppNamesFromMetadataBundles(safeHost, favoriteAppIds, 'panel_open');
+  }
+  const mergedCached = { ...cachedMap, ...metadataMap };
+  if (favoriteAppIds.length && favoriteAppIds.every((appId) => String(mergedCached[appId] || '').trim())) {
+    return { map: mergedCached, ok: true };
+  }
   try {
     const res = await chrome.runtime.sendMessage({
       type: 'GET_APPS_MAP',
       host: safeHost,
-      appIds: collectFavoriteHostAppIds(safeHost)
+      appIds: favoriteAppIds
     });
     if (res?.ok && res?.map && typeof res.map === 'object') {
-      return { map: res.map, ok: true };
+      return { map: { ...res.map, ...metadataMap }, ok: true };
     }
   } catch (_err) {
     // ignore
   }
-  return { map: cachedMap, ok: false };
+  return { map: mergedCached, ok: false };
+}
+
+async function fetchAppNamesFromMetadataBundles(host, appIds, trigger = 'panel_open') {
+  const safeHost = normalizeHostOrigin(host);
+  const uniqueIds = Array.from(new Set((appIds || []).map((id) => String(id || '').trim()).filter((id) => /^\d+$/.test(id))));
+  const out = {};
+  if (!safeHost || !uniqueIds.length) return out;
+  for (const appId of uniqueIds) {
+    try {
+      const res = await chrome.runtime.sendMessage({
+        type: 'PB_GET_METADATA_BUNDLE',
+        payload: {
+          host: safeHost,
+          appId,
+          needApp: true,
+          needViews: false,
+          needFields: false,
+          trigger,
+          source: 'launcher_bootstrap',
+          logGroup: 'bootstrap'
+        }
+      });
+      const appName = String(res?.bundle?.app?.name || '').trim();
+      if (res?.ok && appName) {
+        out[appId] = appName;
+      }
+    } catch (_err) {
+      // ignore single-app metadata failures
+    }
+  }
+  return out;
 }
 
 function setRecentAppNameInState(host, appId, appName) {
@@ -1045,19 +2272,6 @@ function setRecentAppNameInState(host, appId, appName) {
       item.appName = safeName;
     }
   });
-}
-
-function updateRecentAppNameDom(host, appId, appName) {
-  const safeHost = normalizeRecentHost(host);
-  const safeAppId = String(appId || '').trim();
-  const safeName = String(appName || '').trim();
-  if (!safeHost || !safeAppId || !safeName) return 0;
-  const selector = `.recent-item[data-host="${cssEscapeValue(safeHost)}"][data-app-id="${cssEscapeValue(safeAppId)}"] .recent-item-app`;
-  const nodes = doc.querySelectorAll(selector);
-  nodes.forEach((el) => {
-    el.textContent = safeName;
-  });
-  return nodes.length;
 }
 
 async function fillRecentAppNamesFromCache() {
@@ -1078,66 +2292,6 @@ async function fillRecentAppNamesFromCache() {
       // ignore
     }
   }
-}
-
-async function hydrateRecentAppNames() {
-  const seq = ++state.recentHydrationSeq;
-  const list = Array.isArray(state.recentRecords) ? state.recentRecords.slice() : [];
-  if (!list.length) return;
-
-  const appIdsByHost = new Map();
-  list.forEach((entry) => {
-    const host = normalizeRecentHost(entry.host);
-    const appId = String(entry.appId || '').trim();
-    if (!host || !appId) return;
-    if (!appIdsByHost.has(host)) appIdsByHost.set(host, new Set());
-    appIdsByHost.get(host).add(appId);
-  });
-
-  let updatedCount = 0;
-  for (const [host, set] of appIdsByHost.entries()) {
-    if (seq !== state.recentHydrationSeq) return;
-    const appIds = Array.from(set).filter(Boolean);
-    if (!appIds.length) continue;
-
-    let cache = { savedAt: 0, map: {}, fresh: false };
-    try {
-      cache = await loadAppNameMap(host);
-    } catch (_err) {
-      // ignore
-    }
-    if (seq !== state.recentHydrationSeq) return;
-
-    if (cache.fresh) {
-      for (const appId of appIds) {
-        const appName = String(cache.map[appId] || '').trim();
-        if (!appName) continue;
-        setRecentAppNameInState(host, appId, appName);
-        updatedCount += updateRecentAppNameDom(host, appId, appName);
-      }
-      continue;
-    }
-
-    try {
-      const res = await chrome.runtime.sendMessage({ type: 'GET_APPS_MAP', host, appIds });
-      if (seq !== state.recentHydrationSeq) return;
-      if (!res?.ok || !res?.map || typeof res.map !== 'object') {
-        console.debug('[kfav] recent app names hydrate skipped', { host, reason: res?.error || 'no map' });
-        continue;
-      }
-      const hostMap = res.map;
-      await saveAppNameMap(host, hostMap);
-      for (const appId of appIds) {
-        const appName = String(hostMap[appId] || '').trim();
-        if (!appName) continue;
-        setRecentAppNameInState(host, appId, appName);
-        updatedCount += updateRecentAppNameDom(host, appId, appName);
-      }
-    } catch (_err) {
-      console.debug('[kfav] recent app names hydrate failed', { host });
-    }
-  }
-  console.debug('[kfav] recent app names updated', { updatedCount });
 }
 
 function renderRecentRecords() {
@@ -1219,14 +2373,10 @@ async function loadRecentAndRender() {
     state.recentRecords = [];
   }
   renderRecentRecords();
-  hydrateRecentAppNames().catch((error) => {
-    console.error('Failed to hydrate recent app names', error);
-  });
 }
 
 async function clearRecentRecords() {
   try {
-    state.recentHydrationSeq += 1;
     await saveRecentRecords([]);
     state.recentRecords = [];
     renderRecentRecords();
@@ -1654,23 +2804,120 @@ async function refreshAppCatalog() {
 
 function normalizeFavorites(list) {
   return sortFavorites(
-    (list || []).map((item, index) => ({
-      id: item.id || createId(),
-      label: item.label || t('panel_entry_no_label'),
-      url: item.url || '',
-      host: item.host || '',
-      appId: item.appId || '',
-      appName: item.appName || '',
-      viewIdOrName: item.viewIdOrName || '',
-      viewName: item.viewName || '',
-      query: item.query || '',
-      pinned: Boolean(item.pinned),
-      order: typeof item.order === 'number' ? item.order : index,
-      icon: normalizeIconName(item.icon),
-      iconColor: normalizeIconColor(item.iconColor),
-      category: normalizeCategoryName(item.category)
-    }))
+    (list || []).map((item, index) => {
+      const title = String(item?.title || '').trim();
+      const label = String(item?.label || '').trim();
+      const viewIdOrName = String(item?.viewIdOrName || '').trim();
+      const viewId = String(item?.viewId || '').trim() || (/^\d+$/.test(viewIdOrName) ? viewIdOrName : '');
+      const queryRaw = item?.query;
+      const query = queryRaw == null ? null : String(queryRaw).trim();
+      return {
+        id: item.id || createId(),
+        label: label || title || t('panel_entry_no_label'),
+        title: title || label || '',
+        url: item.url || '',
+        host: item.host || '',
+        appId: item.appId || '',
+        appName: item.appName || '',
+        viewId,
+        viewIdOrName: viewIdOrName || viewId,
+        viewName: item.viewName || '',
+        query,
+        queryRepairRequired: Boolean(item?.queryRepairRequired),
+        pinned: Boolean(item.pinned),
+        order: typeof item.order === 'number' ? item.order : index,
+        icon: normalizeIconName(item.icon),
+        iconColor: normalizeIconColor(item.iconColor),
+        category: normalizeCategoryName(item.category)
+      };
+    })
   );
+}
+
+function buildFavoritesSignature(list) {
+  const normalized = normalizeFavorites(list);
+  return normalized.map((item) => {
+    return [
+      item.id || '',
+      item.label || '',
+      item.url || '',
+      item.host || '',
+      item.appId || '',
+      item.viewId || '',
+      item.query ?? '',
+      item.queryRepairRequired ? '1' : '0',
+      item.pinned ? '1' : '0',
+      Number(item.order ?? 0),
+      item.icon || '',
+      item.iconColor || '',
+      item.category || ''
+    ].join('\u001f');
+  }).join('\u001e');
+}
+
+function logWatchlistApiDebug(message, detail = '') {
+  if (!state.watchlistDebugEnabled) return;
+  const suffix = detail ? ` ${detail}` : '';
+  console.debug(`[PB API] ${message}${suffix}`);
+}
+
+function normalizeRequestId(value) {
+  return String(value || '').trim();
+}
+
+function isActiveWatchlistRequest(requestId, lifecycleToken) {
+  const req = normalizeRequestId(requestId);
+  if (!req) return false;
+  if (Number(lifecycleToken) !== Number(state.watchlistLifecycleToken)) return false;
+  if (normalizeRequestId(state.watchlistSectionSync.activeRequestId) !== req) return false;
+  return true;
+}
+
+function mergeWatchlistCacheEntry(prevEntry, nextEntry, preferNextWhenEqual = true) {
+  const prev = normalizeWatchlistCountCacheEntry(prevEntry);
+  const next = normalizeWatchlistCountCacheEntry(nextEntry);
+  if (!prev) return next;
+  if (!next) return prev;
+  const prevTs = Number(prev.updatedAt || 0);
+  const nextTs = Number(next.updatedAt || 0);
+  if (nextTs > prevTs) return next;
+  if (nextTs < prevTs) return prev;
+  if (prev.text === next.text) return prev;
+  return preferNextWhenEqual ? next : prev;
+}
+
+function mergeWatchlistCountCacheMap(sourceMap, { preferIncomingWhenEqual = true } = {}) {
+  if (!(sourceMap instanceof Map)) return false;
+  let changed = false;
+  sourceMap.forEach((incomingEntry, id) => {
+    const key = String(id || '').trim();
+    if (!key) return;
+    const merged = mergeWatchlistCacheEntry(
+      state.watchlistCountCache.get(key),
+      incomingEntry,
+      preferIncomingWhenEqual
+    );
+    const prev = state.watchlistCountCache.get(key);
+    if (!merged) return;
+    if (!prev || prev.text !== merged.text || Number(prev.updatedAt || 0) !== Number(merged.updatedAt || 0)) {
+      state.watchlistCountCache.set(key, { text: merged.text, updatedAt: Number(merged.updatedAt || 0) });
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+function shouldThrottleResumeBySource(source, now = Date.now()) {
+  const normalized = String(source || '').trim().toLowerCase();
+  const isInteractive = normalized.includes('pointerenter') || normalized.includes('mouseenter') || normalized.includes('click');
+  if (!isInteractive) return false;
+  const previous = Number(state.watchlistResumeSourceAt.get(normalized) || 0);
+  const guardMs = 1200;
+  if (previous > 0 && (now - previous) < guardMs) {
+    return true;
+  }
+  state.watchlistResumeSourceAt.set(normalized, now);
+  return false;
 }
 
 function applyFilterText(value) {
@@ -1770,7 +3017,7 @@ function renderLists() {
   const { pinned, normal } = splitFavoritesByPin();
   renderPinnedList(pinned);
   renderCategorySections(normal);
-  setWatchlistCollapsed(state.pinsOnly, { persist: false });
+  setWatchlistCollapsed(state.pinsOnly, { persist: false, source: 'render_lists' });
   applySearchVisibility();
   renderCollapsedSectionsTray();
   renderLucideIcons();
@@ -1889,7 +3136,8 @@ function createEntryElement(entry, pinned) {
   title.textContent = entry.label || t('panel_entry_no_label');
   const sub = doc.createElement('div');
   sub.className = 'entry-sub';
-  const view = entry.viewIdOrName ? `${t('panel_meta_view_prefix')}:${entry.viewIdOrName}` : '';
+  const viewLabel = String(entry.viewIdOrName || '').trim() || String(entry.viewName || '').trim();
+  const view = viewLabel ? `${t('panel_meta_view_prefix')}:${viewLabel}` : '';
   sub.textContent = view;
   sub.classList.toggle('hidden', !view);
   li.dataset.search = [
@@ -1993,26 +3241,46 @@ function updateBadgeDom(id) {
 
 function setBadgeLoading(id, loading) {
   const prev = state.badgeStatus.get(id) || { text: '-', title: t('panel_badge_not_fetched'), loading: false };
-  state.badgeStatus.set(id, { ...prev, loading: Boolean(loading) });
+  const nextLoading = Boolean(loading);
+  if (Boolean(prev.loading) === nextLoading) return;
+  state.badgeStatus.set(id, { ...prev, loading: nextLoading });
   updateBadgeDom(id);
 }
 
 function setBadgeValue(id, value, title = '') {
   const text = value == null ? '-' : String(value);
-  state.badgeStatus.set(id, { text, title: title || '', loading: false });
+  const next = { text, title: title || '', loading: false };
+  const prev = state.badgeStatus.get(id);
+  if (prev && prev.text === next.text && prev.title === next.title && Boolean(prev.loading) === next.loading) {
+    return;
+  }
+  state.badgeStatus.set(id, next);
   updateBadgeDom(id);
 }
 
 async function loadFavoritesAndRender() {
-  const list = await loadFavorites();
-  state.favorites = normalizeFavorites(list);
+  const loaded = await loadFavorites();
+  const migrated = await migrateFavoritesQueryIfNeeded(loaded);
+  state.favorites = normalizeFavorites(migrated.items);
+  state.favoritesStorageSignature = buildFavoritesSignature(state.favorites);
+  if (!state.favorites.length) {
+    const syncState = state.watchlistSectionSync;
+    syncState.pendingReasons = [];
+    syncState.pendingSources = {};
+    syncState.pendingIgnoreCooldown = false;
+    syncState.inFlight = false;
+    state.watchlistRefreshInFlight = false;
+  }
   const validIds = new Set(state.favorites.map((item) => item.id));
   for (const key of Array.from(state.badgeStatus.keys())) {
     if (!validIds.has(key)) state.badgeStatus.delete(key);
   }
+  await pruneWatchlistCountCache(validIds);
+  applyWatchlistCountCacheToBadges();
   renderLists();
   await refreshAppCatalog();
   renderShortcuts();
+  await syncWatchlistAutoRefreshTimer('load_favorites');
   const hosts = new Set(state.favorites.map((item) => item.host).filter(Boolean));
   for (const host of hosts) {
     try {
@@ -2033,15 +3301,46 @@ function groupByHost(items) {
   return map;
 }
 
-async function refreshCounts() {
-  if (!state.favorites.length) return;
+async function refreshCounts({
+  trigger = 'watchlist_bulk',
+  source = 'watchlist',
+  targets = [],
+  requestId = '',
+  lifecycleToken = state.watchlistLifecycleToken
+} = {}) {
+  const normalizedRequestId = normalizeRequestId(requestId);
+  const targetItems = Array.isArray(targets) && targets.length ? targets : state.favorites;
+  if (!targetItems.length) {
+    return { ok: true, skipped: 'no_entries' };
+  }
+  if (normalizedRequestId && !isActiveWatchlistRequest(normalizedRequestId, lifecycleToken)) {
+    logWatchlistApiDebug('skip stale before request', `feature=watchlist trigger=${trigger} requestId=${normalizedRequestId}`);
+    return { ok: false, skipped: 'stale_request' };
+  }
+  if (!state.watchlistRefreshInFlight) {
+    recordWatchlistDebugEvent({
+      trigger: 'unknown',
+      source: 'refreshCounts_direct',
+      didRequest: true,
+      reason: 'unknown',
+      cacheAgeMs: getWatchlistCacheAgeMs()
+    }).catch(() => {});
+  }
   setNotice('');
-  state.favorites.forEach((item) => setBadgeLoading(item.id, true));
-  const grouped = groupByHost(state.favorites);
+  targetItems.forEach((item) => setBadgeLoading(item.id, true));
+  const grouped = groupByHost(targetItems);
   const missingPerm = new Set();
   const failedHosts = new Set();
+  const refreshedAt = Date.now();
+  let cacheChanged = false;
+  let updatedCount = 0;
+  let unchangedCount = 0;
   for (const [host, items] of grouped.entries()) {
     try {
+      if (normalizedRequestId && !isActiveWatchlistRequest(normalizedRequestId, lifecycleToken)) {
+        logWatchlistApiDebug('drop stale before host', `feature=watchlist trigger=${trigger} requestId=${normalizedRequestId}`);
+        return { ok: false, skipped: 'stale_request' };
+      }
       const permitted = await hasHostPermission(host);
       if (!permitted) {
         items.forEach((item) => setBadgeValue(item.id, null, t('panel_badge_permission_required')));
@@ -2059,7 +3358,14 @@ async function refreshCounts() {
         viewIdOrName: item.viewIdOrName || '',
         query: item.query || ''
       }));
-      const res = await sendCountBulk(host, payloadItems);
+      const res = await sendCountBulk(host, payloadItems, {
+        trigger,
+        source
+      });
+      if (normalizedRequestId && !isActiveWatchlistRequest(normalizedRequestId, lifecycleToken)) {
+        logWatchlistApiDebug('drop stale after host', `feature=watchlist trigger=${trigger} requestId=${normalizedRequestId}`);
+        return { ok: false, skipped: 'stale_request' };
+      }
       if (res?.ok) {
         const counts = res.counts || {};
         const errors = res.errors || {};
@@ -2068,7 +3374,16 @@ async function refreshCounts() {
             setBadgeValue(item.id, null, errors[item.id]);
             failedHosts.add(host);
           } else if (Object.prototype.hasOwnProperty.call(counts, item.id)) {
-            setBadgeValue(item.id, counts[item.id]);
+            const changed = setWatchlistCountCacheValue(item.id, counts[item.id], refreshedAt);
+            if (changed) {
+              setBadgeValue(item.id, counts[item.id], buildWatchlistBadgeTitle(refreshedAt));
+              cacheChanged = true;
+              updatedCount += 1;
+            } else {
+              const cached = state.watchlistCountCache.get(item.id);
+              setBadgeValue(item.id, counts[item.id], buildWatchlistBadgeTitle(cached?.updatedAt || refreshedAt));
+              unchangedCount += 1;
+            }
           } else {
             setBadgeValue(item.id, null, t('panel_badge_missing_result'));
             failedHosts.add(host);
@@ -2090,16 +3405,55 @@ async function refreshCounts() {
   } else if (failedHosts.size) {
     setNoticeKey('panel_notice_counts_failed');
   }
+  if (cacheChanged) {
+    await saveWatchlistCountCache();
+  }
+  renderWatchlistUpdatedLabel();
+  return {
+    ok: missingPerm.size === 0 && failedHosts.size === 0,
+    missingPermissionHosts: missingPerm.size,
+    failedHosts: failedHosts.size,
+    targetCount: targetItems.length,
+    updatedCount,
+    unchangedCount
+  };
 }
 
 function attachStorageListener() {
   if (!chrome?.storage?.onChanged) return;
   const listener = (changes, area) => {
+    if ((area === 'session' || area === 'local') && Object.prototype.hasOwnProperty.call(changes, WATCHLIST_DEBUG_CONFIG_KEY)) {
+      state.watchlistDebugEnabled = normalizeWatchlistDebugConfig(changes[WATCHLIST_DEBUG_CONFIG_KEY]?.newValue).enabled;
+    }
+    if ((area === 'session' || area === 'local') && Object.prototype.hasOwnProperty.call(changes, WATCHLIST_DEBUG_LOG_KEY)) {
+      state.watchlistDebugLogs = normalizeWatchlistDebugLogs(changes[WATCHLIST_DEBUG_LOG_KEY]?.newValue);
+    }
+    if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, WATCHLIST_COUNT_CACHE_KEY)) {
+      const incoming = normalizeWatchlistCountCache(changes[WATCHLIST_COUNT_CACHE_KEY]?.newValue);
+      const changed = mergeWatchlistCountCacheMap(incoming, { preferIncomingWhenEqual: true });
+      if (changed) {
+        applyWatchlistCountCacheToBadges();
+        renderLists();
+      }
+    }
     if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, UI_LANGUAGE_KEY)) {
       const nextSetting = normalizeUiLanguageSetting(changes[UI_LANGUAGE_KEY]?.newValue);
       applyUiLanguageSetting(nextSetting, { persist: false, rerender: true }).catch((error) => {
         console.error('Failed to apply launcher language', error);
       });
+      return;
+    }
+    if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, WATCHLIST_REFRESH_PRESET_KEY)) {
+      applyWatchlistRefreshPreset(changes[WATCHLIST_REFRESH_PRESET_KEY]?.newValue, { persist: false })
+        .then(() => {
+          stopWatchlistAutoRefreshTimer();
+          return syncWatchlistAutoRefreshTimer('watchlist_preset_changed');
+        })
+        .catch(() => {});
+      return;
+    }
+    if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, WATCHLIST_LIMIT_KEY)) {
+      state.watchlistLimit = normalizeWatchlistLimit(changes[WATCHLIST_LIMIT_KEY]?.newValue);
       return;
     }
     if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, 'pbDeveloperProOverride')) {
@@ -2150,20 +3504,6 @@ function detachStorageListener() {
   if (state.storageListener && chrome?.storage?.onChanged) {
     chrome.storage.onChanged.removeListener(state.storageListener);
     state.storageListener = null;
-  }
-}
-
-function startCountTimer() {
-  stopCountTimer();
-  state.countTimer = setInterval(() => {
-    refreshCounts().catch((error) => console.error('refreshCounts failed', error));
-  }, REFRESH_INTERVAL);
-}
-
-function stopCountTimer() {
-  if (state.countTimer) {
-    clearInterval(state.countTimer);
-    state.countTimer = null;
   }
 }
 
@@ -2314,6 +3654,26 @@ async function toggleShortcutVisibility() {
   } catch (_err) {}
 }
 
+async function saveFavoritesWithStaleGuard(nextFavorites, { source = 'unknown', expectedSignature = '' } = {}) {
+  const normalizedNext = normalizeFavorites(nextFavorites);
+  const latest = normalizeFavorites(await loadFavorites());
+  const latestSignature = buildFavoritesSignature(latest);
+  const expected = String(expectedSignature || state.favoritesStorageSignature || '').trim();
+  if (expected && latestSignature !== expected) {
+    logWatchlistApiDebug('storage skip stale write', `key=kintoneFavorites source=${source}`);
+    state.favorites = latest;
+    state.favoritesStorageSignature = latestSignature;
+    renderLists();
+    setNoticeKey('panel_notice_favorites_stale');
+    return { ok: false, stale: true };
+  }
+  await saveFavorites(normalizedNext);
+  state.favorites = normalizedNext;
+  state.favoritesStorageSignature = buildFavoritesSignature(normalizedNext);
+  logWatchlistApiDebug('storage save', `key=kintoneFavorites source=${source}`);
+  return { ok: true, stale: false };
+}
+
 async function quickAddFromActiveTab() {
   try {
     const tab = await getActiveTab();
@@ -2327,7 +3687,29 @@ async function quickAddFromActiveTab() {
       return;
     }
     const existing = await loadFavorites();
-    if (existing.some((item) => item.url === parsed.url)) {
+    const watchlistLimit = normalizeWatchlistLimit(state.watchlistLimit);
+    if (existing.length >= watchlistLimit) {
+      setNoticeKey('panel_notice_watchlist_limit_reached', { limit: watchlistLimit });
+      return;
+    }
+    const queryResolved = await resolveWatchlistSavedQuery({
+      host: parsed.host,
+      appId: parsed.appId,
+      viewId: parsed.viewId,
+      viewIdOrName: parsed.viewIdOrName,
+      url: parsed.url,
+      query: ''
+    });
+    if (!queryResolved.ok) {
+      setNoticeKey('panel_notice_watchlist_query_resolve_failed');
+      return;
+    }
+    const canonicalUrl = buildWatchlistUrl(parsed.host, parsed.appId, queryResolved.viewId);
+    if (!canonicalUrl) {
+      setNoticeKey('panel_notice_watchlist_query_resolve_failed');
+      return;
+    }
+    if (existing.some((item) => item.url === canonicalUrl)) {
       setNoticeKey('panel_notice_already_registered');
       return;
     }
@@ -2336,21 +3718,40 @@ async function quickAddFromActiveTab() {
     const entry = {
       id: createId(),
       label,
-      url: parsed.url,
+      title: label,
+      url: canonicalUrl,
       host: parsed.host,
       appId: parsed.appId,
-      viewIdOrName: parsed.viewIdOrName,
-      query: '',
+      viewId: String(queryResolved.viewId || '').trim(),
+      viewIdOrName: String(queryResolved.viewId || '').trim(),
+      viewName: queryResolved.viewName || '',
+      query: String(queryResolved.query || ''),
+      queryRepairRequired: false,
+      icon: DEFAULT_ICON,
+      iconColor: DEFAULT_ICON_COLOR,
+      category: DEFAULT_CATEGORY,
       order: orderBase,
       pinned: false
     };
     const next = [...existing, entry];
-    await saveFavorites(next);
-    state.favorites = normalizeFavorites(next);
+    const saved = await saveFavoritesWithStaleGuard(next, {
+      source: 'quick_add',
+      expectedSignature: buildFavoritesSignature(existing)
+    });
+    if (!saved.ok) return;
     state.badgeStatus.set(entry.id, { text: '-', title: t('panel_badge_not_fetched'), loading: false });
     renderLists();
-    setNoticeKey('panel_notice_added_fetching');
-    refreshCounts().catch(() => {});
+    setNoticeKey('panel_notice_added');
+    recordWatchlistDebugEvent({
+      trigger: 'quick_add',
+      source: 'quickAddFromActiveTab',
+      didRequest: false,
+      reason: 'manual',
+      pageUrl: canonicalUrl,
+      host: parsed.host,
+      appId: parsed.appId,
+      viewId: String(queryResolved.viewId || '').trim()
+    }).catch(() => {});
   } catch (error) {
     console.error('Failed to add favorite', error);
     setNoticeKey('panel_notice_add_failed');
@@ -2373,11 +3774,33 @@ async function editEntry(entry) {
     return;
   }
   const parsed = parseKintoneUrl(nextUrl.trim());
+  const resolvedQuery = await resolveWatchlistSavedQuery({
+    host: parsed.host,
+    appId: parsed.appId,
+    viewId: parsed.viewId,
+    viewIdOrName: parsed.viewIdOrName,
+    url: parsed.url,
+    query: ''
+  });
+  if (!resolvedQuery.ok) {
+    setNoticeKey('panel_notice_watchlist_query_resolve_failed');
+    return;
+  }
+  const canonicalUrl = buildWatchlistUrl(parsed.host, parsed.appId, resolvedQuery.viewId);
+  if (!canonicalUrl) {
+    setNoticeKey('panel_notice_watchlist_query_resolve_failed');
+    return;
+  }
   entry.label = nextLabel.trim() || t('panel_entry_no_label');
-  entry.url = parsed.url;
+  entry.title = entry.label;
+  entry.url = canonicalUrl;
   entry.host = parsed.host;
   entry.appId = parsed.appId;
-  entry.viewIdOrName = parsed.viewIdOrName;
+  entry.viewId = String(resolvedQuery.viewId || '').trim();
+  entry.viewIdOrName = entry.viewId;
+  entry.viewName = resolvedQuery.viewName || '';
+  entry.query = String(resolvedQuery.query || '');
+  entry.queryRepairRequired = false;
   await persistFavorites();
   setNoticeKey('panel_notice_updated');
 }
@@ -2409,6 +3832,10 @@ async function deleteEntry(id) {
   reindexOrders();
   await persistFavorites();
   state.badgeStatus.delete(id);
+  if (removeWatchlistCountCacheValue(id)) {
+    saveWatchlistCountCache().catch(() => {});
+    renderWatchlistUpdatedLabel();
+  }
   renderLists();
 }
 
@@ -2436,8 +3863,10 @@ function reindexOrders() {
 }
 
 async function persistFavorites() {
-  await saveFavorites(state.favorites);
-  state.favorites = normalizeFavorites(state.favorites);
+  const saved = await saveFavoritesWithStaleGuard(state.favorites, {
+    source: 'persist_favorites'
+  });
+  if (!saved.ok) return;
   renderLists();
 }
 
@@ -2572,7 +4001,7 @@ function wireEvents() {
   ensureRecentCollapseControl();
   ensureCollapsedSectionsTray();
   setRecordPinsCollapsed(state.recordPinsCollapsed, { persist: false });
-  setWatchlistCollapsed(state.pinsOnly, { persist: false });
+  setWatchlistCollapsed(state.pinsOnly, { persist: false, source: 'wire_events_init' });
   setRecentRecordsCollapsed(state.recentRecordsCollapsed, { persist: false });
   els.toggleShortcuts?.classList.add('collapse-btn');
   els.toggleRecordPins?.classList.add('collapse-btn');
@@ -2616,11 +4045,16 @@ function wireEvents() {
     }
   });
   els.togglePinsOnly?.addEventListener('change', (event) => {
-    setWatchlistCollapsed(Boolean(event.target.checked));
+    setWatchlistCollapsed(Boolean(event.target.checked), { source: 'watchlist_toggle' });
     syncSelectionState();
     highlightSelection();
   });
-  els.refreshCounts?.addEventListener('click', () => refreshCounts().catch(() => {}));
+  els.refreshCounts?.addEventListener('click', () => {
+    requestWatchListReconcile('manual', {
+      source: 'watchlist_refresh_button',
+      ignoreCooldown: true
+    }).catch(() => {});
+  });
   els.quickAdd?.addEventListener('click', () => quickAddFromActiveTab());
   els.toggleRecordPins?.addEventListener('click', () => {
     setRecordPinsCollapsed(!state.recordPinsCollapsed);
@@ -2645,11 +4079,88 @@ function wireEvents() {
     els.toggleShortcuts.addEventListener('click', handler);
     state.shortcutToggleHandler = handler;
   }
+  if (!state.watchlistFocusHandler) {
+    state.watchlistFocusHandler = () => {
+      state.watchlistWindowFocused = true;
+      requestWatchListResumeCatchup('window_focus').catch(() => {});
+    };
+    window.addEventListener('focus', state.watchlistFocusHandler);
+  }
+  if (!state.watchlistBlurHandler) {
+    state.watchlistBlurHandler = () => {
+      state.watchlistWindowFocused = false;
+      syncWatchlistAutoRefreshTimer('window_blur').catch(() => {});
+    };
+    window.addEventListener('blur', state.watchlistBlurHandler);
+  }
+  if (!state.watchlistVisibilityChangeHandler) {
+    state.watchlistVisibilityChangeHandler = () => {
+      if (document.visibilityState === 'visible') {
+        state.watchlistWindowFocused = typeof document.hasFocus === 'function'
+          ? Boolean(document.hasFocus())
+          : true;
+        requestWatchListResumeCatchup('visibilitychange_visible').catch(() => {});
+      } else {
+        state.watchlistWindowFocused = false;
+        syncWatchlistAutoRefreshTimer('visibility_hidden').catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', state.watchlistVisibilityChangeHandler);
+  }
+  if (!state.watchlistTabActivatedHandler && chrome?.tabs?.onActivated?.addListener) {
+    state.watchlistTabActivatedHandler = () => {
+      requestWatchListResumeCatchup('tabs.onActivated').catch(() => {});
+    };
+    chrome.tabs.onActivated.addListener(state.watchlistTabActivatedHandler);
+  }
+  if (!state.watchlistPointerEnterHandler) {
+    state.watchlistPointerEnterHandler = () => {
+      requestWatchListResumeCatchup('sidepanel_pointerenter').catch(() => {});
+    };
+    document.addEventListener('pointerenter', state.watchlistPointerEnterHandler, true);
+    document.addEventListener('mouseenter', state.watchlistPointerEnterHandler, true);
+  }
+  if (!state.watchlistClickHandler) {
+    state.watchlistClickHandler = () => {
+      requestWatchListResumeCatchup('sidepanel_click').catch(() => {});
+    };
+    document.addEventListener('click', state.watchlistClickHandler, true);
+  }
 }
 
 function dispose() {
-  stopCountTimer();
+  state.watchlistPanelMounted = false;
+  state.watchlistLifecycleToken += 1;
+  state.watchlistLastResumeEventAt = 0;
+  state.watchlistResumeSourceAt.clear();
+  state.watchlistSectionSync.activeRequestId = '';
   detachStorageListener();
+  stopWatchlistAutoRefreshTimer();
+  if (state.watchlistFocusHandler) {
+    window.removeEventListener('focus', state.watchlistFocusHandler);
+    state.watchlistFocusHandler = null;
+  }
+  if (state.watchlistBlurHandler) {
+    window.removeEventListener('blur', state.watchlistBlurHandler);
+    state.watchlistBlurHandler = null;
+  }
+  if (state.watchlistVisibilityChangeHandler) {
+    document.removeEventListener('visibilitychange', state.watchlistVisibilityChangeHandler);
+    state.watchlistVisibilityChangeHandler = null;
+  }
+  if (state.watchlistTabActivatedHandler && chrome?.tabs?.onActivated?.removeListener) {
+    chrome.tabs.onActivated.removeListener(state.watchlistTabActivatedHandler);
+    state.watchlistTabActivatedHandler = null;
+  }
+  if (state.watchlistPointerEnterHandler) {
+    document.removeEventListener('pointerenter', state.watchlistPointerEnterHandler, true);
+    document.removeEventListener('mouseenter', state.watchlistPointerEnterHandler, true);
+    state.watchlistPointerEnterHandler = null;
+  }
+  if (state.watchlistClickHandler) {
+    document.removeEventListener('click', state.watchlistClickHandler, true);
+    state.watchlistClickHandler = null;
+  }
   disposeRecordPins();
   if (state.pinListObserver) {
     state.pinListObserver.disconnect();
@@ -2678,18 +4189,32 @@ function dispose() {
 }
 
 async function init() {
+  state.watchlistPanelMounted = true;
+  state.watchlistLifecycleToken += 1;
+  state.watchlistLastResumeEventAt = 0;
+  state.watchlistResumeSourceAt.clear();
+  state.watchlistSectionSync.activeRequestId = '';
   await initializeI18n();
+  await loadWatchlistLimit();
   await loadShortcutSearchOpenMode();
   await loadCollapsedSectionsState();
+  await loadWatchlistRefreshPreset();
+  await loadWatchlistDebugState();
+  await loadWatchlistCountCache();
   wireEvents();
+  recordWatchlistDebugEvent({
+    trigger: 'panel_open_cache_only',
+    source: 'init',
+    didRequest: false,
+    reason: 'cache_only',
+    pageUrl: String(location?.href || '')
+  }).catch(() => {});
   attachStorageListener();
   await initializeRecordPins();
   await refreshShortcutEntries();
   await loadRecentAndRender();
   await loadFavoritesAndRender();
   await refreshOverlayLaunchState();
-  refreshCounts().catch(() => {});
-  startCountTimer();
   focusFilterSoon();
 }
 

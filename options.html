@@ -9,20 +9,20 @@
 <body>
   <div class="layout">
     <aside class="sidebar">
-      <h1 data-i18n="settings_title">kintone Base 設定</h1>
+      <h1 data-i18n="settings_title">PlugBits Launcher 設定</h1>
       <nav class="menu" aria-label="設定メニュー" data-i18n-aria-label="settings_menu_aria">
         <button type="button" class="menu-item is-active" data-pane-target="general" data-i18n="nav_general">全般</button>
         <button type="button" class="menu-item" data-pane-target="shortcuts" data-i18n="nav_shortcuts">ショートカット</button>
         <button type="button" class="menu-item" data-pane-target="watchlist" data-i18n="nav_watchlist">ウォッチリスト</button>
         <button type="button" class="menu-item" data-pane-target="pins" data-i18n="nav_pins">ピン止め</button>
-        <button type="button" class="menu-item" data-pane-target="excel-overlay" data-i18n="nav_excel_overlay">Excel Overlay</button>
+        <button type="button" class="menu-item" data-pane-target="excel-overlay" data-i18n="nav_excel_overlay">スプレッドシート</button>
       </nav>
     </aside>
     <main class="content" id="content">
       <section class="pane is-active" data-pane="general" aria-labelledby="pane-general-title">
         <section class="card">
           <h2 id="pane-general-title" data-i18n="general_section_title">全般</h2>
-          <p data-i18n="general_intro_1">kintone Base は、kintone を横断的に閲覧・操作するための Chrome 拡張機能です。各機能は左メニューから切り替えて設定できます。</p>
+          <p data-i18n="general_intro_1">PluBits Launcher は、kintone を横断的に閲覧・操作するための Chrome 拡張機能です。各機能は左メニューから切り替えて設定できます。</p>
           <p class="hint" data-i18n="general_intro_2">設定は自動で保存され、同期が有効になっている場合は同じ Google アカウントで Chrome を使用する他端末にも共有されます。</p>
           <div class="kp-setting-row general-language-row">
             <label class="general-language-label" for="ui_language">
@@ -65,18 +65,93 @@
           </div>
           <p class="hint" data-i18n="host_perm_hint">InPrivate で利用する場合は拡張機能の「InPrivate で許可」をオンにしてから実行してください。</p>
         </section>
+
+        <section class="card">
+          <h2 data-i18n="api_usage_title">API使用状況</h2>
+          <p class="hint" data-i18n="api_usage_desc">この拡張機能が発行したAPI呼び出しの簡易統計です。</p>
+          <p class="hint api-usage-note" data-i18n="api_usage_scope_note">kintone全体のAPI使用量ではありません。</p>
+          <div class="api-usage-summary">
+            <section class="api-usage-period">
+              <h3 data-i18n="api_usage_period_today">Today</h3>
+              <div class="api-usage-kv"><span data-i18n="api_usage_total">Total</span><strong id="api_usage_today_total">0</strong></div>
+              <div class="api-usage-kv"><span data-i18n="api_usage_success">Success</span><strong id="api_usage_today_success">0</strong></div>
+              <div class="api-usage-kv"><span data-i18n="api_usage_error">Error</span><strong id="api_usage_today_error">0</strong></div>
+            </section>
+            <section class="api-usage-period">
+              <h3 data-i18n="api_usage_period_7d">7日</h3>
+              <div class="api-usage-kv"><span data-i18n="api_usage_total">Total</span><strong id="api_usage_7d_total">0</strong></div>
+              <div class="api-usage-kv"><span data-i18n="api_usage_success">Success</span><strong id="api_usage_7d_success">0</strong></div>
+              <div class="api-usage-kv"><span data-i18n="api_usage_error">Error</span><strong id="api_usage_7d_error">0</strong></div>
+            </section>
+            <section class="api-usage-period">
+              <h3 data-i18n="api_usage_period_30d">30日</h3>
+              <div class="api-usage-kv"><span data-i18n="api_usage_total">Total</span><strong id="api_usage_30d_total">0</strong></div>
+              <div class="api-usage-kv"><span data-i18n="api_usage_success">Success</span><strong id="api_usage_30d_success">0</strong></div>
+              <div class="api-usage-kv"><span data-i18n="api_usage_error">Error</span><strong id="api_usage_30d_error">0</strong></div>
+            </section>
+          </div>
+          <div class="api-usage-breakdowns">
+            <section class="api-usage-breakdown">
+              <h3 data-i18n="api_usage_by_feature_title">機能別内訳</h3>
+              <table class="api-usage-feature-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="api_usage_feature">機能</th>
+                    <th data-i18n="api_usage_period_today">Today</th>
+                    <th data-i18n="api_usage_period_7d">7日</th>
+                    <th data-i18n="api_usage_period_30d">30日</th>
+                  </tr>
+                </thead>
+                <tbody id="api_usage_feature_table_body"></tbody>
+              </table>
+            </section>
+            <section class="api-usage-breakdown">
+              <h3 data-i18n="api_usage_admin_breakdown_title">Admin 内訳</h3>
+              <table class="api-usage-feature-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="api_usage_admin_category">分類</th>
+                    <th data-i18n="api_usage_period_today">Today</th>
+                    <th data-i18n="api_usage_period_7d">7日</th>
+                    <th data-i18n="api_usage_period_30d">30日</th>
+                  </tr>
+                </thead>
+                <tbody id="api_usage_admin_breakdown_table_body"></tbody>
+              </table>
+            </section>
+          </div>
+          <div class="actions actions--end">
+            <button id="metadata_cache_clear" type="button" data-i18n="metadata_cache_clear_btn">Metadata cache を削除</button>
+            <button id="api_usage_reset" type="button" class="btn-danger-subtle" data-i18n="api_usage_reset">統計をリセット</button>
+          </div>
+          <p id="metadata_cache_status" class="hint" data-i18n="metadata_cache_clear_desc">app / views / fields の24h cacheをクリアします。</p>
+        </section>
+
+        <section class="card watchlist-debug-card">
+          <h2 data-i18n="watchlist_debug_title">WatchList Debug (temporary)</h2>
+          <p class="hint" data-i18n="watchlist_debug_desc">調査用の一時ログです。Debug ON のときのみ記録します。</p>
+          <label class="shortcut-toggle">
+            <input id="watchlist_debug_enabled" type="checkbox" />
+            <span data-i18n="watchlist_debug_toggle">Debug ON</span>
+          </label>
+          <p id="watchlist_debug_storage" class="hint" data-i18n="watchlist_debug_storage_session">保存先: session (一時)</p>
+          <div class="actions actions--end">
+            <button id="watchlist_debug_clear" type="button" class="btn-danger-subtle" data-i18n="watchlist_debug_clear">ログをクリア</button>
+          </div>
+          <pre id="watchlist_debug_log" class="watchlist-debug-log" aria-live="polite"></pre>
+        </section>
       </section>
 
       <section class="pane" data-pane="excel-overlay" aria-labelledby="pane-excel-overlay-title">
         <section class="card">
-          <h2 id="pane-excel-overlay-title" data-i18n="overlay_section_title">Excel Overlay</h2>
-          <p class="hint" data-i18n="overlay_section_desc">kintone 一覧画面で Excel風 Overlay を利用します。利用モードに応じて、無効・Standard・Pro を切り替えます。</p>
+          <h2 id="pane-excel-overlay-title" data-i18n="overlay_section_title">スプレッドシート</h2>
+          <p class="hint" data-i18n="overlay_section_desc">kintone 一覧画面で スプレッドシートビュー を利用します。利用モードに応じて、無効・Standard・Pro を切り替えます。</p>
           <fieldset class="excel-mode-group">
             <legend data-i18n="overlay_mode_label">利用モード</legend>
             <label class="excel-mode-option">
               <input type="radio" name="excel_overlay_mode" value="off" />
               <span data-i18n="overlay_mode_disabled">無効</span>
-              <small class="hint" data-i18n="overlay_mode_disabled_desc">Overlay を起動しません。標準の kintone 一覧を使用します。</small>
+              <small class="hint" data-i18n="overlay_mode_disabled_desc">スプレッドシートを起動しません。標準の kintone 一覧を使用します。</small>
             </label>
             <label class="excel-mode-option">
               <input type="radio" name="excel_overlay_mode" value="standard" />
@@ -94,53 +169,57 @@
 
         <section class="card">
           <h2 data-i18n="overlay_layout_title">列レイアウト設定</h2>
-          <p class="hint" data-i18n="overlay_layout_desc">一覧画面・詳細画面で保存された列並び・列幅を管理します。保存済みレイアウトは画面タイプごとに区別して表示されます。</p>
           <div class="actions actions--end">
             <button id="excel_columns_clear" type="button" data-i18n="reset_all">すべてリセット</button>
           </div>
           <ul id="excel_columns_list" class="excel-columns-list excel-layout-list"></ul>
         </section>
-
-        <section class="card">
-          <h2 data-i18n="overlay_note_title">補足</h2>
-          <p class="hint" data-i18n="overlay_note_desc">今後、列表示設定や固定列などもこのセクションに追加予定です。</p>
-        </section>
       </section>
 
       <section class="pane" data-pane="watchlist" aria-labelledby="pane-watchlist-title">
-        <section class="card">
+        <section class="card watchlist-card">
           <h2 id="pane-watchlist-title" data-i18n="watchlist_section_title">ウォッチリスト</h2>
-          <div class="watch-form-grid">
-            <div class="watch-form-col">
-              <label><span data-i18n="watch_label_optional">表示名（任意）</span><br/>
-                <input id="label" placeholder="例：受注一覧（未出荷）" data-i18n-placeholder="watch_placeholder_label"/>
-              </label>
-
-              <label><span data-i18n="watch_url_label">kintone URL（アプリ／ビュー）</span><br/>
-                <input id="url" placeholder="例：https://xxx.cybozu.com/k/45/?view=123" data-i18n-placeholder="watch_placeholder_url"/>
-              </label>
+          <div class="watchlist-frequency-group">
+            <label for="watchlist_refresh_preset">
+              <span data-i18n="watchlist_refresh_preset_label">WatchList 更新頻度</span>
+            </label>
+            <select id="watchlist_refresh_preset" class="watchlist-frequency-select">
+              <option value="eco" data-i18n="watchlist_refresh_preset_eco">省エネ</option>
+              <option value="normal" data-i18n="watchlist_refresh_preset_normal">標準</option>
+              <option value="fast" data-i18n="watchlist_refresh_preset_fast">高頻度</option>
+            </select>
+            <div class="watchlist-frequency-hints">
+              <p class="hint" data-i18n="watchlist_refresh_preset_hint">短くすると更新は早くなりますが、API消費は増えます。</p>
+              <p class="hint" data-i18n="watchlist_refresh_preset_warn">高頻度設定は自己責任で使用してください。</p>
             </div>
+          </div>
 
-            <div class="watch-form-col">
-              <div class="grid icon-cat-grid watch-meta-grid">
-                <label><span data-i18n="watch_category_optional">カテゴリ（任意）</span><br/>
-                  <input id="category" list="categorySuggestions" placeholder="例：営業" data-i18n-placeholder="watch_placeholder_category" />
-                </label>
-                <label><span data-i18n="watch_icon_label">アイコン</span><br/>
-                  <select id="icon"></select>
-                  <span id="iconPreview" class="icon-preview lc" data-icon="file-text" aria-hidden="true"></span>
-                </label>
-                <label><span data-i18n="watch_icon_color_label">アイコン色</span><br/>
-                  <select id="iconColor"></select>
-                </label>
-              </div>
-            </div>
+          <div class="watch-form-grid watch-form-grid-refined">
+            <label class="watch-field watch-field-label"><span data-i18n="watch_label_optional">表示名（任意）</span>
+              <input id="label" placeholder="例：受注一覧（未出荷）" data-i18n-placeholder="watch_placeholder_label"/>
+            </label>
+            <label class="watch-field watch-field-category"><span data-i18n="watch_category_optional">カテゴリ（任意）</span>
+              <input id="category" list="categorySuggestions" placeholder="例：営業" data-i18n-placeholder="watch_placeholder_category" />
+            </label>
+            <label class="watch-field watch-field-icon"><span data-i18n="watch_icon_label">アイコン</span>
+              <span class="watch-icon-picker">
+                <select id="icon"></select>
+                <span id="iconPreview" class="icon-preview lc" data-icon="file-text" aria-hidden="true"></span>
+              </span>
+            </label>
+            <label class="watch-field watch-field-url"><span data-i18n="watch_url_label">kintone URL（アプリ／ビュー）</span>
+              <input id="url" placeholder="例：https://xxx.cybozu.com/k/45/?view=123" data-i18n-placeholder="watch_placeholder_url"/>
+            </label>
+            <label class="watch-field watch-field-icon-color"><span data-i18n="watch_icon_color_label">アイコン色</span>
+              <select id="iconColor"></select>
+            </label>
           </div>
           <p class="hint" data-i18n="watch_icon_hint">※ アイコンと色はショートカット/ウォッチ行に反映されます。カテゴリはサイドパネルのグループ分けに利用されます。</p>
 
-          <details>
+          <details class="watch-advanced">
             <summary data-i18n="common_advanced_settings_manual">高度な設定（手動指定）</summary>
-            <div class="grid">
+            <p class="hint" data-i18n="watch_advanced_hint">通常は URL から自動取得されます。必要な場合のみ手動で指定してください。</p>
+            <div class="grid watch-advanced-grid">
               <label><span data-i18n="watch_app_id_label">App ID</span><br/><input id="appId" placeholder="45" data-i18n-placeholder="watch_placeholder_app_id"/></label>
               <label><span data-i18n="watch_view_label">View ID/Name</span><br/><input id="viewIdOrName" placeholder="123 または ビュー名" data-i18n-placeholder="watch_placeholder_view"/></label>
               <label><span data-i18n="watch_query_optional_label">Query（任意）</span><br/><input id="query" placeholder="ステータス in (\"未出荷\")" data-i18n-placeholder="watch_placeholder_query"/></label>
@@ -148,12 +227,14 @@
             <p class="hint" data-i18n="watch_view_query_hint">※ View を指定するとそのフィルタ条件で件数カウント。Query を指定した場合は View より優先します。</p>
           </details>
 
-          <div class="actions actions--end">
+          <div class="actions actions--end watch-add-actions">
             <button id="add" data-i18n="common_add">追加</button>
           </div>
+          <p id="watchlist_limit_hint" class="hint" data-i18n="watch_limit_hint">現在の登録上限: 3件（登録済み: 0件）</p>
+          <p id="watchlist_limit_state" class="hint watch-limit-state" aria-live="polite"></p>
         </section>
 
-        <section class="card">
+        <section class="card watchlist-registered-card">
           <h2 data-i18n="watch_registered_title">登録済みウォッチリスト</h2>
           <p class="hint" data-i18n="watch_registered_hint">ドラッグで並び替え。右上のアイコンで固定・開く・編集・削除ができます。詳細は各カードの「詳細」を展開してください。</p>
           <ul id="list"></ul>

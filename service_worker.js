@@ -1,5 +1,5 @@
 ﻿// service_worker.js
-// 目的：アクティブな kintone タブがあるときに、指定ウォッチリスト項目の件数を取得して拡張アイコンのバッジ表示を更新
+// 目的：サイドパネル/コンテキストメニュー連携を提供する（WatchList 件数バッジ自動更新は無効化）
 import {
   createId,
   isKintoneUrl,
@@ -10,63 +10,13 @@ import {
   saveAppNameMap
 } from './core.js';
 
-async function pickBadgeTarget() {
-  const { kintoneFavorites = [], kfavBadgeTargetId = null } = await chrome.storage.sync.get([
-    'kintoneFavorites',
-    'kfavBadgeTargetId'
-  ]);
-  if (!kintoneFavorites.length) return null;
-  const target = kfavBadgeTargetId
-    ? kintoneFavorites.find(x => x.id === kfavBadgeTargetId)
-    : kintoneFavorites[0]; // 初期は先頭
-  return target || null;
+function disableLegacyWatchlistBadgeRefresh() {
+  chrome.alarms?.clear?.('kfav-badge-refresh').catch?.(() => {});
 }
 
-async function updateBadgeForTab(tabId, tabUrl) {
-  if (!tabUrl || !/^https:\/\/.*(kintone|cybozu)\.com/.test(tabUrl)) {
-    await chrome.action.setBadgeText({ tabId, text: '' });
-    return;
-  }
-  const target = await pickBadgeTarget();
-  if (!target) {
-    await chrome.action.setBadgeText({ tabId, text: '' });
-    return;
-  }
-  if (!tabUrl.includes(target.host)) {
-    await chrome.action.setBadgeText({ tabId, text: '' });
-    return;
-  }
-  try {
-    const res = await chrome.tabs.sendMessage(tabId, {
-      type: target.viewIdOrName ? 'COUNT_VIEW' : 'COUNT_APP_QUERY',
-      payload: target.viewIdOrName
-        ? { appId: target.appId, viewIdOrName: target.viewIdOrName }
-        : { appId: target.appId, query: target.query || '' }
-    });
-    if (res?.ok) {
-      await chrome.action.setBadgeText({ tabId, text: String(res.count ?? '') });
-      await chrome.action.setBadgeBackgroundColor({ tabId, color: '#777' });
-    } else {
-      await chrome.action.setBadgeText({ tabId, text: '' });
-    }
-  } catch (_e) {
-    await chrome.action.setBadgeText({ tabId, text: '' });
-  }
-}
-
-chrome.tabs.onActivated.addListener(async ({ tabId }) => {
-  const tab = await chrome.tabs.get(tabId);
-  updateBadgeForTab(tabId, tab.url);
-});
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' || changeInfo.url) {
-    updateBadgeForTab(tabId, tab.url);
-  }
-});
-
-// MV3は常駐しないため、定期起床して更新
+// MV3 起動時セットアップ
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create('kfav-badge-refresh', { periodInMinutes: 2 });
+  disableLegacyWatchlistBadgeRefresh();
  // Edge/Chrome: サイドパネルを有効化 & アイコンクリックで開く挙動を設定
   try {
     if (chrome.sidePanel) {
@@ -86,8 +36,12 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 // 起動時に自動でコネクタタブを作成しない
-chrome.runtime.onStartup?.addListener(() => setupContextMenus());
 chrome.runtime.onStartup?.addListener(() => {
+  disableLegacyWatchlistBadgeRefresh();
+  setupContextMenus();
+});
+chrome.runtime.onStartup?.addListener(() => {
+  disableLegacyWatchlistBadgeRefresh();
   migrateShortcutsFillIconFieldsOnce().catch(() => {});
 });
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -103,6 +57,14 @@ const FAVORITE_PARENT_ID = 'kfav-favorite-parent';
 const FAVORITE_MENU_APP = 'kfav-favorite-app';
 const FAVORITE_MENU_VIEW = 'kfav-favorite-view';
 const FAVORITES_KEY = 'kintoneFavorites';
+const WATCHLIST_LIMIT_KEY = 'pb_watchlist_limit';
+const DEFAULT_WATCHLIST_LIMIT = 3;
+const MAX_WATCHLIST_LIMIT = 5;
+const WATCHLIST_LIMIT_VALUES = [DEFAULT_WATCHLIST_LIMIT, MAX_WATCHLIST_LIMIT];
+const DEFAULT_WATCHLIST_ICON = 'file-text';
+const DEFAULT_WATCHLIST_ICON_COLOR = 'gray';
+const DEFAULT_WATCHLIST_CATEGORY = '';
+const WATCHLIST_CTX_UNSUPPORTED_PAGE_MESSAGE = 'このページからはウォッチリストを追加できません。アプリの一覧ビューで実行してください。';
 const SHORTCUT_PARENT_ID = 'kfav-shortcut-parent';
 const SHORTCUT_MENU_APP = 'kfav-shortcut-app';
 const SHORTCUT_MENU_VIEW = 'kfav-shortcut-view';
@@ -116,6 +78,26 @@ const PRO_INSTALL_TYPE_MESSAGE_ID = 'PB_GET_INSTALL_TYPE';
 const UI_LANGUAGE_KEY = 'uiLanguage';
 const UI_LANGUAGE_VALUES = new Set(['auto', 'ja', 'en']);
 const latestPageContextByTab = new Map();
+
+function normalizeWatchlistLimit(raw) {
+  const value = Number(raw);
+  if (WATCHLIST_LIMIT_VALUES.includes(value)) return value;
+  return DEFAULT_WATCHLIST_LIMIT;
+}
+
+async function loadWatchlistLimit() {
+  try {
+    const stored = await chrome.storage.local.get(WATCHLIST_LIMIT_KEY);
+    const raw = stored?.[WATCHLIST_LIMIT_KEY];
+    const normalized = normalizeWatchlistLimit(raw);
+    if (raw !== normalized) {
+      await chrome.storage.local.set({ [WATCHLIST_LIMIT_KEY]: normalized });
+    }
+    return normalized;
+  } catch (_err) {
+    return DEFAULT_WATCHLIST_LIMIT;
+  }
+}
 
 const MENU_MESSAGES = {
   ja: {
@@ -807,6 +789,268 @@ function favoriteUrlOf(host, appId, viewIdOrName) {
   return base;
 }
 
+function shortenLogValue(value, max = 240) {
+  const text = String(value == null ? '' : value);
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}...`;
+}
+
+function logCtxAdd(message) {
+  console.log(`[PB] ${message}`);
+}
+
+function warnCtxAdd(message) {
+  console.warn(`[PB] ${message}`);
+}
+
+function errorCtxAdd(message, error) {
+  const errMsg = String(error?.message || error || '');
+  const stack = String(error?.stack || '').replace(/\s+/g, ' ').trim();
+  console.error(`[PB] ${message} stack=${shortenLogValue(stack, 500)}`, errMsg);
+}
+
+function isWatchlistAddableAppListPage(urlValue) {
+  try {
+    const url = new URL(String(urlValue || ''));
+    return /^\/k\/\d+\/?$/.test(String(url.pathname || ''));
+  } catch (_err) {
+    return false;
+  }
+}
+
+function resolveWatchlistTargetFromUrl(menuId, info, tab) {
+  const tabUrl = String(tab?.url || '').trim();
+  const pageUrl = String(info?.pageUrl || '').trim();
+  const frameUrl = String(info?.frameUrl || '').trim();
+  const candidates = [tabUrl, pageUrl, frameUrl].filter(Boolean);
+  const firstKintoneUrl = candidates.find((value) => isKintoneUrl(value));
+  if (!firstKintoneUrl) {
+    return {
+      ok: false,
+      reason: 'kintone_url_not_found',
+      message: WATCHLIST_CTX_UNSUPPORTED_PAGE_MESSAGE
+    };
+  }
+  if (!isWatchlistAddableAppListPage(firstKintoneUrl)) {
+    return {
+      ok: false,
+      reason: 'unsupported_page',
+      message: WATCHLIST_CTX_UNSUPPORTED_PAGE_MESSAGE,
+      pageUrl: firstKintoneUrl
+    };
+  }
+  const parsed = parseKintoneUrl(firstKintoneUrl);
+  const host = String(parsed?.host || '').trim();
+  const appId = String(parsed?.appId || '').trim();
+  const parsedViewId = String(parsed?.viewId || parsed?.viewIdOrName || '').trim();
+  if (!host || !appId) {
+    return {
+      ok: false,
+      reason: 'missing_host_or_app',
+      message: 'Watchlist追加失敗: appIdを解決できません'
+    };
+  }
+  return {
+    ok: true,
+    menuId: String(menuId || '').trim(),
+    host,
+    appId,
+    viewIdOrName: parsedViewId,
+    pageUrl: firstKintoneUrl,
+    tabUrl,
+    rawPageUrl: pageUrl,
+    rawFrameUrl: frameUrl
+  };
+}
+
+function buildWatchlistItem({
+  host,
+  appId,
+  viewId,
+  viewName = '',
+  query,
+  label = '',
+  order = 0
+}) {
+  const resolvedViewId = String(viewId || '').trim();
+  const queryRaw = query;
+  const resolvedQuery = String(queryRaw == null ? '' : queryRaw).trim();
+  const resolvedHost = String(host || '').trim();
+  const resolvedAppId = String(appId || '').trim();
+  const hasResolvableQuery = queryRaw != null && resolvedQuery !== '-';
+  if (!resolvedHost || !resolvedAppId || !hasResolvableQuery) {
+    return { ok: false, reason: 'required_fields_missing' };
+  }
+  const canonicalUrl = favoriteUrlOf(resolvedHost, resolvedAppId, resolvedViewId);
+  if (!canonicalUrl) return { ok: false, reason: 'url_build_failed' };
+  const resolvedLabel = String(label || '').trim() || `App ${resolvedAppId}`;
+  return {
+    ok: true,
+    item: {
+      id: createId(),
+      label: resolvedLabel,
+      title: resolvedLabel,
+      url: canonicalUrl,
+      host: resolvedHost,
+      appId: resolvedAppId,
+      viewId: resolvedViewId,
+      viewIdOrName: resolvedViewId,
+      viewName: String(viewName || '').trim(),
+      query: resolvedQuery,
+      queryRepairRequired: false,
+      icon: DEFAULT_WATCHLIST_ICON,
+      iconColor: DEFAULT_WATCHLIST_ICON_COLOR,
+      category: DEFAULT_WATCHLIST_CATEGORY,
+      order,
+      pinned: false
+    }
+  };
+}
+
+async function saveWatchlistItem(list, item, limit) {
+  const source = Array.isArray(list) ? list.slice() : [];
+  const max = Number(limit) > 0 ? Number(limit) : DEFAULT_WATCHLIST_LIMIT;
+  if (source.length >= max) {
+    return { ok: false, reason: 'limit_reached' };
+  }
+  if (source.some((entry) => String(entry?.url || '') === String(item?.url || ''))) {
+    return { ok: false, reason: 'duplicate_url' };
+  }
+  source.push(item);
+  source.forEach((entry, index) => {
+    if (typeof entry.order !== 'number') entry.order = index;
+  });
+  await saveFavoriteList(source);
+  return { ok: true, list: source };
+}
+
+function extractQueryParamFromUrl(urlValue) {
+  try {
+    const url = new URL(String(urlValue || ''));
+    return String(url.searchParams.get('query') || '').trim();
+  } catch (_err) {
+    return '';
+  }
+}
+
+function extractViewFilterFromViews(viewsObj, viewIdOrName) {
+  if (!viewsObj || typeof viewsObj !== 'object') {
+    return { matched: false, query: '', viewId: '', viewName: '', reason: 'missing_views' };
+  }
+  const entries = Object.entries(viewsObj);
+  if (!entries.length) {
+    return {
+      matched: true,
+      query: '',
+      viewId: '',
+      viewName: 'All Records',
+      reason: 'all_records_virtual'
+    };
+  }
+
+  const target = String(viewIdOrName || '').trim();
+  if (target) {
+    const byId = entries.find(([, view]) => String(view?.id || '').trim() === target);
+    if (byId) {
+      const queryRaw = byId[1]?.filterCond;
+      return {
+        matched: true,
+        query: queryRaw == null ? null : String(queryRaw).trim(),
+        viewName: String(byId[0] || '').trim(),
+        viewId: String(byId[1]?.id || '').trim(),
+        reason: 'matched_view_id'
+      };
+    }
+    const byName = entries.find(([name]) => String(name || '').trim() === target);
+    if (byName) {
+      const queryRaw = byName[1]?.filterCond;
+      return {
+        matched: true,
+        query: queryRaw == null ? null : String(queryRaw).trim(),
+        viewName: String(byName[0] || '').trim(),
+        viewId: String(byName[1]?.id || '').trim(),
+        reason: 'matched_view_name'
+      };
+    }
+    return { matched: false, query: '', viewId: '', viewName: '', reason: 'view_not_found' };
+  }
+
+  const indexed = entries
+    .map(([name, view], idx) => ({
+      name: String(name || '').trim(),
+      view: view || {},
+      idx,
+      order: Number(view?.index)
+    }))
+    .sort((a, b) => {
+      const aOrder = Number.isFinite(a.order) ? a.order : Number.POSITIVE_INFINITY;
+      const bOrder = Number.isFinite(b.order) ? b.order : Number.POSITIVE_INFINITY;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return a.idx - b.idx;
+    });
+  const picked = indexed[0];
+  const queryRaw = picked?.view?.filterCond;
+  return {
+    matched: true,
+    query: queryRaw == null ? null : String(queryRaw).trim(),
+    viewName: String(picked?.name || '').trim(),
+    viewId: String(picked?.view?.id || '').trim(),
+    reason: 'default_view'
+  };
+}
+
+async function resolveWatchlistQueryForRegistration({
+  host,
+  appId,
+  viewIdOrName,
+  pageUrl,
+  tabId
+}) {
+  const viewKey = String(viewIdOrName || '').trim();
+  const appKey = String(appId || '').trim();
+  if (!host || !appKey) return { ok: false, query: '', viewId: '', viewName: '', reason: 'missing_host_or_app' };
+  try {
+    logCtxAdd(`CTX_ADD resolve views start appId=${appKey} viewHint=${viewKey || '-'} tabId=${tabId || '-'}`);
+    const forward = {
+      type: 'LIST_VIEWS',
+      payload: {
+        appId: appKey,
+        __pbTrigger: 'watchlist_register',
+        __pbSource: 'context_menu'
+      }
+    };
+    let response = null;
+    try {
+      if (tabId) {
+        response = await runForwardOnTab(tabId, host, forward);
+      } else {
+        throw new Error('tabId_missing_for_primary');
+      }
+    } catch (directErr) {
+      warnCtxAdd(`CTX_ADD resolve views direct_tab_failed reason=${shortenLogValue(String(directErr?.message || directErr))}`);
+      response = await runForwardOnHost(host, forward);
+    }
+    if (!response?.ok || !response?.views || typeof response.views !== 'object') {
+      return { ok: false, query: '', viewId: '', viewName: '', reason: String(response?.error || 'LIST_VIEWS failed') };
+    }
+    const resolved = extractViewFilterFromViews(response.views, viewKey);
+    const finalQuery = String(resolved?.query || '').trim();
+    if (!resolved.matched) {
+      return { ok: false, query: '', viewId: '', viewName: '', reason: resolved.reason || 'view_not_found' };
+    }
+    if (resolved.reason === 'default_view' || resolved.reason === 'all_records_virtual') {
+      logCtxAdd(`CTX_ADD resolved default viewId=${resolved.viewId || '-'}`);
+    }
+    if (finalQuery === '-') {
+      return { ok: false, query: '', viewId: resolved.viewId, viewName: resolved.viewName || '', reason: 'query_not_found' };
+    }
+    logCtxAdd(`CTX_ADD resolved query=${shortenLogValue(finalQuery || '(empty)', 180)}`);
+    return { ok: true, query: finalQuery, viewId: resolved.viewId, viewName: resolved.viewName || '' };
+  } catch (error) {
+    return { ok: false, query: '', viewId: '', viewName: '', reason: String(error?.message || error || 'view_resolve_failed') };
+  }
+}
+
 async function loadFavoriteList() {
   const stored = await chrome.storage.sync.get(FAVORITES_KEY);
   const raw = stored[FAVORITES_KEY];
@@ -821,53 +1065,72 @@ async function saveFavoriteList(list) {
 }
 
 async function handleFavoriteContextMenu(menuId, info, tab) {
-  const pageUrl = info.pageUrl || tab?.url || '';
-  const { host, appId, viewIdOrName } = parseKintoneUrl(pageUrl);
-  if (!host) {
-    flashBadge(tab?.id, '!', '#e74c3c');
-    return;
-  }
-  const appIdStr = String(appId || '').trim();
-  if (!appIdStr) {
-    flashBadge(tab?.id, '!', '#e74c3c');
-    return;
-  }
-  const type = menuId === FAVORITE_MENU_VIEW ? 'view' : 'app';
-  const viewKey = type === 'view' ? String(viewIdOrName || '').trim() : '';
-  if (type === 'view' && !viewKey) {
-    flashBadge(tab?.id, '!', '#e67e22');
-    return;
-  }
-  const targetUrl = favoriteUrlOf(host, appIdStr, viewKey);
-  const list = await loadFavoriteList();
-  if (list.some((item) => item?.url === targetUrl)) {
-    flashBadge(tab?.id, '!', '#e67e22');
-    return;
-  }
-  const labelFromTab = (tab?.title || '').replace(/\s+-\s+kintone.*/i, '').trim();
-  const fallbackLabel = type === 'view' ? `ビュー ${viewKey}` : `App ${appIdStr}`;
-  const entry = {
-    id: createId(),
-    label: labelFromTab || fallbackLabel,
-    url: targetUrl,
-    host,
-    appId: appIdStr,
-    viewIdOrName: viewKey,
-    query: '',
-    order: list.length,
-    pinned: false
-  };
-  list.push(entry);
-  list.forEach((item, index) => {
-    if (typeof item.order !== 'number') item.order = index;
-  });
-  await saveFavoriteList(list);
+  const pageUrl = String(info?.pageUrl || '').trim();
+  const tabUrl = String(tab?.url || '').trim();
+  logCtxAdd(`CTX_ADD start menuId=${menuId} pageUrl=${shortenLogValue(pageUrl)} tabUrl=${shortenLogValue(tabUrl)}`);
   try {
-    await chrome.runtime.sendMessage({ type: 'WARMUP_CONNECTOR', host });
-  } catch (_err) {
-    // ignore
+    const target = resolveWatchlistTargetFromUrl(menuId, info, tab);
+    if (!target.ok) {
+      warnCtxAdd(`CTX_ADD save blocked reason=${target.reason} message=${target.message || '-'}`);
+      flashBadge(tab?.id, '!', '#e67e22');
+      return;
+    }
+    logCtxAdd(`CTX_ADD parsed host/appId/viewId=${target.host}/${target.appId}/${target.viewIdOrName || '-'}`);
+
+    const watchlistLimit = await loadWatchlistLimit();
+    const list = await loadFavoriteList();
+    if (list.length >= watchlistLimit) {
+      warnCtxAdd(`CTX_ADD save blocked reason=limit_reached limit=${watchlistLimit}`);
+      flashBadge(tab?.id, '!', '#e67e22');
+      return;
+    }
+
+    const resolvedQuery = await resolveWatchlistQueryForRegistration({
+      host: target.host,
+      appId: target.appId,
+      viewIdOrName: target.viewIdOrName,
+      pageUrl: target.pageUrl,
+      tabId: tab?.id
+    });
+    if (!resolvedQuery.ok) {
+      warnCtxAdd(`CTX_ADD save blocked reason=${resolvedQuery.reason || 'query_resolve_failed'}`);
+      flashBadge(tab?.id, '!', '#e74c3c');
+      return;
+    }
+
+    const labelFromTab = String(tab?.title || '').replace(/\s+-\s+kintone.*/i, '').trim();
+    const built = buildWatchlistItem({
+      host: target.host,
+      appId: target.appId,
+      viewId: resolvedQuery.viewId,
+      viewName: resolvedQuery.viewName || '',
+      query: resolvedQuery.query,
+      label: labelFromTab || `App ${target.appId}`,
+      order: list.length
+    });
+    if (!built.ok || !built.item) {
+      warnCtxAdd(`CTX_ADD save blocked reason=${built.reason || 'build_failed'}`);
+      flashBadge(tab?.id, '!', '#e74c3c');
+      return;
+    }
+
+    const saved = await saveWatchlistItem(list, built.item, watchlistLimit);
+    if (!saved.ok) {
+      warnCtxAdd(`CTX_ADD save blocked reason=${saved.reason || 'save_failed'}`);
+      flashBadge(tab?.id, '!', '#e67e22');
+      return;
+    }
+    logCtxAdd(`CTX_ADD save success id=${built.item.id}`);
+    try {
+      await chrome.runtime.sendMessage({ type: 'WARMUP_CONNECTOR', host: target.host });
+    } catch (_err) {
+      // ignore
+    }
+    flashBadge(tab?.id, '+', '#f1c40f');
+  } catch (error) {
+    errorCtxAdd(`CTX_ADD error message=${shortenLogValue(String(error?.message || error || 'unknown'))}`, error);
+    flashBadge(tab?.id, '!', '#e74c3c');
   }
-  flashBadge(tab?.id, '+', '#f1c40f');
 }
 
 function shortcutDefaultLabel(type, appId, viewIdOrName) {
@@ -951,6 +1214,328 @@ const READY_CHECK_SHORT_ATTEMPTS = 5;
 const SIGN_IN_REQUIRED_MESSAGE = 'kintoneにサインインしてから再実行してください';
 const APPS_MAP_PAGE_LIMIT = 100;
 const APPS_MAP_MAX_PAGES = 200;
+const PB_METADATA_CACHE_VERSION = 1;
+const PB_METADATA_CACHE_PREFIX = 'pb:meta:v1:';
+const PB_METADATA_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const metadataMemoryCache = new Map();
+const PB_TEMP_DEBUG = true; // temporary debug for metadata bootstrap investigation
+
+function normalizeMetadataDebugMeta(options = {}) {
+  return {
+    trigger: String(options?.trigger || 'unknown').trim().toLowerCase() || 'unknown',
+    source: String(options?.source || 'service_worker').trim() || 'service_worker',
+    logGroup: String(options?.logGroup || 'bootstrap').trim().toLowerCase() || 'bootstrap'
+  };
+}
+
+function pbDebugLog(message, extra) {
+  if (!PB_TEMP_DEBUG) return;
+  if (extra === undefined) {
+    console.debug(message);
+  } else {
+    console.debug(message, extra);
+  }
+}
+
+function normalizeMetadataAppId(appId) {
+  const value = String(appId || '').trim();
+  return /^\d+$/.test(value) ? value : '';
+}
+
+function metadataCacheKey(host, appId) {
+  const safeHost = normalizeHostOrigin(host);
+  const safeAppId = normalizeMetadataAppId(appId);
+  if (!safeHost || !safeAppId) return '';
+  return `${PB_METADATA_CACHE_PREFIX}${safeHost}:${safeAppId}`;
+}
+
+function cloneMetadataBundle(bundle) {
+  if (!bundle || typeof bundle !== 'object') return null;
+  try {
+    if (globalThis.structuredClone) return globalThis.structuredClone(bundle);
+  } catch (_err) {
+    // fallback below
+  }
+  try {
+    return JSON.parse(JSON.stringify(bundle));
+  } catch (_err) {
+    return null;
+  }
+}
+
+function normalizeMetadataBundle(raw, host, appId) {
+  if (!raw || typeof raw !== 'object') return null;
+  const safeHost = normalizeHostOrigin(host || raw.host);
+  const safeAppId = normalizeMetadataAppId(appId || raw.appId);
+  if (!safeHost || !safeAppId) return null;
+  const fetchedAt = Number(raw.fetchedAt);
+  const expiresAt = Number(raw.expiresAt);
+  const bundle = {
+    version: PB_METADATA_CACHE_VERSION,
+    host: safeHost,
+    appId: safeAppId,
+    fetchedAt: Number.isFinite(fetchedAt) && fetchedAt > 0 ? Math.floor(fetchedAt) : 0,
+    expiresAt: Number.isFinite(expiresAt) && expiresAt > 0 ? Math.floor(expiresAt) : 0
+  };
+  if (raw.app && typeof raw.app === 'object') {
+    bundle.app = {
+      name: String(raw.app.name || '').trim(),
+      raw: raw.app.raw && typeof raw.app.raw === 'object' ? raw.app.raw : undefined
+    };
+  }
+  if (raw.views && typeof raw.views === 'object') {
+    bundle.views = {
+      raw: raw.views.raw && typeof raw.views.raw === 'object' ? raw.views.raw : undefined
+    };
+  }
+  if (raw.fields && typeof raw.fields === 'object') {
+    bundle.fields = {
+      normalized: Array.isArray(raw.fields.normalized) ? raw.fields.normalized : undefined,
+      raw: raw.fields.raw && typeof raw.fields.raw === 'object' ? raw.fields.raw : undefined
+    };
+  }
+  return bundle;
+}
+
+function isMetadataFresh(bundle) {
+  if (!bundle || typeof bundle !== 'object') return false;
+  if (Number(bundle.version) !== PB_METADATA_CACHE_VERSION) return false;
+  return Number(bundle.expiresAt || 0) > Date.now();
+}
+
+function hasMetadataPiece(bundle, pieceName) {
+  if (!bundle || typeof bundle !== 'object') return false;
+  if (pieceName === 'app') return Boolean(String(bundle?.app?.name || '').trim());
+  if (pieceName === 'views') return Boolean(bundle?.views?.raw && typeof bundle.views.raw === 'object');
+  if (pieceName === 'fields') return Array.isArray(bundle?.fields?.normalized) && bundle.fields.normalized.length > 0;
+  return false;
+}
+
+function normalizeMetadataNeedFlags(options = {}) {
+  return {
+    needApp: Boolean(options?.needApp),
+    needViews: Boolean(options?.needViews),
+    needFields: Boolean(options?.needFields)
+  };
+}
+
+function hasRequiredMetadata(bundle, needFlags) {
+  if (!bundle || typeof bundle !== 'object') return false;
+  if (needFlags.needApp && !hasMetadataPiece(bundle, 'app')) return false;
+  if (needFlags.needViews && !hasMetadataPiece(bundle, 'views')) return false;
+  if (needFlags.needFields && !hasMetadataPiece(bundle, 'fields')) return false;
+  return true;
+}
+
+function shouldFetchMetadataPiece(bundle, isFresh, needFlags, pieceName) {
+  const needKey = `need${pieceName.charAt(0).toUpperCase()}${pieceName.slice(1)}`;
+  if (!needFlags[needKey]) return false;
+  if (!bundle) return true;
+  if (!isFresh) return true;
+  return !hasMetadataPiece(bundle, pieceName);
+}
+
+async function readMetadataBundle(host, appId) {
+  const key = metadataCacheKey(host, appId);
+  if (!key) return null;
+  const inMemory = metadataMemoryCache.get(key);
+  if (inMemory) return cloneMetadataBundle(inMemory);
+  try {
+    const stored = await chrome.storage.local.get(key);
+    const normalized = normalizeMetadataBundle(stored?.[key], host, appId);
+    if (!normalized) return null;
+    metadataMemoryCache.set(key, normalized);
+    return cloneMetadataBundle(normalized);
+  } catch (_err) {
+    return null;
+  }
+}
+
+async function getCachedMetadataBundle(host, appId, options = {}) {
+  const safeHost = normalizeHostOrigin(host);
+  const safeAppId = normalizeMetadataAppId(appId);
+  if (!safeHost || !safeAppId) {
+    return { ok: false, error: 'host/appId required', bundle: null, fresh: false };
+  }
+  const needFlags = normalizeMetadataNeedFlags(options);
+  const bundle = await readMetadataBundle(safeHost, safeAppId);
+  const fresh = isMetadataFresh(bundle);
+  const hasRequired = hasRequiredMetadata(bundle, needFlags);
+  const ok = fresh && hasRequired;
+  return {
+    ok,
+    host: safeHost,
+    appId: safeAppId,
+    bundle,
+    fresh
+  };
+}
+
+async function writeMetadataBundle(bundle) {
+  const normalized = normalizeMetadataBundle(bundle, bundle?.host, bundle?.appId);
+  if (!normalized) return null;
+  const key = metadataCacheKey(normalized.host, normalized.appId);
+  if (!key) return null;
+  metadataMemoryCache.set(key, normalized);
+  try {
+    await chrome.storage.local.set({ [key]: normalized });
+  } catch (_err) {
+    // ignore storage write failures
+  }
+  return cloneMetadataBundle(normalized);
+}
+
+async function clearMetadataBundle(host, appId) {
+  const key = metadataCacheKey(host, appId);
+  if (!key) return false;
+  metadataMemoryCache.delete(key);
+  try {
+    await chrome.storage.local.remove(key);
+  } catch (_err) {
+    // ignore
+  }
+  return true;
+}
+
+async function clearAllMetadataBundles() {
+  metadataMemoryCache.clear();
+  let removed = 0;
+  try {
+    const all = await chrome.storage.local.get(null);
+    const keys = Object.keys(all || {}).filter((key) => key.startsWith(PB_METADATA_CACHE_PREFIX));
+    if (keys.length) {
+      await chrome.storage.local.remove(keys);
+      removed = keys.length;
+    }
+  } catch (_err) {
+    // ignore
+  }
+  return removed;
+}
+
+async function fetchMetadataAppPiece(host, appId, options = {}) {
+  const debugMeta = normalizeMetadataDebugMeta(options);
+  const res = await runForwardOnHost(host, {
+    type: 'META_GET_APP',
+    payload: { appId, trigger: debugMeta.trigger, source: debugMeta.source }
+  });
+  if (res?.ok && res?.app && typeof res.app === 'object') {
+    return {
+      name: String(res.app.name || '').trim(),
+      raw: res.app.raw && typeof res.app.raw === 'object' ? res.app.raw : undefined
+    };
+  }
+  throw new Error(String(res?.error || 'meta_app_fetch_failed'));
+}
+
+async function fetchMetadataViewsPiece(host, appId, options = {}) {
+  const debugMeta = normalizeMetadataDebugMeta(options);
+  const res = await runForwardOnHost(host, {
+    type: 'META_GET_VIEWS',
+    payload: { appId, trigger: debugMeta.trigger, source: debugMeta.source }
+  });
+  if (res?.ok && res?.views && typeof res.views === 'object') {
+    return {
+      raw: res.views
+    };
+  }
+  throw new Error(String(res?.error || 'meta_views_fetch_failed'));
+}
+
+async function fetchMetadataFieldsPiece(host, appId, options = {}) {
+  const debugMeta = normalizeMetadataDebugMeta(options);
+  const res = await runForwardOnHost(host, {
+    type: 'META_GET_FIELDS',
+    payload: { appId, trigger: debugMeta.trigger, source: debugMeta.source }
+  });
+  if (res?.ok && res?.fields && typeof res.fields === 'object') {
+    return {
+      normalized: Array.isArray(res.fields.normalized) ? res.fields.normalized : [],
+      raw: res.fields.raw && typeof res.fields.raw === 'object' ? res.fields.raw : undefined
+    };
+  }
+  throw new Error(String(res?.error || 'meta_fields_fetch_failed'));
+}
+
+async function getMetadataBundle(host, appId, options = {}) {
+  const safeHost = normalizeHostOrigin(host);
+  const safeAppId = normalizeMetadataAppId(appId);
+  if (!safeHost || !safeAppId) {
+    return { ok: false, error: 'host/appId required', bundle: null };
+  }
+  const needFlags = normalizeMetadataNeedFlags(options);
+  const debugMeta = normalizeMetadataDebugMeta(options);
+  const cached = await readMetadataBundle(safeHost, safeAppId);
+  const fresh = isMetadataFresh(cached);
+  const nextBundle = normalizeMetadataBundle(cached, safeHost, safeAppId) || {
+    version: PB_METADATA_CACHE_VERSION,
+    host: safeHost,
+    appId: safeAppId,
+    fetchedAt: 0,
+    expiresAt: 0
+  };
+
+  const errors = {};
+  let updated = false;
+
+  if (shouldFetchMetadataPiece(nextBundle, fresh, needFlags, 'app')) {
+    pbDebugLog(`[PB][${debugMeta.logGroup}] endpoint=/k/v1/app.json trigger=${debugMeta.trigger} cache=miss`);
+    try {
+      nextBundle.app = await fetchMetadataAppPiece(safeHost, safeAppId, debugMeta);
+      updated = true;
+    } catch (error) {
+      errors.app = String(error?.message || error);
+    }
+  } else if (needFlags.needApp && hasMetadataPiece(nextBundle, 'app')) {
+    pbDebugLog(`[PB][${debugMeta.logGroup}] endpoint=/k/v1/app.json trigger=${debugMeta.trigger} cache=hit`);
+  }
+  if (shouldFetchMetadataPiece(nextBundle, fresh, needFlags, 'views')) {
+    pbDebugLog(`[PB][${debugMeta.logGroup}] endpoint=/k/v1/app/views.json trigger=${debugMeta.trigger} cache=miss`);
+    try {
+      nextBundle.views = await fetchMetadataViewsPiece(safeHost, safeAppId, debugMeta);
+      updated = true;
+    } catch (error) {
+      errors.views = String(error?.message || error);
+    }
+  } else if (needFlags.needViews && hasMetadataPiece(nextBundle, 'views')) {
+    pbDebugLog(`[PB][${debugMeta.logGroup}] endpoint=/k/v1/app/views.json trigger=${debugMeta.trigger} cache=hit`);
+  }
+  if (shouldFetchMetadataPiece(nextBundle, fresh, needFlags, 'fields')) {
+    pbDebugLog(`[PB][${debugMeta.logGroup}] endpoint=/k/v1/app/form/fields.json trigger=${debugMeta.trigger} cache=miss`);
+    try {
+      nextBundle.fields = await fetchMetadataFieldsPiece(safeHost, safeAppId, debugMeta);
+      updated = true;
+    } catch (error) {
+      errors.fields = String(error?.message || error);
+    }
+  } else if (needFlags.needFields && hasMetadataPiece(nextBundle, 'fields')) {
+    pbDebugLog(`[PB][${debugMeta.logGroup}] endpoint=/k/v1/app/form/fields.json trigger=${debugMeta.trigger} cache=hit`);
+  }
+
+  if (updated) {
+    const now = Date.now();
+    nextBundle.version = PB_METADATA_CACHE_VERSION;
+    nextBundle.host = safeHost;
+    nextBundle.appId = safeAppId;
+    nextBundle.fetchedAt = now;
+    nextBundle.expiresAt = now + PB_METADATA_CACHE_TTL_MS;
+    await writeMetadataBundle(nextBundle);
+  } else if (cached) {
+    metadataMemoryCache.set(metadataCacheKey(safeHost, safeAppId), normalizeMetadataBundle(cached, safeHost, safeAppId));
+  }
+
+  const finalBundle = await readMetadataBundle(safeHost, safeAppId) || normalizeMetadataBundle(nextBundle, safeHost, safeAppId);
+  const hasRequired = hasRequiredMetadata(finalBundle, needFlags);
+  const ok = hasRequired || (!needFlags.needApp && !needFlags.needViews && !needFlags.needFields);
+  return {
+    ok,
+    host: safeHost,
+    appId: safeAppId,
+    bundle: finalBundle,
+    cacheHit: fresh && !updated,
+    errors
+  };
+}
 
 async function checkKintoneReady(tabId) {
   if (!tabId) return false;
@@ -1021,6 +1606,25 @@ async function runForwardOnHost(host, forward) {
   return await chrome.tabs.sendMessage(tab.id, forward);
 }
 
+async function runForwardOnTab(tabId, host, forward) {
+  const normalizedTabId = Number(tabId);
+  if (!Number.isInteger(normalizedTabId) || normalizedTabId <= 0) {
+    throw new Error('tabId required');
+  }
+  const safeHost = normalizeHostOrigin(host);
+  if (!safeHost) throw new Error('host required');
+  const tab = await chrome.tabs.get(normalizedTabId);
+  const tabHost = normalizeHostOrigin(tab?.url || '');
+  if (tabHost && tabHost !== safeHost) {
+    throw new Error(`tab host mismatch: expected ${safeHost}, got ${tabHost}`);
+  }
+  const ready = await prepareConnectorTab(normalizedTabId, READY_CHECK_SHORT_ATTEMPTS);
+  if (!ready) {
+    throw new Error('connector_not_ready');
+  }
+  return await chrome.tabs.sendMessage(normalizedTabId, forward);
+}
+
 async function fetchAppsMap(host) {
   const safeHost = normalizeHostOrigin(host);
   if (!safeHost) throw new Error('host required');
@@ -1061,6 +1665,21 @@ async function fetchAppsMapByAppIds(host, appIds) {
   const out = {};
   if (!safeHost || !uniqueIds.length) return out;
   for (const appId of uniqueIds) {
+    try {
+      const cached = await getMetadataBundle(safeHost, appId, {
+        needApp: true,
+        trigger: 'panel_open',
+        source: 'apps_map_fallback',
+        logGroup: 'bootstrap'
+      });
+      const cachedName = String(cached?.bundle?.app?.name || '').trim();
+      if (cached?.ok && cachedName) {
+        out[appId] = cachedName;
+        continue;
+      }
+    } catch (_err) {
+      // fallback to direct fetch below
+    }
     const url = `${safeHost}/k/v1/app.json?id=${encodeURIComponent(appId)}`;
     try {
       const resp = await fetch(url, {
@@ -1078,7 +1697,24 @@ async function fetchAppsMapByAppIds(host, appIds) {
       }
       const data = await resp.json();
       const name = String(data?.name || data?.app?.name || '').trim();
-      if (name) out[appId] = name;
+      if (name) {
+        out[appId] = name;
+        const cached = await readMetadataBundle(safeHost, appId);
+        const now = Date.now();
+        const next = {
+          ...(cached || {}),
+          version: PB_METADATA_CACHE_VERSION,
+          host: safeHost,
+          appId: String(appId),
+          fetchedAt: now,
+          expiresAt: now + PB_METADATA_CACHE_TTL_MS,
+          app: {
+            name,
+            raw: data && typeof data === 'object' ? data : undefined
+          }
+        };
+        await writeMetadataBundle(next);
+      }
     } catch (error) {
       console.debug('[kfav] app.json fallback error', { appId, error: String(error?.message || error) });
     }
@@ -1152,6 +1788,59 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
 
+    if (msg?.type === 'PB_GET_METADATA_BUNDLE') {
+      const payload = msg?.payload && typeof msg.payload === 'object' ? msg.payload : msg;
+      const safeHost = normalizeHostOrigin(payload?.host || payload?.origin || payload?.url || '');
+      const safeAppId = normalizeMetadataAppId(payload?.appId);
+      if (!safeHost || !safeAppId) {
+        sendResponse({ ok: false, error: 'host/appId required', bundle: null });
+        return;
+      }
+      try {
+        const res = await getMetadataBundle(safeHost, safeAppId, payload);
+        sendResponse(res);
+      } catch (error) {
+        sendResponse({ ok: false, host: safeHost, appId: safeAppId, error: String(error?.message || error), bundle: null });
+      }
+      return;
+    }
+
+    if (msg?.type === 'PB_GET_CACHED_METADATA_BUNDLE') {
+      const payload = msg?.payload && typeof msg.payload === 'object' ? msg.payload : msg;
+      const safeHost = normalizeHostOrigin(payload?.host || payload?.origin || payload?.url || '');
+      const safeAppId = normalizeMetadataAppId(payload?.appId);
+      if (!safeHost || !safeAppId) {
+        sendResponse({ ok: false, error: 'host/appId required', bundle: null, fresh: false });
+        return;
+      }
+      try {
+        const res = await getCachedMetadataBundle(safeHost, safeAppId, payload);
+        sendResponse(res);
+      } catch (error) {
+        sendResponse({ ok: false, host: safeHost, appId: safeAppId, error: String(error?.message || error), bundle: null, fresh: false });
+      }
+      return;
+    }
+
+    if (msg?.type === 'PB_CLEAR_METADATA_CACHE') {
+      const payload = msg?.payload && typeof msg.payload === 'object' ? msg.payload : msg;
+      const safeHost = normalizeHostOrigin(payload?.host || payload?.origin || payload?.url || '');
+      const safeAppId = normalizeMetadataAppId(payload?.appId);
+      if (!safeHost || !safeAppId) {
+        sendResponse({ ok: false, error: 'host/appId required' });
+        return;
+      }
+      const removed = await clearMetadataBundle(safeHost, safeAppId);
+      sendResponse({ ok: Boolean(removed), host: safeHost, appId: safeAppId });
+      return;
+    }
+
+    if (msg?.type === 'PB_CLEAR_METADATA_CACHE_ALL') {
+      const removed = await clearAllMetadataBundles();
+      sendResponse({ ok: true, removed });
+      return;
+    }
+
     if (msg?.type !== 'RUN_IN_KINTONE') return;
     const safeHost = normalizeHostOrigin(msg.host);
     const { forward } = msg; // forward: { type: 'LIST_FIELDS' | 'LIST_SCHEDULE' | 'LIST_VIEWS' | ... , payload: {...} }
@@ -1176,11 +1865,6 @@ chrome.runtime.onStartup?.addListener(() => {
   } catch {}
 });
 
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name !== 'kfav-badge-refresh') return;
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab) updateBadgeForTab(tab.id, tab.url);
-});
 // 拡張アイコンクリック → サイドパネルを開く（非対応ならサイドパネルの内容を新規タブで開く）
 chrome.action.onClicked.addListener(async (tab) => {
   if (chrome.sidePanel?.open) {

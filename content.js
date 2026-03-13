@@ -1,6 +1,133 @@
 ﻿// content.js
 // 1) page-bridge.js  2) popup/background  window.postMessage 
 (function bootstrap() {
+  function isKintoneLikeHost(hostname) {
+    return /\.kintone(?:-dev)?\.com$/i.test(String(hostname || ''))
+      || /\.cybozu\.com$/i.test(String(hostname || ''));
+  }
+
+  function isGaroonLikePath(pathname) {
+    const path = String(pathname || '').trim().toLowerCase();
+    if (!path) return false;
+    return /^\/(?:g|grn|garoon)(?:\/|$)/.test(path);
+  }
+
+  function getKintoneAppPageType(pathname) {
+    const path = String(pathname || '');
+    if (/^\/k\/\d+\/?$/.test(path)) return 'list';
+    if (/^\/k\/\d+\/show(?:\/|$)/.test(path)) return 'detail';
+    if (/^\/k\/\d+\/edit(?:\/|$)/.test(path)) return 'edit';
+    if (/^\/k\/\d+\/create(?:\/|$)/.test(path)) return 'create';
+    return 'unsupported';
+  }
+
+  function normalizeNumericId(value) {
+    const text = String(value == null ? '' : value).trim();
+    return /^\d+$/.test(text) ? text : '';
+  }
+
+  function getKintoneAppIdSafe() {
+    try {
+      const appApi = window?.kintone?.app;
+      if (!appApi || typeof appApi.getId !== 'function') return '';
+      const raw = appApi.getId();
+      return normalizeNumericId(raw);
+    } catch (_err) {
+      return '';
+    }
+  }
+
+  function hasAppContextUrlHint(url) {
+    if (!url) return false;
+    const pathname = String(url.pathname || '');
+    const search = String(url.search || '');
+    const hash = String(url.hash || '');
+    const pageType = getKintoneAppPageType(pathname);
+    if (pageType !== 'unsupported') return true;
+    if (/\/k\/\d+\/(?:show|edit|create)(?:\/|$)/.test(hash)) return true;
+    if (/^#\/?k\/\d+\/?(?:[?#].*)?$/.test(hash)) return true;
+    if (/[?&](?:app|appId)=\d+(?:[&#]|$)/i.test(search)) return true;
+    if (/(?:^#|[?&])(?:app|appId)=\d+(?:[&#]|$)/i.test(hash)) return true;
+    if (/(?:^#|[?&])record=\d+(?:[&#]|$)/i.test(hash) && /\/k\/\d+\/show(?:\/|$)/.test(pathname)) return true;
+    return false;
+  }
+
+  function hasAppContextDomHint() {
+    try {
+      if (document.querySelector('[data-app-id], [data-view-id]')) {
+        console.debug('PB DOM fallback used: hasAppContextDomHint(data-attr)');
+        return true;
+      }
+      if (document.querySelector('.gaia-argoui-app-index-toolbar, .recordlist-gaia, .record-gaia')) {
+        console.debug('PB DOM fallback used: hasAppContextDomHint(gaia)');
+        return true;
+      }
+      return false;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  function hasAppContextApiHint() {
+    try {
+      const appApi = window?.kintone?.app;
+      if (!appApi || typeof appApi !== 'object') return false;
+      if (typeof appApi.getQuery === 'function') {
+        const query = appApi.getQuery();
+        if (typeof query === 'string') return true;
+      }
+      if (typeof appApi.getViewName === 'function') {
+        const viewName = appApi.getViewName();
+        if (typeof viewName === 'string') return true;
+      }
+      if (typeof appApi.getHeaderMenuSpaceElement === 'function') {
+        const headerSpace = appApi.getHeaderMenuSpaceElement();
+        if (headerSpace !== undefined) return true;
+      }
+      return false;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  function isSupportedHostPage() {
+    try {
+      const href = String(location?.href || '');
+      if (!href) return false;
+      const url = new URL(href);
+      if (!isKintoneLikeHost(url.hostname)) return false;
+      if (isGaroonLikePath(url.pathname)) return false;
+      const hasBody = Boolean(document?.body || document?.documentElement);
+      if (!hasBody) return false;
+      return true;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  function isSupportedAppContextPage() {
+    try {
+      if (!isSupportedHostPage()) return false;
+      const hasBody = Boolean(document?.body || document?.documentElement);
+      if (!hasBody) return false;
+      const href = String(location?.href || '');
+      if (!href) return false;
+      const url = new URL(href);
+      if (hasAppContextUrlHint(url)) return true;
+      const appApi = window?.kintone?.app;
+      const hasGetId = Boolean(appApi && typeof appApi.getId === 'function');
+      const appId = hasGetId ? getKintoneAppIdSafe() : '';
+      if (appId) return true;
+      if (hasAppContextApiHint()) return true;
+      if (hasAppContextDomHint()) return true;
+      return false;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  // Keep host-level features alive on supported kintone hosts.
+  if (!isSupportedHostPage()) return;
   if (window.__kfav_content_injected) return;
   window.__kfav_content_injected = true;
 
@@ -16,6 +143,415 @@
   const pending = window[pendingKey] instanceof Map ? window[pendingKey] : new Map();
   window[pendingKey] = pending;
 
+  const API_USAGE_DAILY_KEY = 'apiUsageDaily';
+  const API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY = 'apiUsageAdminBreakdownDaily';
+  const API_USAGE_RETENTION_DAYS = 31;
+  const API_USAGE_FLUSH_DELAY_MS = 1200;
+  const API_USAGE_FEATURE_VALUES = new Set([
+    'watchlist',
+    'watchlist_bulk',
+    'record_pin',
+    'recent',
+    'overlay',
+    'overlay_records',
+    'overlay_acl',
+    'bootstrap',
+    'metadata_app',
+    'metadata_views',
+    'metadata_fields',
+    'admin',
+    'other'
+  ]);
+  const API_USAGE_FEATURE_ALIASES = {
+    pins: 'record_pin',
+    launcher: 'admin',
+    options: 'admin',
+    auth: 'admin',
+    watchlist: 'watchlist_bulk',
+    watchlist_panel: 'watchlist_bulk',
+    watchlist_tick: 'watchlist_bulk',
+    watchlist_resume: 'watchlist_bulk',
+    watchlist_manual: 'watchlist_bulk',
+    watchlist_panel_open: 'watchlist_bulk',
+    watchlist_visible_tick: 'watchlist_bulk',
+    watchlist_resume_catchup: 'watchlist_bulk',
+    watchlist_expand: 'watchlist_bulk',
+    watchlist_focus_resume: 'watchlist_bulk',
+    watchlist_tab_resume: 'watchlist_bulk'
+  };
+  const API_USAGE_ADMIN_CATEGORY_VALUES = new Set([
+    'settings',
+    'app_cache',
+    'permission',
+    'bootstrap',
+    'usage_stats',
+    'debug',
+    'other'
+  ]);
+  const PB_API_USAGE_EVENT = '__kfav_api_usage__';
+  const API_USAGE_REST_ONLY = true;
+  const apiUsagePending = {};
+  const apiUsageAdminPending = {};
+  let apiUsageFlushTimer = null;
+  let apiUsageFlushPromise = Promise.resolve();
+
+  function toLocalDateKey(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function normalizeUsageFeature(value) {
+    const feature = String(value || '').trim().toLowerCase();
+    if (API_USAGE_FEATURE_VALUES.has(feature)) return feature;
+    if (Object.prototype.hasOwnProperty.call(API_USAGE_FEATURE_ALIASES, feature)) {
+      return API_USAGE_FEATURE_ALIASES[feature];
+    }
+    return 'other';
+  }
+
+  function createUsageStat(raw) {
+    const count = Number(raw?.count || 0);
+    const success = Number(raw?.success || 0);
+    const error = Number(raw?.error || 0);
+    return {
+      count: Number.isFinite(count) && count > 0 ? count : 0,
+      success: Number.isFinite(success) && success > 0 ? success : 0,
+      error: Number.isFinite(error) && error > 0 ? error : 0
+    };
+  }
+
+  function normalizeAdminUsageCategory(value) {
+    const category = String(value || '').trim().toLowerCase();
+    if (API_USAGE_ADMIN_CATEGORY_VALUES.has(category)) return category;
+    return 'other';
+  }
+
+  function isUsageStatLike(raw) {
+    if (!raw || typeof raw !== 'object') return false;
+    return Object.prototype.hasOwnProperty.call(raw, 'count')
+      || Object.prototype.hasOwnProperty.call(raw, 'success')
+      || Object.prototype.hasOwnProperty.call(raw, 'error');
+  }
+
+  function mergeUsageStat(featureMap, featureValue, stat) {
+    const feature = normalizeUsageFeature(featureValue);
+    const target = featureMap[feature] || (featureMap[feature] = { count: 0, success: 0, error: 0 });
+    target.count += Number(stat?.count || 0);
+    target.success += Number(stat?.success || 0);
+    target.error += Number(stat?.error || 0);
+  }
+
+  function mergeAdminUsageStat(categoryMap, categoryValue, stat) {
+    const category = normalizeAdminUsageCategory(categoryValue);
+    const target = categoryMap[category] || (categoryMap[category] = { count: 0, success: 0, error: 0 });
+    target.count += Number(stat?.count || 0);
+    target.success += Number(stat?.success || 0);
+    target.error += Number(stat?.error || 0);
+  }
+
+  function normalizeApiUsageDaily(raw) {
+    if (!raw || typeof raw !== 'object') return {};
+    const daily = {};
+    Object.entries(raw).forEach(([dateKey, featureMap]) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) return;
+      if (!featureMap || typeof featureMap !== 'object') return;
+      const normalizedFeatureMap = {};
+      Object.entries(featureMap).forEach(([featureKey, bucket]) => {
+        const feature = normalizeUsageFeature(featureKey);
+        if (isUsageStatLike(bucket)) {
+          mergeUsageStat(normalizedFeatureMap, feature, createUsageStat(bucket));
+          return;
+        }
+        // Legacy format compatibility:
+        // { date: { menu: { purpose: { count/success/error } } } }
+        if (!bucket || typeof bucket !== 'object') return;
+        Object.values(bucket).forEach((legacyStat) => {
+          if (!isUsageStatLike(legacyStat)) return;
+          mergeUsageStat(normalizedFeatureMap, feature, createUsageStat(legacyStat));
+        });
+      });
+      if (Object.keys(normalizedFeatureMap).length) {
+        daily[dateKey] = normalizedFeatureMap;
+      }
+    });
+    return daily;
+  }
+
+  function normalizeApiUsageAdminBreakdownDaily(raw) {
+    if (!raw || typeof raw !== 'object') return {};
+    const daily = {};
+    Object.entries(raw).forEach(([dateKey, categoryMap]) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) return;
+      if (!categoryMap || typeof categoryMap !== 'object') return;
+      const normalizedCategoryMap = {};
+      Object.entries(categoryMap).forEach(([categoryKey, bucket]) => {
+        const category = normalizeAdminUsageCategory(categoryKey);
+        if (isUsageStatLike(bucket)) {
+          mergeAdminUsageStat(normalizedCategoryMap, category, createUsageStat(bucket));
+          return;
+        }
+        if (!bucket || typeof bucket !== 'object') return;
+        Object.values(bucket).forEach((legacyStat) => {
+          if (!isUsageStatLike(legacyStat)) return;
+          mergeAdminUsageStat(normalizedCategoryMap, category, createUsageStat(legacyStat));
+        });
+      });
+      if (Object.keys(normalizedCategoryMap).length) {
+        daily[dateKey] = normalizedCategoryMap;
+      }
+    });
+    return daily;
+  }
+
+  function upsertUsageStat(container, dateKey, featureValue, successValue, count = 1) {
+    const feature = normalizeUsageFeature(featureValue);
+    const daily = container[dateKey] || (container[dateKey] = {});
+    const stat = daily[feature] || (daily[feature] = { count: 0, success: 0, error: 0 });
+    stat.count += count;
+    if (successValue) {
+      stat.success += count;
+    } else {
+      stat.error += count;
+    }
+  }
+
+  function upsertAdminUsageStat(container, dateKey, categoryValue, successValue, count = 1) {
+    const category = normalizeAdminUsageCategory(categoryValue);
+    const daily = container[dateKey] || (container[dateKey] = {});
+    const stat = daily[category] || (daily[category] = { count: 0, success: 0, error: 0 });
+    stat.count += count;
+    if (successValue) {
+      stat.success += count;
+    } else {
+      stat.error += count;
+    }
+  }
+
+  function copyAndResetPendingApiUsage() {
+    const dateKeys = Object.keys(apiUsagePending);
+    if (!dateKeys.length) return null;
+    const snapshot = {};
+    dateKeys.forEach((dateKey) => {
+      const featureMap = apiUsagePending[dateKey];
+      if (!featureMap || typeof featureMap !== 'object') return;
+      snapshot[dateKey] = {};
+      Object.entries(featureMap).forEach(([feature, stat]) => {
+        if (!isUsageStatLike(stat)) return;
+        snapshot[dateKey][feature] = createUsageStat(stat);
+      });
+    });
+    dateKeys.forEach((key) => {
+      delete apiUsagePending[key];
+    });
+    return snapshot;
+  }
+
+  function copyAndResetPendingAdminUsage() {
+    const dateKeys = Object.keys(apiUsageAdminPending);
+    if (!dateKeys.length) return null;
+    const snapshot = {};
+    dateKeys.forEach((dateKey) => {
+      const categoryMap = apiUsageAdminPending[dateKey];
+      if (!categoryMap || typeof categoryMap !== 'object') return;
+      snapshot[dateKey] = {};
+      Object.entries(categoryMap).forEach(([category, stat]) => {
+        if (!isUsageStatLike(stat)) return;
+        snapshot[dateKey][category] = createUsageStat(stat);
+      });
+    });
+    dateKeys.forEach((key) => {
+      delete apiUsageAdminPending[key];
+    });
+    return snapshot;
+  }
+
+  function pruneOldApiUsageDaily(daily) {
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - (API_USAGE_RETENTION_DAYS - 1));
+    const cutoffKey = toLocalDateKey(cutoff);
+    Object.keys(daily).forEach((dateKey) => {
+      if (dateKey < cutoffKey) delete daily[dateKey];
+    });
+  }
+
+  function mergeApiUsageSnapshot(daily, snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') return;
+    Object.entries(snapshot).forEach(([dateKey, featureMap]) => {
+      if (!featureMap || typeof featureMap !== 'object') return;
+      Object.entries(featureMap).forEach(([feature, stat]) => {
+        const count = Number(stat?.count || 0);
+        const success = Number(stat?.success || 0);
+        const error = Number(stat?.error || 0);
+        if (!count && !success && !error) return;
+        if (success > 0) {
+          upsertUsageStat(daily, dateKey, feature, true, success);
+        }
+        if (error > 0) {
+          upsertUsageStat(daily, dateKey, feature, false, error);
+        }
+        const diff = count - success - error;
+        if (diff > 0) {
+          upsertUsageStat(daily, dateKey, feature, true, diff);
+        }
+      });
+    });
+  }
+
+  function mergeApiUsageAdminBreakdownSnapshot(daily, snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') return;
+    Object.entries(snapshot).forEach(([dateKey, categoryMap]) => {
+      if (!categoryMap || typeof categoryMap !== 'object') return;
+      Object.entries(categoryMap).forEach(([category, stat]) => {
+        const count = Number(stat?.count || 0);
+        const success = Number(stat?.success || 0);
+        const error = Number(stat?.error || 0);
+        if (!count && !success && !error) return;
+        if (success > 0) {
+          upsertAdminUsageStat(daily, dateKey, category, true, success);
+        }
+        if (error > 0) {
+          upsertAdminUsageStat(daily, dateKey, category, false, error);
+        }
+        const diff = count - success - error;
+        if (diff > 0) {
+          upsertAdminUsageStat(daily, dateKey, category, true, diff);
+        }
+      });
+    });
+  }
+
+  function scheduleApiUsageFlush() {
+    if (apiUsageFlushTimer !== null) return;
+    apiUsageFlushTimer = window.setTimeout(() => {
+      apiUsageFlushTimer = null;
+      void flushApiUsageDaily();
+    }, API_USAGE_FLUSH_DELAY_MS);
+  }
+
+  function classifyAdminUsageCategory(type, meta = {}) {
+    const explicit = normalizeAdminUsageCategory(meta?.adminCategory || meta?.adminPurpose || meta?.purpose);
+    if (explicit !== 'other') return explicit;
+    const messageType = String(type || '').trim().toUpperCase();
+    if (!messageType) return 'other';
+    if (messageType === 'GET_APP_NAME') return 'app_cache';
+    if (messageType === 'CHECK_KINTONE_READY') return 'bootstrap';
+    if (messageType.startsWith('DEV_')) return 'debug';
+    if (messageType.includes('PERMISSION')) return 'permission';
+    return 'other';
+  }
+
+  async function flushApiUsageDaily() {
+    const snapshot = copyAndResetPendingApiUsage();
+    const adminSnapshot = copyAndResetPendingAdminUsage();
+    if (!snapshot && !adminSnapshot) return;
+    apiUsageFlushPromise = apiUsageFlushPromise.then(async () => {
+      const stored = await chrome.storage.local.get([API_USAGE_DAILY_KEY, API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY]);
+      const daily = normalizeApiUsageDaily(stored?.[API_USAGE_DAILY_KEY]);
+      const adminDaily = normalizeApiUsageAdminBreakdownDaily(stored?.[API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY]);
+      mergeApiUsageSnapshot(daily, snapshot);
+      mergeApiUsageAdminBreakdownSnapshot(adminDaily, adminSnapshot);
+      pruneOldApiUsageDaily(daily);
+      pruneOldApiUsageDaily(adminDaily);
+      const payload = {};
+      const removeKeys = [];
+      if (Object.keys(daily).length) {
+        payload[API_USAGE_DAILY_KEY] = daily;
+      } else {
+        removeKeys.push(API_USAGE_DAILY_KEY);
+      }
+      if (Object.keys(adminDaily).length) {
+        payload[API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY] = adminDaily;
+      } else {
+        removeKeys.push(API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY);
+      }
+      if (Object.keys(payload).length) {
+        await chrome.storage.local.set(payload);
+      }
+      if (removeKeys.length) {
+        await chrome.storage.local.remove(removeKeys);
+      }
+    }).catch(() => {
+      // Ignore telemetry write failures.
+    });
+    await apiUsageFlushPromise;
+  }
+
+  function classifyApiUsageFeature(type, meta = {}) {
+    const messageType = String(type || '').trim().toUpperCase();
+    if (messageType === 'META_GET_APP') return 'metadata_app';
+    if (messageType === 'META_GET_VIEWS') return 'metadata_views';
+    if (messageType === 'META_GET_FIELDS') return 'metadata_fields';
+    if (messageType === 'CHECK_KINTONE_READY') return 'bootstrap';
+    if (messageType === 'EXCEL_EVALUATE_RECORD_ACL') return 'overlay_acl';
+    if (
+      messageType === 'EXCEL_GET_RECORDS'
+      || messageType === 'EXCEL_GET_RECORDS_BY_IDS'
+      || messageType === 'EXCEL_POST_RECORDS'
+      || messageType === 'EXCEL_PUT_RECORDS'
+      || messageType === 'EXCEL_DELETE_RECORDS'
+    ) {
+      return 'overlay_records';
+    }
+    const explicitFeature = normalizeUsageFeature(meta?.feature);
+    if (explicitFeature !== 'other') return explicitFeature;
+    if (!messageType) return 'other';
+    if (messageType.startsWith('EXCEL_')) return 'overlay';
+    if (messageType.startsWith('COUNT_') || messageType.startsWith('LIST_')) return 'watchlist';
+    if (messageType === 'PIN_FETCH') return 'record_pin';
+    if (messageType === 'GET_APP_NAME') return 'admin';
+    if (messageType.startsWith('DEV_')) return 'admin';
+    return 'other';
+  }
+
+  function shouldSkipLegacyUsageTracking(type) {
+    const messageType = String(type || '').trim().toUpperCase();
+    if (!messageType) return true;
+    if (messageType.startsWith('DEV_')) return false;
+    if (messageType === 'PING_CONTENT') return true;
+    return true;
+  }
+
+  function trackApiUsage(type, response, meta = {}) {
+    if (API_USAGE_REST_ONLY || shouldSkipLegacyUsageTracking(type)) return;
+    const feature = classifyApiUsageFeature(type, meta);
+    const success = Boolean(response?.ok);
+    const dateKey = toLocalDateKey();
+    upsertUsageStat(apiUsagePending, dateKey, feature, success, 1);
+    if (feature === 'admin') {
+      const category = classifyAdminUsageCategory(type, meta);
+      upsertAdminUsageStat(apiUsageAdminPending, dateKey, category, success, 1);
+    }
+    scheduleApiUsageFlush();
+  }
+
+  function trackRestApiUsage(payload = {}) {
+    if (payload?.sent !== true) return;
+    const endpoint = String(payload?.endpoint || '').trim();
+    if (!endpoint || !endpoint.startsWith('/k/v1/')) return;
+    let feature = normalizeUsageFeature(payload?.feature);
+    if (feature === 'watchlist') feature = 'watchlist_bulk';
+    if (feature === 'other') return;
+    const success = payload?.ok !== false;
+    const requestCountRaw = Number(payload?.requestCount);
+    const requestCount = Number.isFinite(requestCountRaw) && requestCountRaw > 0
+      ? Math.floor(requestCountRaw)
+      : 1;
+    const dateKey = toLocalDateKey();
+    upsertUsageStat(apiUsagePending, dateKey, feature, success, requestCount);
+    if (feature === 'admin') {
+      const category = normalizeAdminUsageCategory(payload?.adminCategory || payload?.category || payload?.source);
+      upsertAdminUsageStat(apiUsageAdminPending, dateKey, category, success, requestCount);
+    }
+    scheduleApiUsageFlush();
+  }
+
+  window.addEventListener('pagehide', () => {
+    void flushApiUsageDaily();
+  }, true);
+
   function uuid() {
     return crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2);
   }
@@ -23,6 +559,10 @@
   window.addEventListener('message', (ev) => {
     if (ev.origin !== location.origin) return;
     const data = ev.data || {};
+    if (data && data[PB_API_USAGE_EVENT] === true) {
+      trackRestApiUsage(data.payload || {});
+      return;
+    }
     if (!data || data.__kfav__ !== true || !data.replyTo) return;
     const entry = pending.get(data.replyTo);
     if (entry) {
@@ -31,7 +571,7 @@
     }
   });
 
-  function postToPage(type, payload) {
+  function postToPage(type, payload, meta = {}) {
     const id = uuid();
     const p = new Promise((resolve) => {
       pending.set(id, { resolve });
@@ -42,16 +582,36 @@
         }
       }, 10000);
     });
-    window.postMessage({ __kfav__: true, id, type, payload }, location.origin);
-    return p;
+    try {
+      window.postMessage({ __kfav__: true, id, type, payload }, location.origin);
+    } catch (error) {
+      pending.delete(id);
+      const failed = { ok: false, error: String(error?.message || error || 'post_message_failed') };
+      trackApiUsage(type, failed, meta);
+      return Promise.resolve(failed);
+    }
+    return p.then((response) => {
+      trackApiUsage(type, response, meta);
+      return response;
+    });
   }
 
   let overlayController = null;
+  let appOnlyFeaturesInitialized = false;
+  let appOnlyInitWaitPromise = null;
+  let devContextCaptureAttached = false;
+  let recentWatcherStarted = false;
+  let overlayShortcutListenerAttached = false;
+  const APP_CONTEXT_INIT_RETRY_INTERVAL_MS = 200;
+  const APP_CONTEXT_INIT_MAX_ATTEMPTS = 10;
 
   const devContextState = {
     target: null,
     lastContextInfo: null
   };
+  let spaLifecycleReady = false;
+  let spaCurrentContextKey = '';
+  let spaLastAppContextKey = '';
 
   function normalizeFieldCode(value) {
     const code = String(value || '').trim();
@@ -114,20 +674,95 @@
     }
   }
 
-  document.addEventListener('contextmenu', (event) => {
-    const target = pickContextTarget(event.target);
-    devContextState.target = target;
-    devContextState.lastContextInfo = createLastContextInfo(target, event.clientX, event.clientY);
-  }, true);
+  function attachDevContextCapture() {
+    if (devContextCaptureAttached) return;
+    document.addEventListener('contextmenu', (event) => {
+      const target = pickContextTarget(event.target);
+      devContextState.target = target;
+      devContextState.lastContextInfo = createLastContextInfo(target, event.clientX, event.clientY);
+    }, true);
+    devContextCaptureAttached = true;
+  }
 
   let currentPageContext = {
     href: location.href,
     timestamp: Date.now()
   };
 
+  function buildSpaContextKey(rawHref) {
+    try {
+      const href = String(rawHref || location?.href || '').trim();
+      if (!href) return '';
+      const url = new URL(href);
+      const pathname = String(url.pathname || '');
+      const pageType = getKintoneAppPageType(pathname);
+      const appMatch = pathname.match(/\/k\/(\d+)(?:\/|$)/);
+      const appId = String(appMatch?.[1] || '').trim();
+      const viewId = String(url.searchParams.get('view') || '').trim();
+      const recordMatch = String(url.hash || '').match(/record=(\d+)/i);
+      const recordId = String(recordMatch?.[1] || '').trim();
+      return [
+        url.origin,
+        pageType,
+        `app:${appId || '-'}`,
+        `view:${viewId || '-'}`,
+        `record:${recordId || '-'}`,
+        `path:${pathname}`,
+        `search:${String(url.search || '')}`,
+        `hash:${String(url.hash || '')}`
+      ].join('|');
+    } catch (_err) {
+      return '';
+    }
+  }
+
+  function logSpaLifecycle(action, contextKey, trigger) {
+    const key = String(contextKey || '').trim();
+    const trig = String(trigger || 'unknown').trim();
+    if (!key) return;
+    console.debug(`PB SPA ${action} context=${key} trigger=${trig}`);
+  }
+
+  function handleSpaLifecycle(trigger, href) {
+    if (!spaLifecycleReady) return;
+    const nextContextKey = buildSpaContextKey(href);
+    if (!nextContextKey) return;
+    const previousContextKey = spaCurrentContextKey;
+    spaCurrentContextKey = nextContextKey;
+    if (!isSupportedAppContextPage()) {
+      if (overlayController?.isOpen) {
+        try {
+          overlayController.close(true);
+        } catch (_err) {
+          // ignore
+        }
+      }
+      spaLastAppContextKey = '';
+      logSpaLifecycle('dispose', nextContextKey, trigger);
+      return;
+    }
+    if (!appOnlyFeaturesInitialized) {
+      const initialized = initAppOnlyFeatures();
+      if (initialized) {
+        spaLastAppContextKey = nextContextKey;
+        const action = previousContextKey && previousContextKey !== nextContextKey ? 'reinit' : 'init';
+        logSpaLifecycle(action, nextContextKey, trigger);
+      }
+      return;
+    }
+    if (spaLastAppContextKey === nextContextKey) {
+      logSpaLifecycle('skip duplicate init', nextContextKey, trigger);
+      return;
+    }
+    spaLastAppContextKey = nextContextKey;
+    logSpaLifecycle('reinit', nextContextKey, trigger);
+  }
+
   function notifyPageContextUpdated(trigger) {
+    const previousHref = String(currentPageContext?.href || '');
+    const nextHref = String(location?.href || '');
     currentPageContext = {
-      href: location.href,
+      href: nextHref,
       timestamp: Date.now()
     };
     try {
@@ -141,6 +776,9 @@
       }).catch(() => {});
     } catch (_err) {
       // ignore
+    }
+    if (nextHref && nextHref !== previousHref) {
+      handleSpaLifecycle(trigger, nextHref);
     }
   }
 
@@ -194,7 +832,7 @@
   }
 
   async function resolveDevQuery() {
-    const context = await postToPage('DEV_GET_LIST_CONTEXT', {});
+    const context = await postToPage('DEV_GET_LIST_CONTEXT', {}, { feature: 'admin', adminCategory: 'debug' });
     if (!context?.ok) return { ok: false, reason: context?.error || 'context_unavailable' };
     const query = String(context.query || '').trim();
     if (!query) return { ok: false, reason: 'query_not_found' };
@@ -216,14 +854,14 @@
     if (!Number.isInteger(colIndex) || colIndex < 0) {
       return { ok: false, reason: 'cell_index_not_found' };
     }
-    const context = await postToPage('DEV_GET_LIST_CONTEXT', {});
+    const context = await postToPage('DEV_GET_LIST_CONTEXT', {}, { feature: 'admin', adminCategory: 'debug' });
     if (!context?.ok) {
       return { ok: false, reason: 'view_meta_missing' };
     }
     const meta = await postToPage('DEV_GET_VIEW_META', {
       appId: context?.appId || '',
       viewId: context?.viewId || ''
-    });
+    }, { feature: 'admin', adminCategory: 'debug' });
     if (!meta?.ok) {
       return { ok: false, reason: 'view_meta_missing' };
     }
@@ -303,10 +941,59 @@
     return { ok: true, value: resolved.value };
   }
 
+  function unsupportedAppContextResult() {
+    return { ok: false, reason: 'unsupported_page' };
+  }
+
+  function shouldRetryAppOnlyInitialization() {
+    if (!isSupportedHostPage()) return false;
+    try {
+      const href = String(location?.href || '');
+      if (!href) return false;
+      const url = new URL(href);
+      return hasAppContextUrlHint(url);
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  function ensureAppOnlyFeaturesReady() {
+    if (appOnlyFeaturesInitialized) return true;
+    return initAppOnlyFeatures();
+  }
+
+  async function waitForAppContextAndInit() {
+    if (ensureAppOnlyFeaturesReady()) return true;
+    if (!shouldRetryAppOnlyInitialization()) return false;
+    if (appOnlyInitWaitPromise) return appOnlyInitWaitPromise;
+    appOnlyInitWaitPromise = new Promise((resolve) => {
+      let attempts = 0;
+      const run = () => {
+        attempts += 1;
+        if (ensureAppOnlyFeaturesReady()) {
+          appOnlyInitWaitPromise = null;
+          resolve(true);
+          return;
+        }
+        if (attempts >= APP_CONTEXT_INIT_MAX_ATTEMPTS) {
+          appOnlyInitWaitPromise = null;
+          resolve(false);
+          return;
+        }
+        window.setTimeout(run, APP_CONTEXT_INIT_RETRY_INTERVAL_MS);
+      };
+      run();
+    });
+    return appOnlyInitWaitPromise;
+  }
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     (async () => {
       try {
         if (msg?.type === 'DEV_COPY_QUERY') {
+          if (!(await waitForAppContextAndInit())) {
+            sendResponse(unsupportedAppContextResult()); return;
+          }
           const result = await copyDevValue('query');
           sendResponse(result); return;
         }
@@ -325,46 +1012,61 @@
           sendResponse({ ok: true }); return;
         }
         if (msg?.type === 'DEV_COPY_FIELD_CODE') {
+          if (!(await waitForAppContextAndInit())) {
+            sendResponse(unsupportedAppContextResult()); return;
+          }
           const result = await copyDevValue('field_code');
           sendResponse(result); return;
         }
         if (msg?.type === 'COUNT_BULK') {
-          const res = await postToPage('COUNT_BULK', msg.payload);
+          const res = await postToPage('COUNT_BULK', msg.payload, { feature: 'watchlist' });
           sendResponse(res); return;
         }
         if (msg?.type === 'PING_CONTENT') {
           sendResponse({ ok: true }); return;
         }
         if (msg?.type === 'COUNT_VIEW') {
-          const res = await postToPage('COUNT_VIEW', msg.payload);
+          const res = await postToPage('COUNT_VIEW', msg.payload, { feature: 'watchlist' });
           sendResponse(res); return;
         }
         if (msg?.type === 'COUNT_APP_QUERY') {
-          const res = await postToPage('COUNT_APP_QUERY', msg.payload);
+          const res = await postToPage('COUNT_APP_QUERY', msg.payload, { feature: 'watchlist' });
           sendResponse(res); return;
         }
         if (msg?.type === 'LIST_VIEWS') {
-          const res = await postToPage('LIST_VIEWS', msg.payload);
+          const res = await postToPage('LIST_VIEWS', msg.payload, { feature: 'watchlist' });
           sendResponse(res); return;
         }
         if (msg?.type === 'LIST_SCHEDULE') {
-          const res = await postToPage('LIST_SCHEDULE', msg.payload);
+          const res = await postToPage('LIST_SCHEDULE', msg.payload, { feature: 'watchlist' });
           sendResponse(res); return;
         }
         if (msg?.type === 'LIST_FIELDS') {
-          const res = await postToPage('LIST_FIELDS', msg.payload);
+          const res = await postToPage('LIST_FIELDS', msg.payload, { feature: 'watchlist' });
           sendResponse(res); return;
         }
         if (msg?.type === 'PIN_FETCH') {
-          const res = await postToPage('PIN_FETCH', msg.payload);
+          const res = await postToPage('PIN_FETCH', msg.payload, { feature: 'record_pin' });
           sendResponse(res); return;
         }
         if (msg?.type === 'GET_APP_NAME') {
-          const res = await postToPage('GET_APP_NAME', msg.payload);
+          const res = await postToPage('GET_APP_NAME', msg.payload, { feature: 'admin', adminCategory: 'app_cache' });
+          sendResponse(res); return;
+        }
+        if (msg?.type === 'META_GET_APP') {
+          const res = await postToPage('META_GET_APP', msg.payload, { feature: 'metadata_app' });
+          sendResponse(res); return;
+        }
+        if (msg?.type === 'META_GET_VIEWS') {
+          const res = await postToPage('META_GET_VIEWS', msg.payload, { feature: 'metadata_views' });
+          sendResponse(res); return;
+        }
+        if (msg?.type === 'META_GET_FIELDS') {
+          const res = await postToPage('META_GET_FIELDS', msg.payload, { feature: 'metadata_fields' });
           sendResponse(res); return;
         }
         if (msg?.type === 'CHECK_KINTONE_READY') {
-          const res = await postToPage('CHECK_KINTONE_READY', msg.payload);
+          const res = await postToPage('CHECK_KINTONE_READY', msg.payload, { feature: 'bootstrap', adminCategory: 'bootstrap' });
           sendResponse(res); return;
         }
         if (msg?.type === 'EXCEL_GET_OVERLAY_LAUNCH_STATE') {
@@ -372,6 +1074,9 @@
           sendResponse(res); return;
         }
         if (msg?.type === 'EXCEL_OPEN_OVERLAY_FROM_SIDEPANEL') {
+          if (!(await waitForAppContextAndInit())) {
+            sendResponse({ ok: false, reason: 'app_context_not_ready' }); return;
+          }
           const res = await openOverlayByCurrentPage('sidepanel');
           sendResponse(res); return;
         }
@@ -469,6 +1174,8 @@
   }
 
   function startRecentRecordWatcher() {
+    if (recentWatcherStarted) return;
+    recentWatcherStarted = true;
     lastObservedHref = location.href;
     tryUpsertRecentRecord();
     setInterval(() => {
@@ -478,8 +1185,6 @@
       tryUpsertRecentRecord();
     }, RECENT_TRACK_INTERVAL_MS);
   }
-
-  startRecentRecordWatcher();
 
   const overlayTexts = {
     ja: {
@@ -559,6 +1264,16 @@
       statusPendingDeletes: "削除予定",
       statusNewRows: "新規行",
       btnColumns: "列順",
+      layoutPresetLabel: "レイアウト",
+      layoutPresetSave: "保存",
+      layoutPresetDuplicate: "複製",
+      layoutPresetRename: "名前変更",
+      layoutPresetDelete: "削除",
+      layoutPresetMenu: "レイアウト操作",
+      layoutPresetDefault: "標準",
+      layoutPresetNewName: "新しいレイアウト",
+      layoutPresetDeleteConfirm: "このレイアウトを削除しますか？",
+      layoutPresetPromptName: "レイアウト名を入力してください",
       btnFieldsViewOnly: "ビュー",
       btnFieldsAll: "全項目",
       titleFieldsViewOnly: "現在のビュー項目のみ表示",
@@ -580,6 +1295,7 @@
       filterApply: "適用",
       columnsTitle: "列の並び替え",
       columnsHint: "ヘッダーをドラッグして並び順を変え、幅はドラッグまたは自動調整ボタンで変更できます。",
+      columnsVisibilityTitle: "表示列",
       columnsAutoWidth: "自動調整",
       columnsSave: "列順を保存",
       columnsReset: "リセット",
@@ -588,6 +1304,10 @@
       toastColumnsSaved: "列順を保存しました",
       toastColumnsReset: "列順をリセットしました",
       toastColumnsAutoWidth: "列幅を自動調整しました",
+      toastLayoutPresetSaved: "レイアウトを保存しました",
+      toastLayoutPresetDeleted: "レイアウトを削除しました",
+      toastLayoutPresetRenamed: "レイアウト名を変更しました",
+      toastLayoutPresetDuplicated: "レイアウトを複製しました",
       errorUnsupportedFilter: "この一覧には一時的なフィルター/ソートが含まれているため、Excelモードを起動できません。ビューを標準状態に戻してから再試行してください。",
       overlayUnsupportedPage: "この画面では Excel Overlay を利用できません。一覧/詳細画面で利用できます。"
     },
@@ -668,6 +1388,16 @@
       statusPendingDeletes: "Pending delete",
       statusNewRows: "New rows",
       btnColumns: "Columns",
+      layoutPresetLabel: "Layout",
+      layoutPresetSave: "Save",
+      layoutPresetDuplicate: "Duplicate",
+      layoutPresetRename: "Rename",
+      layoutPresetDelete: "Delete",
+      layoutPresetMenu: "Layout actions",
+      layoutPresetDefault: "Default",
+      layoutPresetNewName: "New layout",
+      layoutPresetDeleteConfirm: "Delete this layout?",
+      layoutPresetPromptName: "Enter layout name",
       btnFieldsViewOnly: "View",
       btnFieldsAll: "All fields",
       titleFieldsViewOnly: "Show only fields in current view",
@@ -689,6 +1419,7 @@
       filterApply: "Apply",
       columnsTitle: "Reorder columns",
       columnsHint: "Drag the header chips below to reorder columns, then save the layout for future sessions.",
+      columnsVisibilityTitle: "Visible columns",
       columnsAutoWidth: "Auto width",
       columnsSave: "Save order",
       columnsReset: "Reset",
@@ -697,6 +1428,10 @@
       toastColumnsSaved: "Column order saved",
       toastColumnsReset: "Column order reset",
       toastColumnsAutoWidth: "Column widths adjusted",
+      toastLayoutPresetSaved: "Layout saved",
+      toastLayoutPresetDeleted: "Layout deleted",
+      toastLayoutPresetRenamed: "Layout renamed",
+      toastLayoutPresetDuplicated: "Layout duplicated",
       errorUnsupportedFilter: "This list has ad-hoc filters/sorting that cannot be replayed in Excel mode. Clear the filter and try again.",
       overlayUnsupportedPage: "Excel Overlay is only available on list/detail pages."
     }
@@ -727,6 +1462,7 @@
   const DEFAULT_OVERLAY_LANGUAGE = 'ja';
 
   const COLUMN_PREF_STORAGE_KEY = 'kfavExcelColumns';
+  const OVERLAY_LAYOUT_PRESETS_KEY = 'kfavOverlayLayoutPresets';
   const SUBTABLE_WIDTH_PREF_STORAGE_KEY = 'kfavExcelSubtableWidths';
   const EXCEL_OVERLAY_MODE_KEY = 'kfavExcelOverlayMode';
   const EXCEL_OVERLAY_MODE_STANDARD = 'standard';
@@ -740,6 +1476,8 @@
   const LIST_FIELD_SCOPE_VIEW_ONLY = 'view-only';
   const LIST_FIELD_SCOPE_ALL_FIELDS = 'all-fields';
   const MAX_COLUMN_PREF_ENTRIES = 80;
+  const MAX_LAYOUT_PRESET_APP_ENTRIES = 80;
+  const MAX_LAYOUT_PRESET_COUNT = 12;
   const MAX_SUBTABLE_WIDTH_PREF_ENTRIES = 160;
   const DEFAULT_COLUMN_WIDTH = 160;
   const MIN_COLUMN_WIDTH = 96;
@@ -892,6 +1630,16 @@
       this.fieldScopeToggleWrap = null;
       this.fieldScopeViewButton = null;
       this.fieldScopeAllButton = null;
+      this.layoutPresetWrap = null;
+      this.layoutPresetLabel = null;
+      this.layoutPresetSelect = null;
+      this.layoutPresetMenuButton = null;
+      this.layoutPresetMenu = null;
+      this.layoutPresetMenuOpen = false;
+      this.layoutPresetSaveButton = null;
+      this.layoutPresetDuplicateButton = null;
+      this.layoutPresetRenameButton = null;
+      this.layoutPresetDeleteButton = null;
       this.prevPageButton = null;
       this.nextPageButton = null;
       this.pageLabelElement = null;
@@ -917,7 +1665,7 @@
       };
       this.runtimeMode = OVERLAY_RUNTIME_MODE_LIST;
       this.overlayLayoutMode = OVERLAY_LAYOUT_MODE_GRID;
-      this.listFieldScopeMode = LIST_FIELD_SCOPE_VIEW_ONLY;
+      this.listFieldScopeMode = LIST_FIELD_SCOPE_ALL_FIELDS;
       this.detailRecordId = '';
       this.detailAppId = '';
       this.detailSourceUrl = '';
@@ -960,6 +1708,8 @@
       this.handleScroll = this.syncScroll.bind(this);
       this.handleKeyOnOverlay = this.handleOverlayKeydown.bind(this);
       this.handleGlobalArrowKeyCapture = this.handleOverlayGlobalArrowKeydown.bind(this);
+      this.handleLayoutPresetMenuOutsidePointerDown = this.handleLayoutPresetMenuOutsidePointerDown.bind(this);
+      this.handleLayoutPresetMenuKeyDown = this.handleLayoutPresetMenuKeyDown.bind(this);
       this.handleCompositionStart = () => { this.isComposing = true; };
       this.handleCompositionEnd = () => { this.isComposing = false; };
       this.requireReload = false;
@@ -986,6 +1736,8 @@
       this.editingCell = null;
       this.handleMouseUp = this.endSelection.bind(this);
       this.columnPrefCache = null;
+      this.overlayLayoutPresetCache = null;
+      this.overlayLayoutState = null;
       this.subtableWidthPrefCache = null;
       this.viewKey = 'default';
       this.viewName = '';
@@ -993,6 +1745,9 @@
       this.columnPanelLayer = null;
       this.columnPreviewRow = null;
       this.columnOrderDraft = [];
+      this.columnVisibilityDraft = new Set();
+      this.columnDraftAllFieldCodes = [];
+      this.columnVisibilityList = null;
       this.columnButton = null;
       this.defaultFieldCodes = [];
       this.draggingColumnCode = null;
@@ -1047,9 +1802,7 @@
       this.overlayLayoutMode = this.runtimeMode === OVERLAY_RUNTIME_MODE_DETAIL_SINGLE_ROW
         ? OVERLAY_LAYOUT_MODE_FORM
         : OVERLAY_LAYOUT_MODE_GRID;
-      this.listFieldScopeMode = this.runtimeMode === OVERLAY_RUNTIME_MODE_LIST
-        ? LIST_FIELD_SCOPE_VIEW_ONLY
-        : LIST_FIELD_SCOPE_ALL_FIELDS;
+      this.listFieldScopeMode = LIST_FIELD_SCOPE_ALL_FIELDS;
       this.detailRecordId = String(options?.detailRecordId || '').trim();
       this.detailAppId = String(options?.detailAppId || '').trim();
       this.detailSourceUrl = String(options?.detailSourceUrl || location.href || '').trim();
@@ -1206,26 +1959,79 @@
       this.formLayoutButton = formLayoutBtn;
       this.updateLayoutToggleUi();
 
-      const fieldScopeToggle = document.createElement('div');
-      fieldScopeToggle.className = 'pb-overlay__layout-toggle';
-      const viewScopeBtn = document.createElement('button');
-      viewScopeBtn.type = 'button';
-      viewScopeBtn.className = 'pb-overlay__layout-btn';
-      viewScopeBtn.addEventListener('click', () => {
-        void this.setListFieldScopeMode(LIST_FIELD_SCOPE_VIEW_ONLY);
+      const presetWrap = document.createElement('div');
+      presetWrap.className = 'pb-overlay__preset-wrap';
+      const presetLabel = document.createElement('span');
+      presetLabel.className = 'pb-overlay__preset-label';
+      const presetSelect = document.createElement('select');
+      presetSelect.className = 'pb-overlay__preset-select';
+      presetSelect.addEventListener('change', () => {
+        void this.handleLayoutPresetSelectChanged();
       });
-      const allScopeBtn = document.createElement('button');
-      allScopeBtn.type = 'button';
-      allScopeBtn.className = 'pb-overlay__layout-btn';
-      allScopeBtn.addEventListener('click', () => {
-        void this.setListFieldScopeMode(LIST_FIELD_SCOPE_ALL_FIELDS);
+      const presetMenuToggleBtn = document.createElement('button');
+      presetMenuToggleBtn.type = 'button';
+      presetMenuToggleBtn.className = 'pb-overlay__btn pb-overlay__preset-menu-toggle';
+      presetMenuToggleBtn.textContent = '…';
+      presetMenuToggleBtn.setAttribute('aria-haspopup', 'menu');
+      presetMenuToggleBtn.setAttribute('aria-expanded', 'false');
+      presetMenuToggleBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.toggleLayoutPresetMenu();
       });
-      fieldScopeToggle.appendChild(viewScopeBtn);
-      fieldScopeToggle.appendChild(allScopeBtn);
-      this.fieldScopeToggleWrap = fieldScopeToggle;
-      this.fieldScopeViewButton = viewScopeBtn;
-      this.fieldScopeAllButton = allScopeBtn;
-      this.updateFieldScopeToggleUi();
+      const presetMenu = document.createElement('div');
+      presetMenu.className = 'pb-overlay__preset-menu';
+      presetMenu.setAttribute('role', 'menu');
+      const presetSaveBtn = document.createElement('button');
+      presetSaveBtn.type = 'button';
+      presetSaveBtn.className = 'pb-overlay__preset-menu-item';
+      presetSaveBtn.setAttribute('role', 'menuitem');
+      presetSaveBtn.addEventListener('click', () => {
+        this.closeLayoutPresetMenu();
+        void this.handleLayoutPresetSave();
+      });
+      const presetDuplicateBtn = document.createElement('button');
+      presetDuplicateBtn.type = 'button';
+      presetDuplicateBtn.className = 'pb-overlay__preset-menu-item';
+      presetDuplicateBtn.setAttribute('role', 'menuitem');
+      presetDuplicateBtn.addEventListener('click', () => {
+        this.closeLayoutPresetMenu();
+        void this.handleLayoutPresetDuplicate();
+      });
+      const presetRenameBtn = document.createElement('button');
+      presetRenameBtn.type = 'button';
+      presetRenameBtn.className = 'pb-overlay__preset-menu-item';
+      presetRenameBtn.setAttribute('role', 'menuitem');
+      presetRenameBtn.addEventListener('click', () => {
+        this.closeLayoutPresetMenu();
+        void this.handleLayoutPresetRename();
+      });
+      const presetDeleteBtn = document.createElement('button');
+      presetDeleteBtn.type = 'button';
+      presetDeleteBtn.className = 'pb-overlay__preset-menu-item pb-overlay__preset-menu-item--danger';
+      presetDeleteBtn.setAttribute('role', 'menuitem');
+      presetDeleteBtn.addEventListener('click', () => {
+        this.closeLayoutPresetMenu();
+        void this.handleLayoutPresetDelete();
+      });
+      presetMenu.appendChild(presetSaveBtn);
+      presetMenu.appendChild(presetDuplicateBtn);
+      presetMenu.appendChild(presetRenameBtn);
+      presetMenu.appendChild(presetDeleteBtn);
+      presetWrap.appendChild(presetLabel);
+      presetWrap.appendChild(presetSelect);
+      presetWrap.appendChild(presetMenuToggleBtn);
+      presetWrap.appendChild(presetMenu);
+      this.layoutPresetWrap = presetWrap;
+      this.layoutPresetLabel = presetLabel;
+      this.layoutPresetSelect = presetSelect;
+      this.layoutPresetMenuButton = presetMenuToggleBtn;
+      this.layoutPresetMenu = presetMenu;
+      this.layoutPresetSaveButton = presetSaveBtn;
+      this.layoutPresetDuplicateButton = presetDuplicateBtn;
+      this.layoutPresetRenameButton = presetRenameBtn;
+      this.layoutPresetDeleteButton = presetDeleteBtn;
+      this.updateLayoutPresetToolbarUi();
 
       const dirty = document.createElement('span');
       dirty.className = 'pb-overlay__dirty';
@@ -1278,16 +2084,24 @@
       closeBtn.textContent = resolveText(this.language, 'btnClose');
       this.closeButton = closeBtn;
 
-      actions.appendChild(pager);
-      actions.appendChild(columnsBtn);
-      actions.appendChild(fieldScopeToggle);
-      actions.appendChild(layoutToggle);
-      actions.appendChild(dirty);
-      actions.appendChild(addRowBtn);
-      actions.appendChild(undoBtn);
-      actions.appendChild(redoBtn);
-      actions.appendChild(saveBtn);
-      actions.appendChild(closeBtn);
+      const primaryActions = document.createElement('div');
+      primaryActions.className = 'pb-overlay__toolbar-primary';
+      primaryActions.appendChild(pager);
+      primaryActions.appendChild(presetWrap);
+      primaryActions.appendChild(layoutToggle);
+
+      const secondaryActions = document.createElement('div');
+      secondaryActions.className = 'pb-overlay__toolbar-secondary';
+      secondaryActions.appendChild(columnsBtn);
+      secondaryActions.appendChild(dirty);
+      secondaryActions.appendChild(addRowBtn);
+      secondaryActions.appendChild(undoBtn);
+      secondaryActions.appendChild(redoBtn);
+      secondaryActions.appendChild(saveBtn);
+      secondaryActions.appendChild(closeBtn);
+
+      actions.appendChild(primaryActions);
+      actions.appendChild(secondaryActions);
 
       toolbar.appendChild(titleWrap);
       toolbar.appendChild(actions);
@@ -1415,6 +2229,7 @@
       this.root.removeEventListener('keydown', this.handleKeyOnOverlay, true);
       document.removeEventListener('keydown', this.handleGlobalArrowKeyCapture, true);
       document.removeEventListener('mouseup', this.handleMouseUp, true);
+      this.closeLayoutPresetMenu();
     }
 
     getCurrentViewId() {
@@ -1435,6 +2250,141 @@
       return null;
     }
 
+    splitOverlayQueryParts(query) {
+      const original = String(query || '');
+      const lower = original.toLowerCase();
+      const markers = [];
+      const orderIndex = lower.indexOf(' order by ');
+      if (orderIndex >= 0) markers.push(orderIndex);
+      const limitIndex = lower.indexOf(' limit ');
+      if (limitIndex >= 0) markers.push(limitIndex);
+      const offsetIndex = lower.indexOf(' offset ');
+      if (offsetIndex >= 0) markers.push(offsetIndex);
+      if (!markers.length) {
+        return { filter: original.trim(), trailing: '' };
+      }
+      const first = Math.min(...markers);
+      return {
+        filter: original.slice(0, first).trim(),
+        trailing: original.slice(first).trim()
+      };
+    }
+
+    hasOverlayOrderClause(query) {
+      return /\border\s+by\b/i.test(String(query || ''));
+    }
+
+    combineOverlayQuery(base, extra) {
+      const A = String(base || '').trim();
+      const B = String(extra || '').trim();
+      if (A && B) return `${A} and (${B})`;
+      return A || B || '';
+    }
+
+    extractViewFieldOrder(view) {
+      const order = [];
+      if (!view || typeof view !== 'object') return order;
+      const collect = (value) => {
+        if (!value) return;
+        let code = '';
+        if (typeof value === 'string') {
+          code = value;
+        } else if (value && typeof value === 'object') {
+          code = String(value.field || value.code || value.id || '').trim();
+        }
+        if (code && !order.includes(code)) order.push(code);
+      };
+      if (Array.isArray(view.columns)) view.columns.forEach(collect);
+      if (!order.length && Array.isArray(view.fields)) view.fields.forEach(collect);
+      if (!order.length && Array.isArray(view.layout)) {
+        view.layout.forEach((row) => {
+          if (!row || typeof row !== 'object' || !Array.isArray(row.fields)) return;
+          row.fields.forEach(collect);
+        });
+      }
+      return order;
+    }
+
+    pickViewFromViews(viewsObj, preferredViewId = '') {
+      const entries = Object.entries(viewsObj || {});
+      let selectedView = null;
+      let selectedViewName = '';
+      const viewId = String(preferredViewId || '').trim();
+      if (viewId) {
+        const found = entries.find(([, v]) => String(v?.id || '') === viewId);
+        if (found) {
+          selectedView = found[1];
+          selectedViewName = found[0];
+        }
+      }
+      if (!selectedView) {
+        const currentName = typeof window.kintone?.app?.getViewName === 'function'
+          ? String(window.kintone.app.getViewName() || '').trim()
+          : '';
+        if (currentName && viewsObj?.[currentName]) {
+          selectedView = viewsObj[currentName];
+          selectedViewName = currentName;
+        }
+      }
+      if (!selectedView && entries.length) {
+        selectedView = entries[0][1];
+        selectedViewName = entries[0][0];
+      }
+      return { selectedView, selectedViewName };
+    }
+
+    resolveViewInfoFromMetadata(viewsObj, options = {}) {
+      if (!viewsObj || typeof viewsObj !== 'object') return null;
+      const currentQuery = String(options?.currentQuery || '').trim();
+      const preferredViewId = String(options?.viewId || '').trim();
+      const picked = this.pickViewFromViews(viewsObj, preferredViewId);
+      const selectedView = picked.selectedView;
+      if (!selectedView) return null;
+      const selectedViewName = picked.selectedViewName || '';
+      const baseFilter = String(selectedView?.filterCond || '').trim();
+      const split = this.splitOverlayQueryParts(currentQuery);
+      const mergedFilter = this.combineOverlayQuery(baseFilter, split.filter);
+      const parts = [];
+      if (mergedFilter) parts.push(mergedFilter);
+      if (split.trailing) {
+        parts.push(split.trailing);
+      } else if (selectedView?.sort && !this.hasOverlayOrderClause(currentQuery)) {
+        parts.push(`order by ${selectedView.sort}`);
+      }
+      const finalQuery = parts.join(' ').trim() || currentQuery || baseFilter;
+      const fieldOrder = this.extractViewFieldOrder(selectedView);
+      return {
+        query: finalQuery,
+        fieldOrder,
+        viewId: selectedView?.id ? String(selectedView.id) : '',
+        viewName: selectedViewName
+      };
+    }
+
+    async getMetadataBundle(options = {}) {
+      const host = String(location?.origin || '').trim();
+      const appId = String(this.appId || '').trim();
+      if (!host || !appId) return null;
+      try {
+        const res = await chrome.runtime.sendMessage({
+          type: 'PB_GET_METADATA_BUNDLE',
+          payload: {
+            host,
+            appId,
+            needApp: Boolean(options?.needApp),
+            needViews: Boolean(options?.needViews),
+            needFields: Boolean(options?.needFields),
+            trigger: String(options?.trigger || 'overlay_open'),
+            source: String(options?.source || 'overlay'),
+            logGroup: String(options?.logGroup || 'overlay')
+          }
+        });
+        return res && typeof res === 'object' ? res : null;
+      } catch (_err) {
+        return null;
+      }
+    }
+
     isDetailSingleRowMode() {
       return this.runtimeMode === OVERLAY_RUNTIME_MODE_DETAIL_SINGLE_ROW;
     }
@@ -1443,10 +2393,8 @@
       return this.runtimeMode === OVERLAY_RUNTIME_MODE_LIST;
     }
 
-    normalizeListFieldScopeMode(mode) {
-      return mode === LIST_FIELD_SCOPE_ALL_FIELDS
-        ? LIST_FIELD_SCOPE_ALL_FIELDS
-        : LIST_FIELD_SCOPE_VIEW_ONLY;
+    normalizeListFieldScopeMode(_mode) {
+      return LIST_FIELD_SCOPE_ALL_FIELDS;
     }
 
     normalizeLayoutMode(mode) {
@@ -1480,20 +2428,480 @@
 
     updateFieldScopeToggleUi() {
       if (!this.fieldScopeToggleWrap) return;
-      const show = this.isListMode();
-      this.fieldScopeToggleWrap.style.display = show ? 'inline-flex' : 'none';
-      if (!show) return;
-      const current = this.normalizeListFieldScopeMode(this.listFieldScopeMode);
-      if (this.fieldScopeViewButton) {
-        this.fieldScopeViewButton.textContent = resolveText(this.language, 'btnFieldsViewOnly');
-        this.fieldScopeViewButton.title = resolveText(this.language, 'titleFieldsViewOnly');
-        this.fieldScopeViewButton.classList.toggle('is-active', current === LIST_FIELD_SCOPE_VIEW_ONLY);
+      this.fieldScopeToggleWrap.style.display = 'none';
+    }
+
+    getOverlayLayoutAppKey() {
+      const host = String(location?.origin || '').trim();
+      const app = this.appId ? String(this.appId) : '0';
+      return `${host}::${app}`;
+    }
+
+    createLayoutPresetId() {
+      return `preset_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    sanitizeLayoutPresetName(value, fallback = '') {
+      const text = String(value || '').replace(/\s+/g, ' ').trim();
+      if (!text) return String(fallback || '').trim() || resolveText(this.language, 'layoutPresetDefault');
+      return text.slice(0, 40);
+    }
+
+    getBaseFieldCodeList(baseFields) {
+      return (Array.isArray(baseFields) ? baseFields : [])
+        .map((field) => String(field?.code || '').trim())
+        .filter(Boolean);
+    }
+
+    normalizeLayoutPreset(rawPreset, baseCodes, fallbackName, fallbackId = '') {
+      const allowed = new Set(baseCodes);
+      const scopeRaw = String(rawPreset?.scope || '').trim().toLowerCase();
+      const scope = scopeRaw === 'detail' ? 'detail' : 'list';
+      const visibleRaw = Array.isArray(rawPreset?.visibleColumns) ? rawPreset.visibleColumns : [];
+      const visible = Array.from(new Set(
+        visibleRaw
+          .map((code) => String(code || '').trim())
+          .filter((code) => allowed.has(code))
+      ));
+      const visibleColumns = visible.length ? visible : baseCodes.slice();
+
+      const orderRaw = Array.isArray(rawPreset?.columnOrder) ? rawPreset.columnOrder : [];
+      const order = [];
+      const orderSeen = new Set();
+      orderRaw.forEach((codeRaw) => {
+        const code = String(codeRaw || '').trim();
+        if (!code || !allowed.has(code) || !visibleColumns.includes(code) || orderSeen.has(code)) return;
+        order.push(code);
+        orderSeen.add(code);
+      });
+      visibleColumns.forEach((code) => {
+        if (orderSeen.has(code)) return;
+        order.push(code);
+        orderSeen.add(code);
+      });
+
+      const widths = {};
+      const rawWidths = rawPreset?.columnWidths && typeof rawPreset.columnWidths === 'object'
+        ? rawPreset.columnWidths
+        : {};
+      Object.entries(rawWidths).forEach(([codeRaw, valueRaw]) => {
+        const code = String(codeRaw || '').trim();
+        if (!code || !allowed.has(code)) return;
+        const numeric = Number(valueRaw);
+        if (!Number.isFinite(numeric)) return;
+        widths[code] = Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, Math.round(numeric)));
+      });
+
+      const pinned = Array.isArray(rawPreset?.pinnedColumns)
+        ? Array.from(new Set(
+          rawPreset.pinnedColumns
+            .map((code) => String(code || '').trim())
+            .filter((code) => allowed.has(code))
+        ))
+        : [];
+
+      return {
+        id: String(rawPreset?.id || fallbackId || this.createLayoutPresetId()),
+        name: this.sanitizeLayoutPresetName(rawPreset?.name, fallbackName),
+        scope,
+        visibleColumns,
+        columnOrder: order,
+        columnWidths: widths,
+        pinnedColumns: pinned
+      };
+    }
+
+    createDefaultLayoutPreset(baseFields, legacyPref = null, scope = 'list') {
+      const baseCodes = this.getBaseFieldCodeList(baseFields);
+      const baseOrder = baseCodes.slice();
+      const legacyOrder = Array.isArray(legacyPref?.order) ? legacyPref.order : [];
+      const legacyWidths = legacyPref?.widths && typeof legacyPref.widths === 'object' ? legacyPref.widths : {};
+      const preset = this.normalizeLayoutPreset({
+        id: 'default',
+        name: resolveText(this.language, 'layoutPresetDefault'),
+        scope,
+        visibleColumns: baseCodes,
+        columnOrder: legacyOrder.length ? legacyOrder : baseOrder,
+        columnWidths: legacyWidths
+      }, baseCodes, resolveText(this.language, 'layoutPresetDefault'), 'default');
+      return preset;
+    }
+
+    async loadOverlayLayoutPresetMap(force = false) {
+      if (!force && this.overlayLayoutPresetCache) return this.overlayLayoutPresetCache;
+      try {
+        const stored = await chrome.storage.local.get(OVERLAY_LAYOUT_PRESETS_KEY);
+        const raw = stored?.[OVERLAY_LAYOUT_PRESETS_KEY];
+        const map = raw && typeof raw === 'object' ? raw : {};
+        this.overlayLayoutPresetCache = { ...map };
+        return this.overlayLayoutPresetCache;
+      } catch (_err) {
+        this.overlayLayoutPresetCache = {};
+        return this.overlayLayoutPresetCache;
       }
-      if (this.fieldScopeAllButton) {
-        this.fieldScopeAllButton.textContent = resolveText(this.language, 'btnFieldsAll');
-        this.fieldScopeAllButton.title = resolveText(this.language, 'titleFieldsAll');
-        this.fieldScopeAllButton.classList.toggle('is-active', current === LIST_FIELD_SCOPE_ALL_FIELDS);
+    }
+
+    async writeOverlayLayoutPresetMap(map) {
+      if (!map || !Object.keys(map).length) {
+        await chrome.storage.local.remove(OVERLAY_LAYOUT_PRESETS_KEY);
+        this.overlayLayoutPresetCache = {};
+        return;
       }
+      await chrome.storage.local.set({ [OVERLAY_LAYOUT_PRESETS_KEY]: map });
+      this.overlayLayoutPresetCache = { ...map };
+    }
+
+    async getLatestLegacyColumnPref(baseCodes) {
+      const map = await this.loadColumnPrefMap();
+      const appPrefix = `${this.appId ? String(this.appId) : '0'}::`;
+      const entries = Object.entries(map || {}).filter(([key, value]) => {
+        if (!String(key || '').startsWith(appPrefix)) return false;
+        if (!value || typeof value !== 'object') return false;
+        if (!Array.isArray(value.order)) return false;
+        return value.order.length > 0;
+      });
+      if (!entries.length) return null;
+      entries.sort((a, b) => {
+        const at = Number(a[1]?.savedAt || 0);
+        const bt = Number(b[1]?.savedAt || 0);
+        return bt - at;
+      });
+      const latest = entries[0][1];
+      const allowed = new Set(baseCodes);
+      const order = latest.order
+        .map((code) => String(code || '').trim())
+        .filter((code) => allowed.has(code));
+      const widths = latest.widths && typeof latest.widths === 'object' ? latest.widths : {};
+      return { order, widths };
+    }
+
+    normalizeOverlayLayoutState(rawState, baseFields) {
+      const baseCodes = this.getBaseFieldCodeList(baseFields);
+      const rawPresets = Array.isArray(rawState?.presets) ? rawState.presets : [];
+      const presets = rawPresets
+        .slice(0, MAX_LAYOUT_PRESET_COUNT)
+        .map((preset, index) => this.normalizeLayoutPreset(
+          preset,
+          baseCodes,
+          `${resolveText(this.language, 'layoutPresetDefault')} ${index + 1}`,
+          index === 0 ? 'default' : ''
+        ))
+        .filter((preset) => preset.columnOrder.length > 0 || preset.visibleColumns.length > 0);
+      if (!presets.length) {
+        presets.push(this.createDefaultLayoutPreset(baseFields));
+      }
+      const active = String(rawState?.activePresetId || '').trim();
+      const hasActive = presets.some((preset) => preset.id === active);
+      return {
+        host: String(location?.origin || '').trim(),
+        appId: String(this.appId || ''),
+        activePresetId: hasActive ? active : presets[0].id,
+        presets,
+        updatedAt: Number(rawState?.updatedAt || Date.now())
+      };
+    }
+
+    async ensureOverlayLayoutState(baseFields) {
+      if (!this.appId) return null;
+      const key = this.getOverlayLayoutAppKey();
+      const map = { ...(await this.loadOverlayLayoutPresetMap()) };
+      const rawState = map[key];
+      let nextState = null;
+      if (rawState && typeof rawState === 'object') {
+        nextState = this.normalizeOverlayLayoutState(rawState, baseFields);
+      } else {
+        const baseCodes = this.getBaseFieldCodeList(baseFields);
+        const legacyPref = await this.getLatestLegacyColumnPref(baseCodes);
+        nextState = {
+          host: String(location?.origin || '').trim(),
+          appId: String(this.appId || ''),
+          activePresetId: 'default',
+          presets: [this.createDefaultLayoutPreset(
+            baseFields,
+            legacyPref,
+            this.isDetailSingleRowMode() ? 'detail' : 'list'
+          )],
+          updatedAt: Date.now()
+        };
+      }
+      this.overlayLayoutState = nextState;
+      map[key] = nextState;
+
+      const entries = Object.entries(map);
+      if (entries.length > MAX_LAYOUT_PRESET_APP_ENTRIES) {
+        entries.sort((a, b) => {
+          const at = Number(a[1]?.updatedAt || 0);
+          const bt = Number(b[1]?.updatedAt || 0);
+          return at - bt;
+        });
+        while (entries.length > MAX_LAYOUT_PRESET_APP_ENTRIES) {
+          const [oldKey] = entries.shift();
+          if (oldKey) delete map[oldKey];
+        }
+      }
+      await this.writeOverlayLayoutPresetMap(map);
+      this.updateLayoutPresetToolbarUi();
+      return nextState;
+    }
+
+    getActiveLayoutPreset() {
+      const state = this.overlayLayoutState;
+      if (!state || !Array.isArray(state.presets) || !state.presets.length) return null;
+      const activeId = String(state.activePresetId || '').trim();
+      const selected = state.presets.find((preset) => preset.id === activeId);
+      return selected || state.presets[0];
+    }
+
+    logOverlayPresetDebug(activePreset, resolvedFields, reason = '') {
+      try {
+        const presetId = String(activePreset?.id || '').trim() || '-';
+        const visibleColumns = Array.isArray(activePreset?.visibleColumns) ? activePreset.visibleColumns : [];
+        const columnOrder = Array.isArray(activePreset?.columnOrder) ? activePreset.columnOrder : [];
+        const resolvedColumns = Array.isArray(resolvedFields)
+          ? resolvedFields.map((field) => String(field?.code || '').trim()).filter(Boolean)
+          : [];
+        console.debug(`[PB] OVERLAY preset active id=${presetId}${reason ? ` reason=${reason}` : ''}`);
+        console.debug('[PB] OVERLAY preset visibleColumns=', visibleColumns);
+        console.debug('[PB] OVERLAY preset columnOrder=', columnOrder);
+        console.debug('[PB] OVERLAY resolvedColumns=', resolvedColumns);
+      } catch (_err) {
+        // ignore debug failures
+      }
+    }
+
+    resolvePresetColumnConfig(baseFields, preset) {
+      const baseCodes = this.getBaseFieldCodeList(baseFields);
+      const allowed = new Set(baseCodes);
+      const rawVisible = Array.isArray(preset?.visibleColumns) ? preset.visibleColumns : [];
+      const visible = Array.from(new Set(
+        rawVisible
+          .map((code) => String(code || '').trim())
+          .filter((code) => allowed.has(code))
+      ));
+      const visibleColumns = visible.length ? visible : baseCodes.slice();
+
+      const rawOrder = Array.isArray(preset?.columnOrder) ? preset.columnOrder : [];
+      const ordered = [];
+      const seen = new Set();
+      rawOrder.forEach((codeRaw) => {
+        const code = String(codeRaw || '').trim();
+        if (!code || !allowed.has(code) || !visibleColumns.includes(code) || seen.has(code)) return;
+        ordered.push(code);
+        seen.add(code);
+      });
+      visibleColumns.forEach((code) => {
+        if (seen.has(code)) return;
+        ordered.push(code);
+        seen.add(code);
+      });
+      const widths = preset?.columnWidths && typeof preset.columnWidths === 'object'
+        ? preset.columnWidths
+        : {};
+      return { baseCodes, visibleColumns, orderedCodes: ordered, widths };
+    }
+
+    buildVisibleFieldsFromPreset(baseFields, preset) {
+      const source = Array.isArray(baseFields) ? baseFields : [];
+      const fieldMap = new Map(source.map((field) => [String(field?.code || '').trim(), field]));
+      const config = this.resolvePresetColumnConfig(source, preset);
+      return config.orderedCodes
+        .map((code) => {
+          const field = fieldMap.get(code);
+          if (!field) return null;
+          const numeric = Number(config.widths?.[code]);
+          const width = Number.isFinite(numeric)
+            ? Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, Math.round(numeric)))
+            : DEFAULT_COLUMN_WIDTH;
+          return {
+            ...field,
+            required: Boolean(field.required),
+            choices: Array.isArray(field.choices) ? field.choices.map((choice) => String(choice)) : [],
+            editable: true,
+            width
+          };
+        })
+        .filter(Boolean);
+    }
+
+    async persistOverlayLayoutState() {
+      if (!this.overlayLayoutState || !this.appId) return;
+      const key = this.getOverlayLayoutAppKey();
+      const map = { ...(await this.loadOverlayLayoutPresetMap()) };
+      this.overlayLayoutState.updatedAt = Date.now();
+      map[key] = this.overlayLayoutState;
+      await this.writeOverlayLayoutPresetMap(map);
+      this.updateLayoutPresetToolbarUi();
+    }
+
+    toggleLayoutPresetMenu(forceOpen) {
+      const next = typeof forceOpen === 'boolean' ? forceOpen : !this.layoutPresetMenuOpen;
+      if (next === this.layoutPresetMenuOpen) return;
+      this.layoutPresetMenuOpen = next;
+      if (this.layoutPresetWrap) {
+        this.layoutPresetWrap.classList.toggle('is-open', this.layoutPresetMenuOpen);
+      }
+      if (this.layoutPresetMenuButton) {
+        this.layoutPresetMenuButton.setAttribute('aria-expanded', this.layoutPresetMenuOpen ? 'true' : 'false');
+      }
+      if (this.layoutPresetMenuOpen) {
+        document.addEventListener('mousedown', this.handleLayoutPresetMenuOutsidePointerDown, true);
+        document.addEventListener('keydown', this.handleLayoutPresetMenuKeyDown, true);
+      } else {
+        document.removeEventListener('mousedown', this.handleLayoutPresetMenuOutsidePointerDown, true);
+        document.removeEventListener('keydown', this.handleLayoutPresetMenuKeyDown, true);
+      }
+    }
+
+    closeLayoutPresetMenu() {
+      this.toggleLayoutPresetMenu(false);
+    }
+
+    handleLayoutPresetMenuOutsidePointerDown(event) {
+      if (!this.layoutPresetMenuOpen || !this.layoutPresetWrap) return;
+      if (this.layoutPresetWrap.contains(event.target)) return;
+      this.closeLayoutPresetMenu();
+    }
+
+    handleLayoutPresetMenuKeyDown(event) {
+      if (!this.layoutPresetMenuOpen) return;
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.closeLayoutPresetMenu();
+      this.layoutPresetMenuButton?.focus();
+    }
+
+    updateLayoutPresetToolbarUi() {
+      if (!this.layoutPresetWrap) return;
+      const hasState = Boolean(this.overlayLayoutState && Array.isArray(this.overlayLayoutState.presets));
+      const show = hasState && this.isListMode();
+      this.layoutPresetWrap.style.display = show ? 'inline-flex' : 'none';
+      if (!show) {
+        this.closeLayoutPresetMenu();
+        return;
+      }
+      if (this.layoutPresetLabel) {
+        this.layoutPresetLabel.textContent = `${resolveText(this.language, 'layoutPresetLabel')}:`;
+      }
+      if (this.layoutPresetSelect) {
+        const select = this.layoutPresetSelect;
+        const activeId = String(this.overlayLayoutState.activePresetId || '').trim();
+        const prev = String(select.value || '');
+        select.textContent = '';
+        this.overlayLayoutState.presets.forEach((preset) => {
+          const option = document.createElement('option');
+          option.value = String(preset.id || '');
+          option.textContent = String(preset.name || resolveText(this.language, 'layoutPresetDefault'));
+          select.appendChild(option);
+        });
+        const resolved = this.overlayLayoutState.presets.some((preset) => String(preset.id) === activeId)
+          ? activeId
+          : (this.overlayLayoutState.presets[0]?.id || '');
+        select.value = resolved || prev || '';
+        select.disabled = this.saving || this.overlayLayoutState.presets.length <= 1;
+      }
+      if (this.layoutPresetMenuButton) {
+        this.layoutPresetMenuButton.title = resolveText(this.language, 'layoutPresetMenu');
+        this.layoutPresetMenuButton.setAttribute('aria-label', resolveText(this.language, 'layoutPresetMenu'));
+        this.layoutPresetMenuButton.disabled = this.saving;
+      }
+      if (this.layoutPresetSaveButton) {
+        this.layoutPresetSaveButton.textContent = resolveText(this.language, 'layoutPresetSave');
+        this.layoutPresetSaveButton.disabled = this.saving;
+      }
+      if (this.layoutPresetDuplicateButton) {
+        this.layoutPresetDuplicateButton.textContent = resolveText(this.language, 'layoutPresetDuplicate');
+        this.layoutPresetDuplicateButton.disabled = this.saving || this.overlayLayoutState.presets.length >= MAX_LAYOUT_PRESET_COUNT;
+      }
+      if (this.layoutPresetRenameButton) {
+        this.layoutPresetRenameButton.textContent = resolveText(this.language, 'layoutPresetRename');
+        this.layoutPresetRenameButton.disabled = this.saving;
+      }
+      if (this.layoutPresetDeleteButton) {
+        this.layoutPresetDeleteButton.textContent = resolveText(this.language, 'layoutPresetDelete');
+        this.layoutPresetDeleteButton.disabled = this.saving || this.overlayLayoutState.presets.length <= 1;
+      }
+    }
+
+    async handleLayoutPresetSelectChanged() {
+      if (!this.layoutPresetSelect || !this.overlayLayoutState) return;
+      const nextId = String(this.layoutPresetSelect.value || '').trim();
+      if (!nextId || nextId === String(this.overlayLayoutState.activePresetId || '')) return;
+      this.overlayLayoutState.activePresetId = nextId;
+      await this.persistOverlayLayoutState();
+      console.debug('[PB] OVERLAY rerender reason=preset_switch');
+      await this.applyListFieldScope(this.listFieldScopeMode);
+    }
+
+    captureCurrentLayout() {
+      const visibleColumns = this.fields.map((field) => String(field?.code || '').trim()).filter(Boolean);
+      const columnOrder = visibleColumns.slice();
+      const columnWidths = this.collectColumnWidths();
+      return { visibleColumns, columnOrder, columnWidths };
+    }
+
+    async handleLayoutPresetSave() {
+      if (!this.overlayLayoutState) return;
+      const active = this.getActiveLayoutPreset();
+      if (!active) return;
+      const layout = this.captureCurrentLayout();
+      active.visibleColumns = layout.visibleColumns;
+      active.columnOrder = layout.columnOrder;
+      active.columnWidths = { ...(active.columnWidths || {}), ...(layout.columnWidths || {}) };
+      await this.persistOverlayLayoutState();
+      this.notify(resolveText(this.language, 'toastLayoutPresetSaved'));
+    }
+
+    async handleLayoutPresetDuplicate() {
+      if (!this.overlayLayoutState) return;
+      if (this.overlayLayoutState.presets.length >= MAX_LAYOUT_PRESET_COUNT) return;
+      const active = this.getActiveLayoutPreset();
+      if (!active) return;
+      const nextName = window.prompt(
+        resolveText(this.language, 'layoutPresetPromptName'),
+        `${active.name || resolveText(this.language, 'layoutPresetDefault')} copy`
+      );
+      if (nextName === null) return;
+      const preset = {
+        ...active,
+        id: this.createLayoutPresetId(),
+        name: this.sanitizeLayoutPresetName(nextName, resolveText(this.language, 'layoutPresetNewName')),
+        visibleColumns: Array.isArray(active.visibleColumns) ? active.visibleColumns.slice() : [],
+        columnOrder: Array.isArray(active.columnOrder) ? active.columnOrder.slice() : [],
+        columnWidths: { ...(active.columnWidths || {}) },
+        pinnedColumns: Array.isArray(active.pinnedColumns) ? active.pinnedColumns.slice() : []
+      };
+      this.overlayLayoutState.presets.push(preset);
+      this.overlayLayoutState.activePresetId = preset.id;
+      await this.persistOverlayLayoutState();
+      await this.applyListFieldScope(this.listFieldScopeMode);
+      this.notify(resolveText(this.language, 'toastLayoutPresetDuplicated'));
+    }
+
+    async handleLayoutPresetRename() {
+      if (!this.overlayLayoutState) return;
+      const active = this.getActiveLayoutPreset();
+      if (!active) return;
+      const nextName = window.prompt(resolveText(this.language, 'layoutPresetPromptName'), active.name || '');
+      if (nextName === null) return;
+      active.name = this.sanitizeLayoutPresetName(nextName, active.name || resolveText(this.language, 'layoutPresetDefault'));
+      await this.persistOverlayLayoutState();
+      this.notify(resolveText(this.language, 'toastLayoutPresetRenamed'));
+    }
+
+    async handleLayoutPresetDelete() {
+      if (!this.overlayLayoutState) return;
+      if (!Array.isArray(this.overlayLayoutState.presets) || this.overlayLayoutState.presets.length <= 1) return;
+      const activeId = String(this.overlayLayoutState.activePresetId || '').trim();
+      if (!window.confirm(resolveText(this.language, 'layoutPresetDeleteConfirm'))) return;
+      this.overlayLayoutState.presets = this.overlayLayoutState.presets.filter((preset) => String(preset.id || '') !== activeId);
+      if (!this.overlayLayoutState.presets.length) {
+        return;
+      }
+      this.overlayLayoutState.activePresetId = String(this.overlayLayoutState.presets[0].id || '');
+      await this.persistOverlayLayoutState();
+      await this.applyListFieldScope(this.listFieldScopeMode);
+      this.notify(resolveText(this.language, 'toastLayoutPresetDeleted'));
     }
 
     getRecordFetchFieldCodes() {
@@ -1512,36 +2920,12 @@
     }
 
     sortFieldsByViewOrder(fields) {
-      const source = Array.isArray(fields) ? fields : [];
-      const orderIndex = new Map();
-      this.viewFieldOrder.forEach((code, index) => {
-        orderIndex.set(code, index);
-      });
-      return source.slice().sort((a, b) => {
-        const aIdx = orderIndex.has(a.code) ? orderIndex.get(a.code) : Number.MAX_SAFE_INTEGER;
-        const bIdx = orderIndex.has(b.code) ? orderIndex.get(b.code) : Number.MAX_SAFE_INTEGER;
-        if (aIdx !== bIdx) return aIdx - bIdx;
-        return source.indexOf(a) - source.indexOf(b);
-      });
+      return Array.isArray(fields) ? fields.slice() : [];
     }
 
-    getListScopeBaseFields(mode) {
-      const normalized = this.normalizeListFieldScopeMode(mode);
+    getListScopeBaseFields(_mode) {
       const allSorted = this.sortFieldsByViewOrder(this.listAllFields);
-      if (normalized === LIST_FIELD_SCOPE_ALL_FIELDS) {
-        return allSorted;
-      }
-      const viewOnly = [];
-      const map = new Map(allSorted.map((field) => [String(field.code || ''), field]));
-      const seen = new Set();
-      this.viewFieldOrder.forEach((code) => {
-        if (seen.has(code)) return;
-        const field = map.get(code);
-        if (!field) return;
-        viewOnly.push(field);
-        seen.add(code);
-      });
-      return viewOnly.length ? viewOnly : allSorted;
+      return allSorted;
     }
 
     async applyListFieldScope(mode, options = {}) {
@@ -1558,39 +2942,12 @@
       const baseFields = this.getListScopeBaseFields(normalized);
       const baseCodes = baseFields.map((field) => String(field.code || '').trim()).filter(Boolean);
       this.defaultFieldCodes = baseCodes.slice();
-      const savedPref = await this.getSavedColumnPref(this.defaultFieldCodes);
-      const sorted = baseFields.slice();
-      const savedOrder = savedPref?.order || [];
-      if (savedOrder.length) {
-        const savedIndex = new Map(savedOrder.map((code, index) => [code, index]));
-        const defaultIndex = new Map(this.defaultFieldCodes.map((code, index) => [code, index]));
-        sorted.sort((a, b) => {
-          const ap = savedIndex.has(a.code) ? savedIndex.get(a.code) : Number.MAX_SAFE_INTEGER;
-          const bp = savedIndex.has(b.code) ? savedIndex.get(b.code) : Number.MAX_SAFE_INTEGER;
-          if (ap !== bp) return ap - bp;
-          const da = defaultIndex.get(a.code) ?? Number.MAX_SAFE_INTEGER;
-          const db = defaultIndex.get(b.code) ?? Number.MAX_SAFE_INTEGER;
-          return da - db;
-        });
-      }
-      const widthMap = new Map();
-      if (savedPref?.widths) {
-        Object.entries(savedPref.widths).forEach(([code, value]) => {
-          const numeric = Number(value);
-          if (Number.isFinite(numeric)) {
-            widthMap.set(code, Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, numeric)));
-          }
-        });
-      }
-      this.fields = sorted.map((field) => ({
-        ...field,
-        required: Boolean(field.required),
-        choices: Array.isArray(field.choices) ? field.choices.map((choice) => String(choice)) : [],
-        editable: true,
-        width: widthMap.get(field.code) || DEFAULT_COLUMN_WIDTH
-      }));
+      await this.ensureOverlayLayoutState(baseFields);
+      const activePreset = this.getActiveLayoutPreset();
+      this.fields = this.buildVisibleFieldsFromPreset(baseFields, activePreset);
+      this.logOverlayPresetDebug(activePreset, this.fields, 'apply_list_scope');
       this.rebuildFieldMaps();
-      this.updateFieldScopeToggleUi();
+      this.updateLayoutPresetToolbarUi();
       if (this.columnButton) {
         this.columnButton.disabled = !this.fields.length;
       }
@@ -1641,8 +2998,8 @@
     async setListFieldScopeMode(mode) {
       if (!this.isListMode()) return;
       const normalized = this.normalizeListFieldScopeMode(mode);
-      if (normalized === this.listFieldScopeMode) {
-        this.updateFieldScopeToggleUi();
+      if (normalized === this.listFieldScopeMode && this.fields.length) {
+        this.updateLayoutPresetToolbarUi();
         return;
       }
       await this.applyListFieldScope(normalized);
@@ -1732,7 +3089,7 @@
       if (this.columnButton) {
         this.columnButton.textContent = resolveText(this.language, 'btnColumns');
       }
-      this.updateFieldScopeToggleUi();
+      this.updateLayoutPresetToolbarUi();
       this.updateLayoutToggleUi();
       if (this.addRowButton) {
         this.addRowButton.textContent = resolveText(this.language, 'btnAddRow');
@@ -1899,15 +3256,27 @@
       }
       this.appId = contextRes.appId;
       this.appName = contextRes.appName || '';
-      if (this.titleElement) {
-        this.titleElement.textContent = this.appName || resolveText(this.language, 'title');
-      }
       const detailContext = this.isDetailSingleRowMode() ? this.resolveDetailRecordContext() : null;
       if (this.isDetailSingleRowMode() && !detailContext) {
         throw new Error('Detail context unavailable');
       }
       if (detailContext?.appId && detailContext.appId !== String(this.appId || '').trim()) {
         this.appId = detailContext.appId;
+      }
+      const metadataRes = await this.getMetadataBundle({
+        needApp: true,
+        needViews: this.isListMode(),
+        needFields: true
+      });
+      const metadataBundle = metadataRes?.bundle && typeof metadataRes.bundle === 'object'
+        ? metadataRes.bundle
+        : null;
+      const metadataAppName = String(metadataBundle?.app?.name || '').trim();
+      if (metadataAppName) {
+        this.appName = metadataAppName;
+      }
+      if (this.titleElement) {
+        this.titleElement.textContent = this.appName || resolveText(this.language, 'title');
       }
       const detailQuery = detailContext ? `$id = "${String(detailContext.recordId).replace(/"/g, '\\"')}"` : '';
       const currentQuery = this.isDetailSingleRowMode() ? detailQuery : (contextRes.query || '');
@@ -1918,24 +3287,45 @@
       let resolvedQuery = currentQuery;
       let viewFieldOrder = [];
       if (!this.isDetailSingleRowMode()) {
+        const viewInfoFromMeta = this.resolveViewInfoFromMetadata(metadataBundle?.views?.raw, {
+          appId: this.appId,
+          viewId,
+          currentQuery
+        });
+        if (viewInfoFromMeta) {
+          if (typeof viewInfoFromMeta.query === 'string') {
+            resolvedQuery = viewInfoFromMeta.query;
+          }
+          if (Array.isArray(viewInfoFromMeta.fieldOrder)) {
+            viewFieldOrder = viewInfoFromMeta.fieldOrder;
+          }
+          if (viewInfoFromMeta.viewId) {
+            this.viewId = String(viewInfoFromMeta.viewId);
+          }
+          if (viewInfoFromMeta.viewName) {
+            this.viewName = String(viewInfoFromMeta.viewName);
+          }
+        }
         try {
-          const viewInfo = await this.postFn('EXCEL_GET_VIEW_INFO', {
-            appId: this.appId,
-            viewId,
-            currentQuery
-          });
-          if (viewInfo?.ok) {
-            if (typeof viewInfo.query === 'string') {
-              resolvedQuery = viewInfo.query;
-            }
-            if (Array.isArray(viewInfo.fieldOrder)) {
-              viewFieldOrder = viewInfo.fieldOrder;
-            }
-            if (viewInfo.viewId) {
-              this.viewId = String(viewInfo.viewId);
-            }
-            if (viewInfo.viewName) {
-              this.viewName = String(viewInfo.viewName);
+          if (!viewInfoFromMeta) {
+            const viewInfo = await this.postFn('EXCEL_GET_VIEW_INFO', {
+              appId: this.appId,
+              viewId,
+              currentQuery
+            });
+            if (viewInfo?.ok) {
+              if (typeof viewInfo.query === 'string') {
+                resolvedQuery = viewInfo.query;
+              }
+              if (Array.isArray(viewInfo.fieldOrder)) {
+                viewFieldOrder = viewInfo.fieldOrder;
+              }
+              if (viewInfo.viewId) {
+                this.viewId = String(viewInfo.viewId);
+              }
+              if (viewInfo.viewName) {
+                this.viewName = String(viewInfo.viewName);
+              }
             }
           }
         } catch (_e) {
@@ -1957,10 +3347,12 @@
       this.pageOffset = 0;
       this.totalCount = 0;
 
-      const fieldsMetaRes = await this.postFn('EXCEL_GET_FIELDS_META', { appId: this.appId });
       let candidateFields = [];
-      if (fieldsMetaRes?.ok && Array.isArray(fieldsMetaRes.fieldsMeta)) {
-        const allMetaFields = fieldsMetaRes.fieldsMeta
+      const cachedFieldsMeta = Array.isArray(metadataBundle?.fields?.normalized)
+        ? metadataBundle.fields.normalized
+        : [];
+      if (cachedFieldsMeta.length) {
+        const allMetaFields = cachedFieldsMeta
           .map((f) => ({
             code: f.code,
             label: f.label || '',
@@ -1983,24 +3375,50 @@
 
         candidateFields = allMetaFields.filter((f) => overlayConfig.allowedTypes.has(f.type));
       } else {
-        const fieldsRes = await this.postFn('EXCEL_GET_FIELDS', { appId: this.appId });
-        if (!fieldsRes?.ok) throw new Error('Failed to get fields');
-        candidateFields = Array.isArray(fieldsRes.fields)
-          ? fieldsRes.fields.filter((f) => overlayConfig.allowedTypes.has(f.type))
-          : [];
-        if (!candidateFields.length && this.isListMode()) {
-          const fallbackCodes = Array.from(new Set(
-            (Array.isArray(this.viewFieldOrder) ? this.viewFieldOrder : [])
-              .map((code) => String(code || '').trim())
-              .filter(Boolean)
-          ));
-          candidateFields = fallbackCodes.map((code) => ({
-            code,
-            label: code,
-            type: 'SINGLE_LINE_TEXT',
-            required: false,
-            choices: []
-          }));
+        const fieldsMetaRes = await this.postFn('EXCEL_GET_FIELDS_META', { appId: this.appId });
+        if (fieldsMetaRes?.ok && Array.isArray(fieldsMetaRes.fieldsMeta)) {
+          const allMetaFields = fieldsMetaRes.fieldsMeta
+            .map((f) => ({
+              code: f.code,
+              label: f.label || '',
+              type: f.type || '',
+              required: Boolean(f.required),
+              choices: Array.isArray(f.choices) ? f.choices : [],
+              lookupAuto: Boolean(f.lookupAuto),
+              lookup: f.lookup ? { ...f.lookup } : undefined,
+              subtable: f.subtable && Array.isArray(f.subtable.fields)
+                ? {
+                  fields: f.subtable.fields.map((child) => ({
+                    ...child,
+                    required: Boolean(child?.required),
+                    choices: Array.isArray(child.choices) ? child.choices : []
+                  }))
+                }
+                : undefined
+            }))
+            .filter((f) => this.shouldIncludeField(f));
+
+          candidateFields = allMetaFields.filter((f) => overlayConfig.allowedTypes.has(f.type));
+        } else {
+          const fieldsRes = await this.postFn('EXCEL_GET_FIELDS', { appId: this.appId });
+          if (!fieldsRes?.ok) throw new Error('Failed to get fields');
+          candidateFields = Array.isArray(fieldsRes.fields)
+            ? fieldsRes.fields.filter((f) => overlayConfig.allowedTypes.has(f.type))
+            : [];
+          if (!candidateFields.length && this.isListMode()) {
+            const fallbackCodes = Array.from(new Set(
+              (Array.isArray(this.viewFieldOrder) ? this.viewFieldOrder : [])
+                .map((code) => String(code || '').trim())
+                .filter(Boolean)
+            ));
+            candidateFields = fallbackCodes.map((code) => ({
+              code,
+              label: code,
+              type: 'SINGLE_LINE_TEXT',
+              required: false,
+              choices: []
+            }));
+          }
         }
       }
       this.fieldsMeta = candidateFields.map((field) => ({ ...field }));
@@ -2020,38 +3438,11 @@
         await this.applyListFieldScope(this.listFieldScopeMode, { skipRender: true });
       } else {
         this.listAllFields = [];
-        const sorted = this.sortFieldsByViewOrder(this.fieldsMeta);
-        this.defaultFieldCodes = sorted.map((field) => field.code);
-        const savedPref = await this.getSavedColumnPref(this.defaultFieldCodes);
-        const savedOrder = savedPref?.order || null;
-        if (savedOrder?.length) {
-          const savedIndex = new Map(savedOrder.map((code, index) => [code, index]));
-          const defaultIndex = new Map(this.defaultFieldCodes.map((code, index) => [code, index]));
-          sorted.sort((a, b) => {
-            const ap = savedIndex.has(a.code) ? savedIndex.get(a.code) : Number.MAX_SAFE_INTEGER;
-            const bp = savedIndex.has(b.code) ? savedIndex.get(b.code) : Number.MAX_SAFE_INTEGER;
-            if (ap !== bp) return ap - bp;
-            const da = defaultIndex.get(a.code) ?? Number.MAX_SAFE_INTEGER;
-            const db = defaultIndex.get(b.code) ?? Number.MAX_SAFE_INTEGER;
-            return da - db;
-          });
-        }
-        const widthMap = new Map();
-        if (savedPref?.widths) {
-          Object.entries(savedPref.widths).forEach(([code, value]) => {
-            const numeric = Number(value);
-            if (Number.isFinite(numeric)) {
-              widthMap.set(code, Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, numeric)));
-            }
-          });
-        }
-        this.fields = sorted.map((field) => ({
-          ...field,
-          required: Boolean(field.required),
-          choices: Array.isArray(field.choices) ? field.choices.map((choice) => String(choice)) : [],
-          editable: true,
-          width: widthMap.get(field.code) || DEFAULT_COLUMN_WIDTH
-        }));
+        const baseFields = this.fieldsMeta.map((field) => ({ ...field }));
+        this.defaultFieldCodes = baseFields.map((field) => String(field.code || '').trim()).filter(Boolean);
+        await this.ensureOverlayLayoutState(baseFields);
+        const activePreset = this.getActiveLayoutPreset();
+        this.fields = this.buildVisibleFieldsFromPreset(baseFields, activePreset);
       }
       this.rebuildFieldMaps();
       await this.loadPermissions();
@@ -2070,6 +3461,7 @@
       if (this.columnButton) {
         this.columnButton.disabled = !this.fields.length;
       }
+      this.updateLayoutPresetToolbarUi();
     }
 
     computeViewKey(viewIdValue, viewNameValue, fallbackParam) {
@@ -2609,7 +4001,8 @@
       const recordsRes = await this.postFn('EXCEL_GET_RECORDS', {
         appId: this.appId,
         fields: fieldCodes,
-        query: pagedQuery
+        query: pagedQuery,
+        __pbTrigger: 'overlay_open'
       });
       if (!recordsRes?.ok) {
         const errorCode = recordsRes?.errorCode || '';
@@ -2844,7 +4237,11 @@
       for (let i = 0; i < ids.length; i += chunkSize) {
         const chunk = ids.slice(i, i + chunkSize);
         try {
-          const res = await this.postFn('EXCEL_EVALUATE_RECORD_ACL', { appId, ids: chunk });
+          const res = await this.postFn('EXCEL_EVALUATE_RECORD_ACL', {
+            appId,
+            ids: chunk,
+            __pbTrigger: 'acl_check'
+          });
           if (!res?.ok) {
             failed = true;
             console.warn('[kintone-excel-overlay] failed to evaluate record acl', {
@@ -3135,52 +4532,79 @@
     }
 
     async getSavedColumnPref(defaultCodes = []) {
-      const map = await this.loadColumnPrefMap();
-      const entry = map[this.getColumnPrefKey()];
-      if (!entry) return null;
-      const order = Array.isArray(entry.order) ? entry.order : [];
+      const baseFields = this.getListScopeBaseFields(this.listFieldScopeMode);
+      await this.ensureOverlayLayoutState(baseFields.length ? baseFields : this.fieldsMeta);
+      const active = this.getActiveLayoutPreset();
+      if (!active) return null;
       const allowed = new Set(defaultCodes.length ? defaultCodes : this.fields.map((f) => f.code));
-      const filteredOrder = order.filter((code) => allowed.has(code));
-      const widths = entry.widths && typeof entry.widths === 'object' ? entry.widths : null;
-      return { order: filteredOrder, widths, savedAt: entry.savedAt || 0 };
+      const order = Array.isArray(active.columnOrder) ? active.columnOrder : [];
+      const filteredOrder = order
+        .map((code) => String(code || '').trim())
+        .filter((code) => allowed.has(code));
+      const widths = active.columnWidths && typeof active.columnWidths === 'object'
+        ? { ...active.columnWidths }
+        : null;
+      return { order: filteredOrder, widths, savedAt: this.overlayLayoutState?.updatedAt || 0 };
     }
 
     async persistColumnPref(order, widths) {
       if (!Array.isArray(order) || !order.length) return;
-      const map = { ...(await this.loadColumnPrefMap()) };
-      const key = this.getColumnPrefKey();
-      const widthPayload = widths && typeof widths === 'object' && Object.keys(widths).length ? { ...widths } : undefined;
-      const entry = {
-        order: order.slice(),
-        appId: this.appId || '',
-        viewKey: this.viewKey || '',
-        viewName: this.viewName || '',
-        appName: this.appName || '',
-        savedAt: Date.now()
-      };
-      if (widthPayload) entry.widths = widthPayload;
-      map[key] = entry;
-      const entries = Object.entries(map);
-      if (entries.length > MAX_COLUMN_PREF_ENTRIES) {
-        entries.sort((a, b) => {
-          const aTime = a[1]?.savedAt || 0;
-          const bTime = b[1]?.savedAt || 0;
-          return aTime - bTime;
+      const baseFields = this.getListScopeBaseFields(this.listFieldScopeMode);
+      const sourceFields = baseFields.length ? baseFields : this.fieldsMeta;
+      await this.ensureOverlayLayoutState(sourceFields);
+      const active = this.getActiveLayoutPreset();
+      if (!active) return;
+      const baseCodes = this.getBaseFieldCodeList(sourceFields);
+      const allowed = new Set(baseCodes);
+      const visibleSet = new Set(
+        Array.isArray(active.visibleColumns) && active.visibleColumns.length
+          ? active.visibleColumns
+          : this.fields.map((field) => String(field?.code || '').trim()).filter(Boolean)
+      );
+      active.visibleColumns = Array.from(visibleSet).filter((code) => allowed.has(code));
+      const nextOrder = [];
+      const seen = new Set();
+      order.forEach((codeRaw) => {
+        const code = String(codeRaw || '').trim();
+        if (!code || !allowed.has(code) || !visibleSet.has(code) || seen.has(code)) return;
+        nextOrder.push(code);
+        seen.add(code);
+      });
+      active.visibleColumns.forEach((code) => {
+        if (seen.has(code)) return;
+        nextOrder.push(code);
+        seen.add(code);
+      });
+      active.columnOrder = nextOrder;
+      const mergedWidths = active.columnWidths && typeof active.columnWidths === 'object'
+        ? { ...active.columnWidths }
+        : {};
+      if (widths && typeof widths === 'object') {
+        Object.entries(widths).forEach(([codeRaw, valueRaw]) => {
+          const code = String(codeRaw || '').trim();
+          if (!code || !allowed.has(code)) return;
+          const numeric = Number(valueRaw);
+          if (!Number.isFinite(numeric)) return;
+          mergedWidths[code] = Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, Math.round(numeric)));
         });
-        while (entries.length > MAX_COLUMN_PREF_ENTRIES) {
-          const [oldKey] = entries.shift();
-          if (oldKey) delete map[oldKey];
-        }
       }
-      await this.writeColumnPrefMap(map);
+      active.columnWidths = mergedWidths;
+      await this.persistOverlayLayoutState();
+      this.updateLayoutPresetToolbarUi();
     }
 
     async removeColumnOrder() {
-      const map = { ...(await this.loadColumnPrefMap()) };
-      const key = this.getColumnPrefKey();
-      if (!Object.prototype.hasOwnProperty.call(map, key)) return;
-      delete map[key];
-      await this.writeColumnPrefMap(map);
+      const baseFields = this.getListScopeBaseFields(this.listFieldScopeMode);
+      const sourceFields = baseFields.length ? baseFields : this.fieldsMeta;
+      await this.ensureOverlayLayoutState(sourceFields);
+      const active = this.getActiveLayoutPreset();
+      if (!active) return;
+      const baseCodes = this.getBaseFieldCodeList(sourceFields);
+      active.visibleColumns = baseCodes.slice();
+      active.columnOrder = baseCodes.slice();
+      active.columnWidths = {};
+      await this.persistOverlayLayoutState();
+      this.updateLayoutPresetToolbarUi();
     }
 
     applyColumnOrder(order, options = {}) {
@@ -3262,6 +4686,16 @@
       previewScroll.appendChild(previewRow);
       preview.appendChild(previewScroll);
 
+      const visibilityWrap = document.createElement('div');
+      visibilityWrap.className = 'pb-overlay__column-visibility';
+      const visibilityTitle = document.createElement('div');
+      visibilityTitle.className = 'pb-overlay__column-visibility-title';
+      visibilityTitle.textContent = resolveText(this.language, 'columnsVisibilityTitle');
+      const visibilityList = document.createElement('div');
+      visibilityList.className = 'pb-overlay__column-visibility-list';
+      visibilityWrap.appendChild(visibilityTitle);
+      visibilityWrap.appendChild(visibilityList);
+
       const actions = document.createElement('div');
       actions.className = 'pb-overlay__column-panel-actions';
       const autoBtn = document.createElement('button');
@@ -3286,13 +4720,22 @@
 
       panel.appendChild(header);
       panel.appendChild(preview);
+      panel.appendChild(visibilityWrap);
       panel.appendChild(actions);
       layer.appendChild(panel);
       this.surface.appendChild(layer);
 
-      this.columnOrderDraft = this.fields.map((field) => field.code);
+      const activePreset = this.getActiveLayoutPreset();
+      const baseFields = this.getListScopeBaseFields(this.listFieldScopeMode);
+      const sourceFields = baseFields.length ? baseFields : this.fieldsMeta;
+      const sourceCodes = this.getBaseFieldCodeList(sourceFields);
+      const config = this.resolvePresetColumnConfig(sourceFields, activePreset);
+      this.columnDraftAllFieldCodes = sourceCodes.slice();
+      this.columnVisibilityDraft = new Set(config.visibleColumns);
+      this.columnOrderDraft = config.orderedCodes.slice();
       this.columnPanelLayer = layer;
       this.columnPreviewRow = previewRow;
+      this.columnVisibilityList = visibilityList;
       previewRow.addEventListener('dragover', (event) => {
         if (!this.draggingColumnCode) return;
         if (event.target.closest('.pb-overlay__column-chip')) return;
@@ -3306,6 +4749,7 @@
         this.handleColumnDrop(null, { append: true });
       });
       this.renderColumnPreview();
+      this.renderColumnVisibilityList();
 
       setTimeout(() => {
         saveBtn.focus();
@@ -3318,7 +4762,10 @@
       }
       this.columnPanelLayer = null;
       this.columnPreviewRow = null;
+      this.columnVisibilityList = null;
       this.draggingColumnCode = null;
+      this.columnVisibilityDraft = new Set();
+      this.columnDraftAllFieldCodes = [];
       if (!skipFocus && this.columnButton) {
         this.columnButton.focus();
       }
@@ -3335,13 +4782,18 @@
         return;
       }
       this.columnOrderDraft.forEach((code, index) => {
-        const field = this.fieldMap.get(code);
+        const field = this.fieldMap.get(code) || this.fieldsMetaMap.get(code);
+        const activePreset = this.getActiveLayoutPreset();
+        const presetWidth = Number(activePreset?.columnWidths?.[code]);
+        const baseWidth = Number.isFinite(presetWidth)
+          ? Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, Math.round(presetWidth)))
+          : (field?.width || DEFAULT_COLUMN_WIDTH);
         const chip = document.createElement('div');
         chip.className = 'pb-overlay__column-chip';
         chip.draggable = true;
         chip.dataset.code = code;
-        chip.dataset.width = String(field?.width || DEFAULT_COLUMN_WIDTH);
-        chip.style.width = `${field?.width || DEFAULT_COLUMN_WIDTH}px`;
+        chip.dataset.width = String(baseWidth);
+        chip.style.width = `${baseWidth}px`;
         chip.setAttribute('aria-label', `${columnLabel(index)} ${field?.label || code}`);
 
         const letter = document.createElement('span');
@@ -3354,7 +4806,7 @@
 
         const widthValue = document.createElement('span');
         widthValue.className = 'pb-overlay__column-chip-width';
-        widthValue.textContent = `${field?.width || DEFAULT_COLUMN_WIDTH}px`;
+        widthValue.textContent = `${baseWidth}px`;
 
         chip.append(letter, label, widthValue);
 
@@ -3393,7 +4845,7 @@
         resizer.setAttribute('role', 'separator');
         resizer.setAttribute('aria-label', `${field?.label || code} width handle`);
         let startX = 0;
-        let startWidth = field?.width || DEFAULT_COLUMN_WIDTH;
+        let startWidth = baseWidth;
         const onMouseMove = (event) => {
           const delta = event.clientX - startX;
           const nextWidth = Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, startWidth + delta));
@@ -3412,13 +4864,45 @@
           event.preventDefault();
           event.stopPropagation();
           startX = event.clientX;
-          startWidth = Number(chip.dataset.width || field?.width || DEFAULT_COLUMN_WIDTH);
+          startWidth = Number(chip.dataset.width || baseWidth);
           document.addEventListener('mousemove', onMouseMove);
           document.addEventListener('mouseup', onMouseUp);
         });
 
         chip.appendChild(resizer);
         this.columnPreviewRow.appendChild(chip);
+      });
+    }
+
+    renderColumnVisibilityList() {
+      if (!this.columnVisibilityList) return;
+      this.columnVisibilityList.textContent = '';
+      const allCodes = Array.isArray(this.columnDraftAllFieldCodes) ? this.columnDraftAllFieldCodes : [];
+      if (!allCodes.length) return;
+      allCodes.forEach((code) => {
+        const field = this.fieldsMetaMap.get(code) || this.fieldMap.get(code);
+        const row = document.createElement('label');
+        row.className = 'pb-overlay__column-visibility-item';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = this.columnVisibilityDraft.has(code);
+        input.addEventListener('change', () => {
+          if (input.checked) {
+            this.columnVisibilityDraft.add(code);
+            if (!this.columnOrderDraft.includes(code)) {
+              this.columnOrderDraft.push(code);
+            }
+          } else {
+            this.columnVisibilityDraft.delete(code);
+            this.columnOrderDraft = this.columnOrderDraft.filter((value) => value !== code);
+          }
+          this.renderColumnPreview();
+        });
+        const text = document.createElement('span');
+        text.textContent = field?.label || code;
+        row.appendChild(input);
+        row.appendChild(text);
+        this.columnVisibilityList.appendChild(row);
       });
     }
 
@@ -3443,6 +4927,14 @@
 
     applyColumnWidth(code, width) {
       const clamped = Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, Math.round(width)));
+      const activePreset = this.getActiveLayoutPreset();
+      if (activePreset) {
+        const nextWidths = activePreset.columnWidths && typeof activePreset.columnWidths === 'object'
+          ? { ...activePreset.columnWidths }
+          : {};
+        nextWidths[code] = clamped;
+        activePreset.columnWidths = nextWidths;
+      }
       const field = this.fieldMap.get(code);
       if (field) {
         field.width = clamped;
@@ -3529,9 +5021,30 @@
         return;
       }
       try {
+        const visibleCodes = Array.from(this.columnVisibilityDraft);
+        const activePreset = this.getActiveLayoutPreset();
+        if (activePreset) {
+          const orderedVisible = this.columnOrderDraft.filter((code) => visibleCodes.includes(code));
+          activePreset.visibleColumns = visibleCodes.slice();
+          activePreset.columnOrder = orderedVisible.slice();
+        }
         const widths = this.collectColumnWidths();
         await this.persistColumnPref(this.columnOrderDraft, widths);
-        this.applyColumnOrder(this.columnOrderDraft);
+        console.debug('[PB] OVERLAY rerender reason=preset_save');
+        if (this.isListMode()) {
+          await this.applyListFieldScope(this.listFieldScopeMode);
+        } else {
+          const baseFields = this.fieldsMeta.map((field) => ({ ...field }));
+          await this.ensureOverlayLayoutState(baseFields);
+          const active = this.getActiveLayoutPreset();
+          this.defaultFieldCodes = this.getBaseFieldCodeList(baseFields);
+          this.fields = this.buildVisibleFieldsFromPreset(baseFields, active);
+          this.logOverlayPresetDebug(active, this.fields, 'preset_save_non_list');
+          this.rebuildFieldMaps();
+          this.renderGrid();
+          this.updateVirtualRows(true);
+          this.syncTableWidth();
+        }
         this.notify(resolveText(this.language, 'toastColumnsSaved'));
       } catch (error) {
         console.error('[kintone-excel-overlay] failed to save column order', error);
@@ -3544,16 +5057,24 @@
     async handleColumnReset() {
       try {
         await this.removeColumnOrder();
-        if (this.defaultFieldCodes.length) {
-          this.applyColumnOrder(this.defaultFieldCodes, { updateDraft: false });
-          this.fields.forEach((field) => {
-            field.width = DEFAULT_COLUMN_WIDTH;
-          });
+        if (this.isListMode()) {
+          await this.applyListFieldScope(this.listFieldScopeMode);
+        } else {
+          const baseFields = this.fieldsMeta.map((field) => ({ ...field }));
+          await this.ensureOverlayLayoutState(baseFields);
+          const activePreset = this.getActiveLayoutPreset();
+          this.defaultFieldCodes = this.getBaseFieldCodeList(baseFields);
+          this.fields = this.buildVisibleFieldsFromPreset(baseFields, activePreset);
+          this.rebuildFieldMaps();
           this.renderGrid();
+          this.updateVirtualRows(true);
           this.syncTableWidth();
         }
         this.columnOrderDraft = this.fields.map((field) => field.code);
+        this.columnDraftAllFieldCodes = this.defaultFieldCodes.slice();
+        this.columnVisibilityDraft = new Set(this.columnOrderDraft);
         this.renderColumnPreview();
+        this.renderColumnVisibilityList();
         this.notify(resolveText(this.language, 'toastColumnsReset'));
       } catch (error) {
         console.error('[kintone-excel-overlay] failed to reset column order', error);
@@ -6391,7 +7912,8 @@
       const target = event.target;
       if (!this.root?.contains(target)) return;
       if (this.saving) {
-        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        const keyLower = String(event.key || '').toLowerCase();
+        if ((event.ctrlKey || event.metaKey) && keyLower === 's') {
           event.preventDefault();
           event.stopPropagation();
           event.stopImmediatePropagation();
@@ -6574,10 +8096,11 @@
             return;
           }
         }
-        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+        const keyLower = String(event.key || '').toLowerCase();
+        if ((event.ctrlKey || event.metaKey) && keyLower === 'c') {
           return;
         }
-        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
+        if ((event.ctrlKey || event.metaKey) && keyLower === 'v') {
           event.preventDefault();
           event.stopPropagation();
           event.stopImmediatePropagation();
@@ -6609,7 +8132,8 @@
         return;
       }
 
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+      const globalKeyLower = String(event.key || '').toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && globalKeyLower === 'c') {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -6617,7 +8141,7 @@
         this.copySelectionToClipboard();
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
+      if ((event.ctrlKey || event.metaKey) && globalKeyLower === 'v') {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -7174,12 +8698,19 @@
       if (this.columnButton) {
         this.columnButton.disabled = saving || !this.fields.length;
       }
-      if (this.fieldScopeViewButton) {
-        this.fieldScopeViewButton.disabled = saving;
+      if (this.layoutPresetSelect) {
+        this.layoutPresetSelect.disabled = saving || !this.overlayLayoutState || this.overlayLayoutState.presets.length <= 1;
       }
-      if (this.fieldScopeAllButton) {
-        this.fieldScopeAllButton.disabled = saving;
+      if (this.layoutPresetMenuButton) this.layoutPresetMenuButton.disabled = saving;
+      if (this.layoutPresetSaveButton) this.layoutPresetSaveButton.disabled = saving;
+      if (this.layoutPresetDuplicateButton) {
+        this.layoutPresetDuplicateButton.disabled = saving || !this.overlayLayoutState || this.overlayLayoutState.presets.length >= MAX_LAYOUT_PRESET_COUNT;
       }
+      if (this.layoutPresetRenameButton) this.layoutPresetRenameButton.disabled = saving;
+      if (this.layoutPresetDeleteButton) {
+        this.layoutPresetDeleteButton.disabled = saving || !this.overlayLayoutState || this.overlayLayoutState.presets.length <= 1;
+      }
+      if (saving) this.closeLayoutPresetMenu();
       if (this.gridLayoutButton) {
         this.gridLayoutButton.disabled = saving;
       }
@@ -7236,7 +8767,8 @@
         const response = await this.postFn('EXCEL_GET_RECORDS_BY_IDS', {
           appId: this.appId,
           ids: chunk,
-          fields
+          fields,
+          __pbTrigger: 'save_refetch'
         });
         if (!response?.ok) {
           console.warn('[kintone-excel-overlay] refetchRowsByIds failed', {
@@ -7288,7 +8820,8 @@
             attempt += 1;
             const response = await this.postFn('EXCEL_PUT_RECORDS', {
               appId: this.appId,
-              records: batch
+              records: batch,
+              __pbTrigger: 'save_click'
             });
             if (response?.ok) {
               this.applySaveResult(batch, response.result);
@@ -7336,7 +8869,8 @@
         for (const batch of postBatches) {
           const response = await this.postFn('EXCEL_POST_RECORDS', {
             appId: this.appId,
-            records: batch.map((entry) => ({ ...entry.record }))
+            records: batch.map((entry) => ({ ...entry.record })),
+            __pbTrigger: 'save_click'
           });
           if (!response?.ok) {
             this.markBatchError(batch);
@@ -7352,7 +8886,8 @@
         for (const batch of deleteBatches) {
           const response = await this.postFn('EXCEL_DELETE_RECORDS', {
             appId: this.appId,
-            ids: batch
+            ids: batch,
+            __pbTrigger: 'save_click'
           });
           if (!response?.ok) {
             throw new Error(response?.error || 'delete failed');
@@ -7583,6 +9118,16 @@
       this.fieldScopeToggleWrap = null;
       this.fieldScopeViewButton = null;
       this.fieldScopeAllButton = null;
+      this.layoutPresetWrap = null;
+      this.layoutPresetLabel = null;
+      this.layoutPresetSelect = null;
+      this.layoutPresetMenuButton = null;
+      this.layoutPresetMenu = null;
+      this.layoutPresetMenuOpen = false;
+      this.layoutPresetSaveButton = null;
+      this.layoutPresetDuplicateButton = null;
+      this.layoutPresetRenameButton = null;
+      this.layoutPresetDeleteButton = null;
       this.prevPageButton = null;
       this.nextPageButton = null;
       this.pageLabelElement = null;
@@ -7594,7 +9139,7 @@
       this.query = '';
       this.runtimeMode = OVERLAY_RUNTIME_MODE_LIST;
       this.overlayLayoutMode = OVERLAY_LAYOUT_MODE_GRID;
-      this.listFieldScopeMode = LIST_FIELD_SCOPE_VIEW_ONLY;
+      this.listFieldScopeMode = LIST_FIELD_SCOPE_ALL_FIELDS;
       this.detailRecordId = '';
       this.detailAppId = '';
       this.detailSourceUrl = '';
@@ -7614,6 +9159,7 @@
       this.fieldsMeta = [];
       this.listAllFields = [];
       this.viewFieldOrder = [];
+      this.overlayLayoutState = null;
       this.recordFetchFieldCodes = [];
       this.fieldMap.clear();
       this.fieldsMetaMap.clear();
@@ -7659,6 +9205,9 @@
       this.needsFilterReapply = false;
       this.sortState = { fieldCode: '', direction: '' };
       this.editingCell = null;
+      this.columnVisibilityDraft = new Set();
+      this.columnDraftAllFieldCodes = [];
+      this.columnVisibilityList = null;
       this.viewOnlyNoticeShown = false;
       this.selection = null;
       this.armedCell = null;
@@ -7816,7 +9365,8 @@
       const response = await this.postFn('EXCEL_GET_RECORDS_BY_IDS', {
         appId: this.appId,
         ids,
-        fields: fieldCodes
+        fields: fieldCodes,
+        __pbTrigger: 'save_refetch'
       });
       if (!response?.ok) {
         return 'fail';
@@ -7837,7 +9387,44 @@
     }
   }
 
-  overlayController = new ExcelOverlayController(postToPage);
+  function ensureOverlayControllerReady() {
+    if (overlayController) return true;
+    if (!isSupportedAppContextPage()) return false;
+    const overlayPostToPage = (type, payload) => postToPage(type, payload, { feature: 'overlay' });
+    overlayController = new ExcelOverlayController(overlayPostToPage);
+    return true;
+  }
+
+  function attachOverlayShortcutListener() {
+    if (overlayShortcutListenerAttached) return;
+    document.addEventListener('keydown', (event) => {
+      if (!overlayController || overlayController.isOpen) return;
+      const key = String(event.key || '').toLowerCase();
+      if (key !== 'e' || !event.shiftKey || (!event.ctrlKey && !event.metaKey)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      void (async () => {
+        const result = await openOverlayByCurrentPage('shortcut');
+        if (!result?.ok && result?.message) {
+          showOverlayLaunchNotice(result.message);
+        }
+      })();
+    }, true);
+    overlayShortcutListenerAttached = true;
+  }
+
+  // App-only features are initialized only inside supported app contexts.
+  function initAppOnlyFeatures() {
+    if (appOnlyFeaturesInitialized) return true;
+    if (!isSupportedAppContextPage()) return false;
+    attachDevContextCapture();
+    startRecentRecordWatcher();
+    if (!ensureOverlayControllerReady()) return false;
+    attachOverlayShortcutListener();
+    appOnlyFeaturesInitialized = true;
+    return true;
+  }
 
   function resolveOverlayLaunchContext(rawUrl) {
     const detailContext = parseDetailOverlayContext(rawUrl);
@@ -7870,17 +9457,25 @@
   }
 
   async function getOverlayLaunchState() {
-    if (!overlayController) {
+    const context = resolveOverlayLaunchContext(location.href);
+    if (context.pageType === 'unsupported') {
       return {
-        ok: false,
-        reason: 'overlay_not_ready',
+        ok: true,
         pageType: 'unsupported',
         canEditOverlay: false,
         canSaveOverlay: false
       };
     }
+    if (!(await waitForAppContextAndInit()) || !overlayController) {
+      return {
+        ok: true,
+        reason: 'app_context_not_ready',
+        pageType: context.pageType,
+        canEditOverlay: false,
+        canSaveOverlay: false
+      };
+    }
     await overlayController.loadOverlayMode();
-    const context = resolveOverlayLaunchContext(location.href);
     return {
       ok: true,
       pageType: context.pageType,
@@ -7919,9 +9514,6 @@
   }
 
   async function openOverlayByCurrentPage(source = 'unknown') {
-    if (!overlayController) {
-      return { ok: false, reason: 'overlay_not_ready', source, pageType: 'unsupported' };
-    }
     const context = resolveOverlayLaunchContext(location.href);
     if (context.pageType === 'unsupported') {
       const uiLanguage = await resolveOverlayUiLanguage();
@@ -7933,6 +9525,9 @@
         pageType: context.pageType,
         message: resolveText(language, 'overlayUnsupportedPage')
       };
+    }
+    if (!(await waitForAppContextAndInit()) || !overlayController) {
+      return { ok: false, reason: 'app_context_not_ready', source, pageType: context.pageType };
     }
     await overlayController.open({
       runtimeMode: context.runtimeMode,
@@ -7951,18 +9546,10 @@
     };
   }
 
-  document.addEventListener('keydown', (event) => {
-    if (overlayController.isOpen) return;
-    if (event.key.toLowerCase() !== 'e' || !event.shiftKey || (!event.ctrlKey && !event.metaKey)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-    void (async () => {
-      const result = await openOverlayByCurrentPage('shortcut');
-      if (!result?.ok && result?.message) {
-        showOverlayLaunchNotice(result.message);
-      }
-    })();
-  }, true);
+  spaLifecycleReady = true;
+  handleSpaLifecycle('boot_ready', location.href);
+  if (shouldRetryAppOnlyInitialization()) {
+    void waitForAppContextAndInit();
+  }
 
 })();

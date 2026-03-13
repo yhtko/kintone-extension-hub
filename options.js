@@ -55,7 +55,7 @@ const I18N_MESSAGES = {
     nav_shortcuts: 'ショートカット',
     nav_watchlist: 'ウォッチリスト',
     nav_pins: 'ピン止め',
-    nav_excel_overlay: 'Excel Overlay',
+    nav_excel_overlay: 'スプレッドシート',
     general_section_title: '全般',
     general_intro_1: 'kintone Base は、kintone を横断的に閲覧・操作するための Chrome 拡張機能です。各機能は左メニューから切り替えて設定できます。',
     general_intro_2: '設定は自動で保存され、同期が有効になっている場合は同じ Google アカウントで Chrome を使用する他端末にも共有されます。',
@@ -72,19 +72,38 @@ const I18N_MESSAGES = {
     developer_pro_override_hint: '開発用の一時スイッチです。一般ユーザー向け公開ではオフのままにしてください。',
     shortcuts_section_title: 'ショートカット',
     watchlist_section_title: 'ウォッチリスト',
+    watchlist_refresh_preset_label: 'WatchList 更新頻度',
+    watchlist_refresh_preset_eco: '省エネ',
+    watchlist_refresh_preset_normal: '標準',
+    watchlist_refresh_preset_fast: '高頻度',
+    watchlist_refresh_preset_hint: '短くすると更新は早くなりますが、API消費は増えます。',
+    watchlist_refresh_preset_warn: '高頻度設定は自己責任で使用してください。',
     pins_section_title: 'ピン止め',
-    overlay_section_title: 'Excel Overlay',
-    overlay_section_desc: 'kintone 一覧画面で Excel風 Overlay を利用します。利用モードに応じて、無効・Standard・Pro を切り替えます。',
+    overlay_section_title: 'スプレッドシート',
+    overlay_section_desc: 'kintone 一覧画面で スプレッドシートビュー を利用します。利用モードに応じて、無効・Standard・Pro を切り替えます。',
     overlay_mode_label: '利用モード',
     overlay_mode_disabled: '無効',
-    overlay_mode_disabled_desc: 'Overlay を起動しません。標準の kintone 一覧を使用します。',
+    overlay_mode_disabled_desc: 'スプレッドシートビュー を起動しません。標準の kintone 一覧を使用します。',
     overlay_mode_standard: 'Standard',
-    overlay_mode_standard_desc: 'フィルタ・ソート・コピー・列レイアウト変更は可能です。編集と保存は利用できません。',
+    overlay_mode_standard_desc: 'スプレッドシートビュー のフィルタ・ソート・コピー・列レイアウト変更は可能です。編集と保存は利用できません。',
     overlay_mode_pro: 'Pro',
     overlay_mode_pro_desc: '編集機能を利用できる上位モードです。近日公開予定。',
     overlay_mode_pro_notice: 'Proモードは近日公開予定です。現在はStandardをご利用ください。',
     overlay_layout_title: '列レイアウト設定',
-    overlay_layout_desc: '一覧画面・詳細画面で保存された列並び・列幅を管理します。保存済みレイアウトは画面タイプごとに区別して表示されます。',
+    overlay_layout_desc: 'アプリごとに保存された Overlay レイアウトプリセットを確認・管理します。Overlay 本体と同じ設定を表示します。',
+    overlay_layout_active: 'active',
+    overlay_layout_active_badge: '使用中',
+    overlay_layout_presets: 'プリセット数',
+    overlay_layout_key: 'キー',
+    overlay_layout_visible_columns: '表示列',
+    overlay_layout_order_preview: '並び順(先頭)',
+    overlay_layout_set_active: '既定にする',
+    overlay_layout_delete_app: 'このアプリ設定を削除',
+    overlay_layout_rename: '名前編集',
+    overlay_layout_prompt_name: 'プリセット名を入力してください',
+    overlay_layout_delete_preset_confirm: 'このプリセットを削除します。よろしいですか？',
+    overlay_layout_delete_app_confirm: 'このアプリの Overlay レイアウト設定を削除します。よろしいですか？',
+    overlay_layout_detail_name: '詳細画面',
     overlay_note_title: '補足',
     overlay_note_desc: '今後、列表示設定や固定列などもこのセクションに追加予定です。',
     host_perm_title: 'ホストアクセス許可',
@@ -109,6 +128,10 @@ const I18N_MESSAGES = {
     watch_view_label: 'View ID/Name',
     watch_query_optional_label: 'Query（任意）',
     watch_view_query_hint: '※ View を指定するとそのフィルタ条件で件数カウント。Query を指定した場合は View より優先します。',
+    watch_advanced_hint: '通常は URL から自動取得されます。必要な場合のみ手動で指定してください。',
+    watch_limit_hint: '現在の登録上限: {limit}件（登録済み: {count}件）',
+    watch_limit_reached: 'ウォッチリストは{limit}件まで登録できます',
+    watch_item_needs_repair: '要修復',
     watch_edit_hint: '※ アイコンと色、カテゴリはショートカット／サイドパネルでそのまま利用されます。',
     watch_edit_query_hint: '※ Query を指定した場合は View より優先します。',
     watch_placeholder_label: '例：受注一覧（未出荷）',
@@ -159,6 +182,9 @@ const I18N_MESSAGES = {
     alert_invalid_kintone_url: '有効な kintone URL を入力してください',
     alert_host_permission_denied: 'このドメインへのアクセス権限が許可されませんでした',
     alert_duplicate_url: 'このURLは既に登録済みです',
+    alert_watchlist_limit_reached: 'ウォッチリストは{limit}件まで登録できます',
+    alert_watch_query_resolve_failed: 'ビューの Query を取得できませんでした。Query を直接入力するか、該当ビューURLで再保存してください',
+    alert_watch_add_query_resolve_failed: 'ビュー条件を取得できなかったためウォッチリストを追加できませんでした',
     alert_required_pin_fields: 'host / App ID / レコードID は必須です',
     alert_dialog_not_supported: 'このブラウザはdialog要素に対応していません',
     alert_invalid_kintone_url_or_host: '有効な kintone URL またはホストを入力してください',
@@ -221,16 +247,66 @@ const I18N_MESSAGES = {
     watch_detail_app: 'App',
     watch_detail_view: 'View',
     watch_detail_query: 'Query',
+    watch_query_none: '条件なし',
     watch_detail_color: '色',
     watch_detail_category: 'カテゴリ',
     layout_empty_title: '保存済みの列レイアウトはありません。',
-    layout_empty_desc: '一覧画面で列並びや列幅を変更すると、ここに保存されます。',
+    layout_empty_desc: 'Overlay でプリセットを作成すると、ここに保存されます。',
     layout_meta_order: '列順',
     layout_meta_width: '幅設定',
     layout_meta_saved: '保存',
     layout_meta_scope: '対象',
     layout_scope_list: '一覧',
-    layout_scope_detail: '詳細'
+    layout_scope_detail: '詳細',
+    api_usage_title: 'API使用状況',
+    api_usage_desc: 'この拡張機能が発行したAPI呼び出しの簡易統計です。',
+    api_usage_scope_note: 'kintone全体のAPI使用量ではありません。',
+    api_usage_period_today: 'Today',
+    api_usage_period_7d: '7日',
+    api_usage_period_30d: '30日',
+    api_usage_total: 'Total',
+    api_usage_success: 'Success',
+    api_usage_error: 'Error',
+    api_usage_by_feature_title: '機能別内訳',
+    api_usage_feature: '機能',
+    api_usage_reset: '統計をリセット',
+    api_usage_reset_confirm: 'API使用統計をリセットします。よろしいですか？',
+    api_usage_empty: 'データはまだありません。',
+    api_usage_feature_watchlist: 'Watchlist',
+    api_usage_feature_watchlist_bulk: 'Watchlist API Requests',
+    api_usage_feature_record_pin: 'Record Pin',
+    api_usage_feature_recent: 'Recent',
+    api_usage_feature_overlay: 'Overlay',
+    api_usage_feature_overlay_records: 'Overlay Records',
+    api_usage_feature_overlay_acl: 'Overlay ACL',
+    api_usage_feature_metadata_app: 'Metadata App',
+    api_usage_feature_metadata_views: 'Metadata Views',
+    api_usage_feature_metadata_fields: 'Metadata Fields',
+    api_usage_feature_bootstrap: 'Bootstrap',
+    api_usage_feature_admin: 'Admin',
+    api_usage_feature_other: 'Other',
+    metadata_cache_clear_btn: 'Metadata cache を削除',
+    metadata_cache_clear_desc: 'app / views / fields の24h cacheをクリアします。',
+    metadata_cache_clear_confirm: 'Metadata cache を削除します。よろしいですか？',
+    metadata_cache_clear_done: 'Metadata cache を削除しました。',
+    metadata_cache_clear_failed: 'Metadata cache の削除に失敗しました。',
+    api_usage_admin_breakdown_title: 'Admin 内訳 (temporary)',
+    api_usage_admin_category: '分類',
+    api_usage_admin_category_settings: 'settings',
+    api_usage_admin_category_app_cache: 'app_cache',
+    api_usage_admin_category_permission: 'permission',
+    api_usage_admin_category_bootstrap: 'bootstrap',
+    api_usage_admin_category_usage_stats: 'usage_stats',
+    api_usage_admin_category_debug: 'debug',
+    api_usage_admin_category_other: 'other',
+    watchlist_debug_title: 'WatchList Debug (temporary)',
+    watchlist_debug_desc: '調査用の一時ログです。Debug ON のときのみ記録します。',
+    watchlist_debug_toggle: 'Debug ON',
+    watchlist_debug_clear: 'ログをクリア',
+    watchlist_debug_clear_confirm: 'WatchList Debugログをクリアします。よろしいですか？',
+    watchlist_debug_empty: 'Debugログはまだありません。',
+    watchlist_debug_storage_session: '保存先: session (一時)',
+    watchlist_debug_storage_local: '保存先: local (fallback)'
   },
   en: {
     settings_title: 'kintone Base Settings',
@@ -239,7 +315,7 @@ const I18N_MESSAGES = {
     nav_shortcuts: 'Shortcuts',
     nav_watchlist: 'Watchlist',
     nav_pins: 'Pins',
-    nav_excel_overlay: 'Excel Overlay',
+    nav_excel_overlay: 'Spreadsheet',
     general_section_title: 'General',
     general_intro_1: 'kintone Base is a Chrome extension for browsing and operating kintone more efficiently across apps.',
     general_intro_2: 'Settings are saved automatically and synced across devices signed in with the same Google account when sync is enabled.',
@@ -256,19 +332,38 @@ const I18N_MESSAGES = {
     developer_pro_override_hint: 'Temporary switch for developer testing. Keep this OFF in public releases.',
     shortcuts_section_title: 'Shortcuts',
     watchlist_section_title: 'Watchlist',
+    watchlist_refresh_preset_label: 'WatchList refresh frequency',
+    watchlist_refresh_preset_eco: 'Eco',
+    watchlist_refresh_preset_normal: 'Normal',
+    watchlist_refresh_preset_fast: 'Fast',
+    watchlist_refresh_preset_hint: 'Shorter intervals improve freshness but increase API usage.',
+    watchlist_refresh_preset_warn: 'Use fast mode at your own responsibility.',
     pins_section_title: 'Pins',
-    overlay_section_title: 'Excel Overlay',
-    overlay_section_desc: 'Use the Excel-style overlay on kintone list pages. Switch between Disabled, Standard, and Pro modes.',
+    overlay_section_title: 'Spreadsheet View',
+    overlay_section_desc: 'Use Spreadsheet View on kintone list pages. Switch between Disabled, Standard, and Pro modes.',
     overlay_mode_label: 'Mode',
     overlay_mode_disabled: 'Disabled',
-    overlay_mode_disabled_desc: 'Do not launch the overlay. Use the standard kintone list view.',
+    overlay_mode_disabled_desc: 'Do not launch Spreadsheet View. Use the standard kintone list view.',
     overlay_mode_standard: 'Standard',
-    overlay_mode_standard_desc: 'Filtering, sorting, copying, and column layout changes are available. Editing and saving are disabled.',
+    overlay_mode_standard_desc: 'Spreadsheet View supports filtering, sorting, copying, and column layout changes. Editing and saving are disabled.',
     overlay_mode_pro: 'Pro',
     overlay_mode_pro_desc: 'Advanced mode with editing features. Coming soon.',
     overlay_mode_pro_notice: 'Pro mode is coming soon. Please use Standard for now.',
     overlay_layout_title: 'Column Layout Settings',
-    overlay_layout_desc: 'Manage saved column order and widths for list/detail pages. Saved layouts are shown with their screen type.',
+    overlay_layout_desc: 'Review and manage Overlay layout presets saved per app. This view uses the same storage as the Overlay screen.',
+    overlay_layout_active: 'Active',
+    overlay_layout_active_badge: 'Active',
+    overlay_layout_presets: 'Presets',
+    overlay_layout_key: 'Key',
+    overlay_layout_visible_columns: 'Visible columns',
+    overlay_layout_order_preview: 'Order (head)',
+    overlay_layout_set_active: 'Set active',
+    overlay_layout_delete_app: 'Delete app settings',
+    overlay_layout_rename: 'Rename',
+    overlay_layout_prompt_name: 'Enter preset name',
+    overlay_layout_delete_preset_confirm: 'Delete this preset?',
+    overlay_layout_delete_app_confirm: 'Delete all Overlay layout presets for this app?',
+    overlay_layout_detail_name: 'Detail View',
     overlay_note_title: 'Notes',
     overlay_note_desc: 'Column visibility and fixed columns are planned to be added here in future updates.',
     host_perm_title: 'Host Access Permission',
@@ -293,6 +388,10 @@ const I18N_MESSAGES = {
     watch_view_label: 'View ID/Name',
     watch_query_optional_label: 'Query (optional)',
     watch_view_query_hint: 'If View is set, counts use that filter. If Query is set, Query takes priority.',
+    watch_advanced_hint: 'Usually resolved from URL automatically. Set manually only when needed.',
+    watch_limit_hint: 'Current limit: {limit} items (registered: {count})',
+    watch_limit_reached: 'Watchlist is limited to {limit} items',
+    watch_item_needs_repair: 'Needs repair',
     watch_edit_hint: 'Icon, color, and category are used directly in shortcuts and the side panel.',
     watch_edit_query_hint: 'If Query is set, Query takes priority over View.',
     watch_placeholder_label: 'Example: Orders (Unshipped)',
@@ -343,6 +442,9 @@ const I18N_MESSAGES = {
     alert_invalid_kintone_url: 'Please enter a valid kintone URL.',
     alert_host_permission_denied: 'Host access permission was not granted for this domain.',
     alert_duplicate_url: 'This URL is already registered.',
+    alert_watchlist_limit_reached: 'Watchlist is limited to {limit} items.',
+    alert_watch_query_resolve_failed: 'Could not resolve the view query. Enter Query manually or re-save from the target view URL.',
+    alert_watch_add_query_resolve_failed: 'Could not resolve view conditions, so watchlist item was not added.',
     alert_required_pin_fields: 'host / App ID / Record ID are required.',
     alert_dialog_not_supported: 'This browser does not support the dialog element.',
     alert_invalid_kintone_url_or_host: 'Please enter a valid kintone URL or host.',
@@ -405,16 +507,66 @@ const I18N_MESSAGES = {
     watch_detail_app: 'App',
     watch_detail_view: 'View',
     watch_detail_query: 'Query',
+    watch_query_none: 'No filter',
     watch_detail_color: 'Color',
     watch_detail_category: 'Category',
     layout_empty_title: 'No saved column layouts.',
-    layout_empty_desc: 'Saved column order and widths from list pages will appear here.',
+    layout_empty_desc: 'Saved Overlay presets will appear here after you create them.',
     layout_meta_order: 'Order',
     layout_meta_width: 'Widths',
     layout_meta_saved: 'Saved',
     layout_meta_scope: 'Target',
     layout_scope_list: 'List',
-    layout_scope_detail: 'Detail'
+    layout_scope_detail: 'Detail',
+    api_usage_title: 'API Usage',
+    api_usage_desc: 'Simple statistics for API calls issued by this extension.',
+    api_usage_scope_note: 'This is not the total API usage of your kintone environment.',
+    api_usage_period_today: 'Today',
+    api_usage_period_7d: '7 days',
+    api_usage_period_30d: '30 days',
+    api_usage_total: 'Total',
+    api_usage_success: 'Success',
+    api_usage_error: 'Error',
+    api_usage_by_feature_title: 'By Feature',
+    api_usage_feature: 'Feature',
+    api_usage_reset: 'Reset stats',
+    api_usage_reset_confirm: 'Reset API usage statistics?',
+    api_usage_empty: 'No data yet.',
+    api_usage_feature_watchlist: 'Watchlist',
+    api_usage_feature_watchlist_bulk: 'Watchlist API Requests',
+    api_usage_feature_record_pin: 'Record Pin',
+    api_usage_feature_recent: 'Recent',
+    api_usage_feature_overlay: 'Overlay',
+    api_usage_feature_overlay_records: 'Overlay Records',
+    api_usage_feature_overlay_acl: 'Overlay ACL',
+    api_usage_feature_metadata_app: 'Metadata App',
+    api_usage_feature_metadata_views: 'Metadata Views',
+    api_usage_feature_metadata_fields: 'Metadata Fields',
+    api_usage_feature_bootstrap: 'Bootstrap',
+    api_usage_feature_admin: 'Admin',
+    api_usage_feature_other: 'Other',
+    metadata_cache_clear_btn: 'Clear metadata cache',
+    metadata_cache_clear_desc: 'Clears 24h cache for app / views / fields.',
+    metadata_cache_clear_confirm: 'Clear metadata cache?',
+    metadata_cache_clear_done: 'Metadata cache was cleared.',
+    metadata_cache_clear_failed: 'Failed to clear metadata cache.',
+    api_usage_admin_breakdown_title: 'Admin Breakdown (temporary)',
+    api_usage_admin_category: 'Category',
+    api_usage_admin_category_settings: 'settings',
+    api_usage_admin_category_app_cache: 'app_cache',
+    api_usage_admin_category_permission: 'permission',
+    api_usage_admin_category_bootstrap: 'bootstrap',
+    api_usage_admin_category_usage_stats: 'usage_stats',
+    api_usage_admin_category_debug: 'debug',
+    api_usage_admin_category_other: 'other',
+    watchlist_debug_title: 'WatchList Debug (temporary)',
+    watchlist_debug_desc: 'Temporary diagnostics log. Records only while Debug is ON.',
+    watchlist_debug_toggle: 'Debug ON',
+    watchlist_debug_clear: 'Clear logs',
+    watchlist_debug_clear_confirm: 'Clear WatchList debug logs?',
+    watchlist_debug_empty: 'No debug logs yet.',
+    watchlist_debug_storage_session: 'Storage: session (temporary)',
+    watchlist_debug_storage_local: 'Storage: local (fallback)'
   }
 };
 
@@ -455,10 +607,14 @@ function resolveEffectiveUiLanguage(setting) {
   return getBrowserUiLanguage();
 }
 
-function t(key) {
-  return I18N_MESSAGES[currentLang]?.[key]
+function t(key, vars) {
+  const base = I18N_MESSAGES[currentLang]?.[key]
     ?? I18N_MESSAGES.ja?.[key]
     ?? key;
+  if (!vars || typeof vars !== 'object') return base;
+  return Object.keys(vars).reduce((text, name) => {
+    return text.replaceAll(`{${name}}`, String(vars[name]));
+  }, base);
 }
 
 function applyI18n(root = document) {
@@ -529,6 +685,7 @@ const urlEl = document.getElementById('url');
 const appIdEl = document.getElementById('appId');
 const viewEl = document.getElementById('viewIdOrName');
 const queryEl = document.getElementById('query');
+const watchlistRefreshPresetEl = document.getElementById('watchlist_refresh_preset');
 const hostPermInputEl = document.getElementById('perm_host_input');
 const hostPermRequestBtn = document.getElementById('perm_request');
 const hostPermCheckBtn = document.getElementById('perm_check');
@@ -537,18 +694,38 @@ const iconEl = document.getElementById('icon');
 const iconColorEl = document.getElementById('iconColor');
 const categoryEl = document.getElementById('category');
 const addBtn = document.getElementById('add');
+const watchlistLimitHintEl = document.getElementById('watchlist_limit_hint');
+const watchlistLimitStateEl = document.getElementById('watchlist_limit_state');
 const listEl = document.getElementById('list');
 const shortcutToggleEl = document.getElementById('shortcut_visible');
 const shortcutListEl = document.getElementById('shortcut_list');
 const shortcutSearchModeInputs = Array.from(document.querySelectorAll('input[name="shortcut_search_open_mode"]'));
 const excelListEl = document.getElementById('excel_columns_list');
 const excelClearBtn = document.getElementById('excel_columns_clear');
+const apiUsageFeatureTableBodyEl = document.getElementById('api_usage_feature_table_body');
+const apiUsageAdminBreakdownTableBodyEl = document.getElementById('api_usage_admin_breakdown_table_body');
+const apiUsageResetBtn = document.getElementById('api_usage_reset');
+const metadataCacheClearBtn = document.getElementById('metadata_cache_clear');
+const metadataCacheStatusEl = document.getElementById('metadata_cache_status');
+const apiUsageTodayTotalEl = document.getElementById('api_usage_today_total');
+const apiUsageTodaySuccessEl = document.getElementById('api_usage_today_success');
+const apiUsageTodayErrorEl = document.getElementById('api_usage_today_error');
+const apiUsage7dTotalEl = document.getElementById('api_usage_7d_total');
+const apiUsage7dSuccessEl = document.getElementById('api_usage_7d_success');
+const apiUsage7dErrorEl = document.getElementById('api_usage_7d_error');
+const apiUsage30dTotalEl = document.getElementById('api_usage_30d_total');
+const apiUsage30dSuccessEl = document.getElementById('api_usage_30d_success');
+const apiUsage30dErrorEl = document.getElementById('api_usage_30d_error');
+const watchlistDebugEnabledEl = document.getElementById('watchlist_debug_enabled');
+const watchlistDebugStorageEl = document.getElementById('watchlist_debug_storage');
+const watchlistDebugLogEl = document.getElementById('watchlist_debug_log');
+const watchlistDebugClearBtn = document.getElementById('watchlist_debug_clear');
 const uiLanguageEl = document.getElementById('ui_language');
 const developerProOverrideRowEl = document.getElementById('developer_pro_override_row');
 const developerProOverrideEl = document.getElementById('developer_pro_override');
 const excelModeInputs = Array.from(document.querySelectorAll('input[name="excel_overlay_mode"]'));
 const excelModeNoticeEl = document.getElementById('excel_mode_notice');
-const EXCEL_COLUMN_PREF_KEY = 'kfavExcelColumns';
+const OVERLAY_LAYOUT_PRESETS_KEY = 'kfavOverlayLayoutPresets';
 const EXCEL_OVERLAY_MODE_KEY = 'kfavExcelOverlayMode';
 const EXCEL_OVERLAY_MODE_OFF = 'off';
 const EXCEL_OVERLAY_MODE_STANDARD = 'standard';
@@ -559,7 +736,51 @@ const EXCEL_OVERLAY_MODE_PRO_NOTICE_KEY = 'overlay_mode_pro_notice';
 const SHORTCUT_SEARCH_OPEN_MODE_KEY = 'shortcutSearchOpenMode';
 const SHORTCUT_SEARCH_OPEN_MODE_VALUES = ['current_tab', 'new_tab'];
 const DEFAULT_SHORTCUT_SEARCH_OPEN_MODE = 'current_tab';
+const WATCHLIST_REFRESH_PRESET_KEY = 'pb_watchlist_refresh_preset';
+const WATCHLIST_REFRESH_PRESET_VALUES = ['eco', 'normal', 'fast'];
+const DEFAULT_WATCHLIST_REFRESH_PRESET = 'normal';
+const WATCHLIST_LIMIT_KEY = 'pb_watchlist_limit';
+const DEFAULT_WATCHLIST_LIMIT = 3;
+const MAX_WATCHLIST_LIMIT = 5;
+const WATCHLIST_LIMIT_VALUES = [DEFAULT_WATCHLIST_LIMIT, MAX_WATCHLIST_LIMIT];
 const PIN_VISIBLE_KEY = 'kfavRecordPinsVisible';
+const API_USAGE_DAILY_KEY = 'apiUsageDaily';
+const API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY = 'apiUsageAdminBreakdownDaily';
+const PB_METADATA_CACHE_PREFIX = 'pb:meta:v1:';
+const API_USAGE_RETENTION_DAYS = 31;
+const API_USAGE_FEATURE_ORDER = [
+  'watchlist_bulk',
+  'record_pin',
+  'recent',
+  'overlay',
+  'overlay_records',
+  'overlay_acl',
+  'metadata_app',
+  'metadata_views',
+  'metadata_fields',
+  'bootstrap',
+  'admin'
+];
+const API_USAGE_FEATURE_VALUES = new Set([...API_USAGE_FEATURE_ORDER, 'other']);
+const API_USAGE_ADMIN_CATEGORY_ORDER = ['settings', 'app_cache', 'permission', 'bootstrap', 'usage_stats', 'debug', 'other'];
+const API_USAGE_ADMIN_CATEGORY_VALUES = new Set(API_USAGE_ADMIN_CATEGORY_ORDER);
+const API_USAGE_LEGACY_FEATURE_MAP = {
+  watchlist: 'watchlist_bulk',
+  watchlist_manual: 'watchlist_bulk',
+  watchlist_panel_open: 'watchlist_bulk',
+  watchlist_visible_tick: 'watchlist_bulk',
+  watchlist_resume_catchup: 'watchlist_bulk',
+  watchlist_expand: 'watchlist_bulk',
+  watchlist_focus_resume: 'watchlist_bulk',
+  watchlist_tab_resume: 'watchlist_bulk',
+  pins: 'record_pin',
+  launcher: 'admin',
+  options: 'admin',
+  auth: 'admin'
+};
+const WATCHLIST_DEBUG_CONFIG_KEY = 'kfavWatchlistDebugConfig';
+const WATCHLIST_DEBUG_LOG_KEY = 'kfavWatchlistDebugLogs';
+const WATCHLIST_DEBUG_MAX_LOGS = 80;
 // ---- pinned record elements ----
 const pinLabelEl = document.getElementById('pin_label');
 const pinUrlEl = document.getElementById('pin_url');
@@ -607,7 +828,14 @@ let pinModalEditingId = null;
 let shortcutEntries = [];
 let shortcutsVisible = true;
 let shortcutDraggingId = null;
-let excelColumnPrefs = {};
+let overlayLayoutPresets = {};
+let overlayAppNameLookup = {};
+let apiUsageDaily = {};
+let apiUsageAdminBreakdownDaily = {};
+let watchlistDebugEnabled = false;
+let watchlistDebugLogs = [];
+let watchlistDebugStorageArea = 'session';
+let watchlistLimit = DEFAULT_WATCHLIST_LIMIT;
 const ensuredOrigins = new Set();
 const ICON_CHOICES = [
   'clipboard', 'file-text', 'package', 'box', 'truck', 'factory', 'wrench', 'calendar',
@@ -664,14 +892,72 @@ function getIconColorLabel(value) {
   return t(`icon_color_${sanitizeIconColor(value)}`);
 }
 
+function normalizeWatchlistLimit(raw) {
+  const value = Number(raw);
+  if (WATCHLIST_LIMIT_VALUES.includes(value)) return value;
+  return DEFAULT_WATCHLIST_LIMIT;
+}
+
 function normalizeFavoriteEntryLocal(item, fallbackOrder) {
+  const source = item && typeof item === 'object' ? item : {};
+  const label = source.label == null ? '' : String(source.label);
+  const title = source.title == null ? '' : String(source.title).trim();
+  const viewIdOrName = source.viewIdOrName == null ? '' : String(source.viewIdOrName).trim();
+  const viewId = source.viewId == null ? '' : String(source.viewId).trim();
+  const normalizedViewId = viewId || (/^\d+$/.test(viewIdOrName) ? viewIdOrName : '');
+  const queryRaw = source.query == null ? null : String(source.query).trim();
   return {
-    ...item,
-    icon: sanitizeIcon(item.icon),
-    iconColor: sanitizeIconColor(item.iconColor),
-    category: sanitizeCategory(item.category),
-    order: typeof item.order === 'number' ? item.order : fallbackOrder
+    ...source,
+    id: source.id || createId(),
+    label: label || title,
+    title: title || label || '',
+    url: source.url == null ? '' : String(source.url).trim(),
+    host: source.host == null ? '' : String(source.host).trim(),
+    appId: source.appId == null ? '' : String(source.appId).trim(),
+    viewId: normalizedViewId,
+    viewIdOrName: viewIdOrName || normalizedViewId,
+    viewName: source.viewName == null ? '' : String(source.viewName).trim(),
+    query: queryRaw,
+    queryRepairRequired: Boolean(source.queryRepairRequired),
+    pinned: Boolean(source.pinned),
+    icon: sanitizeIcon(source.icon),
+    iconColor: sanitizeIconColor(source.iconColor),
+    category: sanitizeCategory(source.category),
+    order: typeof source.order === 'number' ? source.order : fallbackOrder
   };
+}
+
+function isWatchlistQueryMissingValue(query) {
+  if (query == null) return true;
+  const value = String(query).trim();
+  return value === '-';
+}
+
+function isWatchlistItemNeedsRepair(item) {
+  if (!item || typeof item !== 'object') return true;
+  return isWatchlistQueryMissingValue(item.query);
+}
+
+function isWatchlistQueryEmpty(item) {
+  if (!item || typeof item !== 'object') return false;
+  if (item.query == null) return false;
+  return String(item.query).trim() === '';
+}
+
+function getWatchlistQueryDisplay(item) {
+  if (isWatchlistItemNeedsRepair(item)) return '-';
+  if (isWatchlistQueryEmpty(item)) return t('watch_query_none');
+  return String(item?.query || '');
+}
+
+function buildWatchlistUrl(host, appId, viewId) {
+  const normalizedHost = String(host || '').trim().replace(/\/+$/, '');
+  const normalizedAppId = String(appId || '').trim();
+  const normalizedViewId = String(viewId || '').trim();
+  if (!normalizedHost || !normalizedAppId) return '';
+  const base = `${normalizedHost}/k/${encodeURIComponent(normalizedAppId)}/`;
+  if (!normalizedViewId) return base;
+  return `${base}?view=${encodeURIComponent(normalizedViewId)}`;
 }
 
 function toPascalIconName(name) {
@@ -943,11 +1229,23 @@ function ensureShortcutListDnDHandlers() {
 function parseKintoneUrl(u) {
   try {
     const url = new URL(u);
-    const m = url.pathname.match(/\/k\/(\d+)\//);
+    const m = url.pathname.match(/\/k\/(\d+)(?:\/|$)/);
     const appId = m ? m[1] : '';
     const viewParam = url.searchParams.get('view') || '';
     const host = url.origin;
-    return { host, appId, viewIdOrName: viewParam, url: u };
+    let recordId = '';
+    if (url.hash) {
+      const recMatch = String(url.hash).match(/record=(\d+)/);
+      if (recMatch) recordId = recMatch[1];
+    }
+    return {
+      host,
+      appId,
+      viewId: viewParam,
+      viewIdOrName: viewParam,
+      recordId,
+      url: url.href
+    };
   } catch (_e) {
     return {};
   }
@@ -1234,8 +1532,15 @@ function createId() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function normalizeTimestamp(value) {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? Math.floor(num) : 0;
+}
+
 function normalizePinnedEntry(entry) {
   if (!entry || typeof entry !== 'object') return null;
+  const pinnedAt = normalizeTimestamp(entry.pinnedAt || entry.createdAt);
+  const modifiedAt = normalizeTimestamp(entry.modifiedAt || entry.lastEditedAt || entry.updatedAt || pinnedAt);
   return {
     id: entry.id || createId(),
     label: entry.label || '',
@@ -1243,7 +1548,9 @@ function normalizePinnedEntry(entry) {
     appId: String(entry.appId || '').trim(),
     recordId: String(entry.recordId || '').trim(),
     titleField: entry.titleField || '',
-    note: entry.note || ''
+    note: entry.note || '',
+    pinnedAt: pinnedAt || modifiedAt || 0,
+    modifiedAt: modifiedAt || pinnedAt || 0
   };
 }
 
@@ -1256,14 +1563,16 @@ function pinnedEntryLabel(entry) {
 }
 
 async function savePinnedEntries() {
-  await chrome.storage.sync.set({ kfavPins: pinnedEntries.map(({ id, label, host, appId, recordId, titleField, note }) => ({
+  await chrome.storage.sync.set({ kfavPins: pinnedEntries.map(({ id, label, host, appId, recordId, titleField, note, pinnedAt, modifiedAt }) => ({
     id,
     label,
     host,
     appId,
     recordId,
     titleField,
-    note
+    note,
+    pinnedAt: normalizeTimestamp(pinnedAt),
+    modifiedAt: normalizeTimestamp(modifiedAt)
   })) });
 }
 
@@ -1415,6 +1724,55 @@ async function saveFavorites(items) {
   await chrome.storage.sync.set({ kintoneFavorites: normalized });
 }
 
+async function loadWatchlistLimitSetting() {
+  try {
+    const stored = await chrome.storage.local.get(WATCHLIST_LIMIT_KEY);
+    const raw = stored?.[WATCHLIST_LIMIT_KEY];
+    const normalized = normalizeWatchlistLimit(raw);
+    watchlistLimit = normalized;
+    if (raw !== normalized) {
+      await chrome.storage.local.set({ [WATCHLIST_LIMIT_KEY]: normalized });
+    }
+  } catch (_err) {
+    watchlistLimit = DEFAULT_WATCHLIST_LIMIT;
+    try {
+      await chrome.storage.local.set({ [WATCHLIST_LIMIT_KEY]: DEFAULT_WATCHLIST_LIMIT });
+    } catch (_ignore) {
+      // ignore
+    }
+  }
+}
+
+function getWatchlistLimit() {
+  return normalizeWatchlistLimit(watchlistLimit);
+}
+
+function renderWatchlistLimitHint(countValue = 0) {
+  const limit = getWatchlistLimit();
+  const count = Math.max(0, Number(countValue) || 0);
+  if (watchlistLimitHintEl) {
+    watchlistLimitHintEl.textContent = t('watch_limit_hint', { limit, count });
+    watchlistLimitHintEl.classList.toggle('is-limit-reached', count >= limit);
+  }
+  const reached = count >= limit;
+  if (watchlistLimitStateEl) {
+    watchlistLimitStateEl.textContent = reached ? t('watch_limit_reached', { limit }) : '';
+    watchlistLimitStateEl.classList.toggle('is-visible', reached);
+  }
+  if (addBtn) {
+    addBtn.disabled = reached;
+    if (reached) {
+      addBtn.title = t('watch_limit_reached', { limit });
+      addBtn.setAttribute('aria-disabled', 'true');
+      if (watchlistLimitStateEl) addBtn.setAttribute('aria-describedby', 'watchlist_limit_state');
+    } else {
+      addBtn.title = '';
+      addBtn.removeAttribute('aria-disabled');
+      addBtn.removeAttribute('aria-describedby');
+    }
+  }
+}
+
 function sortItems(items) {
   return [...items].sort((a,b) => (b.pinned?1:0)-(a.pinned?1:0) || (a.order??0)-(b.order??0));
 }
@@ -1433,6 +1791,7 @@ async function render(items) {
   const sorted = sortItems(items);
   const badgeTargetId = await getBadgeTarget();
   updateCategorySuggestions(sorted);
+  renderWatchlistLimitHint(sorted.length);
 
   listEl.innerHTML = '';
   if (!sorted.length) {
@@ -1555,27 +1914,46 @@ async function render(items) {
 
     const summary = document.createElement('div');
     summary.className = 'watch-summary';
-    const addChip = (text) => {
+    const addChip = (text, variant = '') => {
       const chip = document.createElement('span');
       chip.className = 'watch-chip';
+      if (variant) chip.classList.add(`is-${variant}`);
       chip.textContent = text;
       summary.appendChild(chip);
     };
     if (it.appId) addChip(`${t('app_prefix')} ${it.appId}`);
-    if (it.viewIdOrName) addChip(`${t('watch_detail_view')} ${it.viewIdOrName}`);
+    const resolvedViewForDisplay = String(it.viewId || it.viewIdOrName || '').trim() || String(it.viewName || '').trim();
+    if (resolvedViewForDisplay) addChip(`${t('watch_detail_view')} ${resolvedViewForDisplay}`);
     addChip(getCategoryLabel(it.category));
+    if (isWatchlistQueryEmpty(it)) addChip(t('watch_query_none'), 'muted');
+    if (isWatchlistItemNeedsRepair(it)) addChip(t('watch_item_needs_repair'), 'warning');
 
     const urlLine = document.createElement('div');
-    urlLine.className = 'watch-url';
-    urlLine.textContent = it.url || '-';
-    urlLine.title = it.url || '';
+    urlLine.className = 'watch-info-line watch-url';
+    const urlLabel = document.createElement('span');
+    urlLabel.className = 'watch-info-label';
+    urlLabel.textContent = `${t('watch_detail_url')}:`;
+    const urlValue = document.createElement('span');
+    urlValue.className = 'watch-info-value';
+    urlValue.textContent = it.url || '-';
+    urlValue.title = it.url || '';
+    urlLine.appendChild(urlLabel);
+    urlLine.appendChild(urlValue);
 
     const queryLine = document.createElement('div');
-    queryLine.className = 'watch-query';
-    if (it.query) {
-      queryLine.textContent = `${t('watch_detail_query')}: ${it.query}`;
-      queryLine.title = it.query;
-    }
+    queryLine.className = 'watch-info-line watch-query';
+    const queryLabel = document.createElement('span');
+    queryLabel.className = 'watch-info-label';
+    queryLabel.textContent = `${t('watch_detail_query')}:`;
+    const queryValue = document.createElement('span');
+    queryValue.className = 'watch-info-value watch-query-value';
+    const queryDisplay = getWatchlistQueryDisplay(it);
+    queryValue.textContent = queryDisplay;
+    queryValue.title = queryDisplay;
+    queryValue.classList.toggle('is-query-empty', isWatchlistQueryEmpty(it));
+    queryValue.classList.toggle('is-query-repair', isWatchlistItemNeedsRepair(it));
+    queryLine.appendChild(queryLabel);
+    queryLine.appendChild(queryValue);
 
     const details = document.createElement('details');
     details.className = 'watch-details';
@@ -1587,8 +1965,8 @@ async function render(items) {
       [t('watch_detail_host'), it.host || '-'],
       [t('watch_detail_url'), it.url || '-'],
       [t('watch_detail_app'), it.appId || '-'],
-      [t('watch_detail_view'), it.viewIdOrName || '-'],
-      [t('watch_detail_query'), it.query || '-'],
+      [t('watch_detail_view'), resolvedViewForDisplay || '-'],
+      [t('watch_detail_query'), queryDisplay],
       [t('shortcut_meta_icon'), sanitizeIcon(it.icon)],
       [t('watch_detail_color'), sanitizeIconColor(it.iconColor)],
       [t('watch_detail_category'), getCategoryLabel(it.category)]
@@ -1596,7 +1974,15 @@ async function render(items) {
     metaRows.forEach(([label, value]) => {
       const row = document.createElement('div');
       row.className = 'watch-detail-row';
-      row.textContent = `${label}: ${value}`;
+      const rowLabel = document.createElement('span');
+      rowLabel.className = 'watch-detail-label';
+      rowLabel.textContent = `${label}:`;
+      const rowValue = document.createElement('span');
+      rowValue.className = 'watch-detail-value';
+      rowValue.textContent = String(value);
+      rowValue.title = String(value);
+      row.appendChild(rowLabel);
+      row.appendChild(rowValue);
       detailsBody.appendChild(row);
     });
     details.appendChild(detailsSummary);
@@ -1605,7 +1991,7 @@ async function render(items) {
     body.appendChild(top);
     body.appendChild(summary);
     body.appendChild(urlLine);
-    if (it.query) body.appendChild(queryLine);
+    body.appendChild(queryLine);
     body.appendChild(details);
 
     // D&D
@@ -1677,6 +2063,201 @@ function handleDialogTabTrap(event) {
   }
 }
 
+function extractQueryParamFromUrl(urlValue) {
+  try {
+    const url = new URL(String(urlValue || ''));
+    return String(url.searchParams.get('query') || '').trim();
+  } catch (_err) {
+    return '';
+  }
+}
+
+function extractViewFilterFromViews(viewsObj, viewIdOrName) {
+  if (!viewsObj || typeof viewsObj !== 'object') {
+    return { matched: false, query: '', viewName: '', viewId: '', reason: 'missing_views' };
+  }
+  const entries = Object.entries(viewsObj);
+  if (!entries.length) {
+    return {
+      matched: true,
+      query: '',
+      viewName: 'All Records',
+      viewId: '',
+      reason: 'all_records_virtual'
+    };
+  }
+
+  const target = String(viewIdOrName || '').trim();
+  if (target) {
+    const byId = entries.find(([, view]) => String(view?.id || '').trim() === target);
+    if (byId) {
+      const queryRaw = byId[1]?.filterCond;
+      return {
+        matched: true,
+        query: queryRaw == null ? null : String(queryRaw).trim(),
+        viewName: String(byId[0] || '').trim(),
+        viewId: String(byId[1]?.id || '').trim(),
+        reason: 'matched_view_id'
+      };
+    }
+    const byName = entries.find(([name]) => String(name || '').trim() === target);
+    if (byName) {
+      const queryRaw = byName[1]?.filterCond;
+      return {
+        matched: true,
+        query: queryRaw == null ? null : String(queryRaw).trim(),
+        viewName: String(byName[0] || '').trim(),
+        viewId: String(byName[1]?.id || '').trim(),
+        reason: 'matched_view_name'
+      };
+    }
+    return { matched: false, query: '', viewName: '', viewId: '', reason: 'view_not_found' };
+  }
+
+  const indexed = entries
+    .map(([name, view], idx) => ({
+      name: String(name || '').trim(),
+      view: view || {},
+      idx,
+      order: Number(view?.index)
+    }))
+    .sort((a, b) => {
+      const aOrder = Number.isFinite(a.order) ? a.order : Number.POSITIVE_INFINITY;
+      const bOrder = Number.isFinite(b.order) ? b.order : Number.POSITIVE_INFINITY;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return a.idx - b.idx;
+    });
+  const picked = indexed[0];
+  const queryRaw = picked?.view?.filterCond;
+  return {
+    matched: true,
+    query: queryRaw == null ? null : String(queryRaw).trim(),
+    viewName: String(picked?.name || '').trim(),
+    viewId: String(picked?.view?.id || '').trim(),
+    reason: 'default_view'
+  };
+}
+
+async function runInKintoneOnHost(host, type, payload = {}) {
+  const safeHost = String(host || '').trim();
+  if (!safeHost) throw new Error('host is required');
+  const response = await chrome.runtime.sendMessage({
+    type: 'RUN_IN_KINTONE',
+    host: safeHost,
+    forward: {
+      type,
+      payload
+    }
+  });
+  if (!response?.ok) {
+    throw new Error(String(response?.error || `${type} failed`));
+  }
+  return response;
+}
+
+async function fetchViewsForWatchlist(host, appId, cacheMap) {
+  const cacheKey = `${String(host || '').trim()}::${String(appId || '').trim()}`;
+  if (cacheMap?.has(cacheKey)) return cacheMap.get(cacheKey);
+  const response = await runInKintoneOnHost(host, 'LIST_VIEWS', {
+    appId: String(appId || '').trim(),
+    __pbTrigger: 'watchlist_register',
+    __pbSource: 'options_query_resolve'
+  });
+  const views = response?.views && typeof response.views === 'object' ? response.views : {};
+  if (cacheMap) cacheMap.set(cacheKey, views);
+  return views;
+}
+
+async function resolveWatchlistSavedQuery(entry, viewsCache = new Map()) {
+  const explicit = String(entry?.query || '').trim();
+  const hasExplicitQuery = explicit.length > 0;
+  const viewIdOrName = String(entry?.viewId || entry?.viewIdOrName || '').trim();
+  const host = String(entry?.host || '').trim();
+  const appId = String(entry?.appId || '').trim();
+  if (!host || !appId) return { ok: false, query: '', viewId: '', viewName: '', reason: 'missing_host_or_app' };
+  try {
+    const views = await fetchViewsForWatchlist(host, appId, viewsCache);
+    const resolved = extractViewFilterFromViews(views, viewIdOrName);
+    if (!resolved.matched) {
+      return {
+        ok: false,
+        query: '',
+        viewId: '',
+        viewName: '',
+        reason: resolved.reason || 'view_not_found'
+      };
+    }
+    const resolvedQueryRaw = resolved?.query;
+    const finalQuery = hasExplicitQuery
+      ? explicit
+      : String(resolvedQueryRaw == null ? '' : resolvedQueryRaw).trim();
+    if (isWatchlistQueryMissingValue(finalQuery)) {
+      return {
+        ok: false,
+        query: '',
+        viewId: resolved.viewId,
+        viewName: resolved.viewName || '',
+        reason: 'query_not_found'
+      };
+    }
+    return {
+      ok: true,
+      query: finalQuery,
+      viewId: resolved.viewId,
+      viewName: resolved.viewName || ''
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      query: '',
+      viewId: '',
+      viewName: '',
+      reason: String(error?.message || error || 'view_resolve_failed')
+    };
+  }
+}
+
+function needsWatchlistQueryMigration(item) {
+  if (!item || typeof item !== 'object') return false;
+  if (!isWatchlistQueryMissingValue(item.query)) return false;
+  if (item.queryRepairRequired) return false;
+  if (!String(item.host || '').trim()) return false;
+  if (!String(item.appId || '').trim()) return false;
+  return true;
+}
+
+async function migrateWatchlistQueriesIfNeeded(items) {
+  const source = Array.isArray(items) ? items.map((item, index) => normalizeFavoriteEntryLocal(item, index)) : [];
+  if (!source.some((item) => needsWatchlistQueryMigration(item))) {
+    return { changed: false, items: source };
+  }
+  const viewsCache = new Map();
+  let changed = false;
+  for (const item of source) {
+    if (!needsWatchlistQueryMigration(item)) continue;
+    const resolved = await resolveWatchlistSavedQuery(item, viewsCache);
+    if (!resolved.ok) {
+      item.queryRepairRequired = true;
+      changed = true;
+      continue;
+    }
+    item.query = String(resolved.query || '');
+    item.viewId = String(resolved.viewId || item.viewId || '').trim();
+    item.viewIdOrName = item.viewId || String(item.viewIdOrName || '').trim();
+    item.queryRepairRequired = false;
+    const canonicalUrl = buildWatchlistUrl(item.host, item.appId, item.viewId);
+    if (canonicalUrl) item.url = canonicalUrl;
+    if (resolved.viewName) item.viewName = resolved.viewName;
+    changed = true;
+  }
+  if (changed) {
+    const normalized = source.map((entry, index) => normalizeFavoriteEntryLocal(entry, index));
+    await chrome.storage.sync.set({ kintoneFavorites: normalized });
+    return { changed: true, items: normalized };
+  }
+  return { changed: false, items: source.map((entry, index) => normalizeFavoriteEntryLocal(entry, index)) };
+}
+
 function closeEditDialog({ restoreFocus = true } = {}) {
   if (!editDialog) return;
   const closingId = editingId;
@@ -1713,7 +2294,7 @@ function openEdit(item, triggerEl = null) {
   editLabelEl.value = item.label || '';
   editUrlEl.value = item.url || '';
   editAppIdEl.value = item.appId || '';
-  editViewEl.value = item.viewIdOrName || '';
+  editViewEl.value = item.viewId || item.viewIdOrName || '';
   editQueryEl.value = item.query || '';
   if (editIconEl) {
     editIconEl.value = sanitizeIcon(item.icon);
@@ -1784,34 +2365,59 @@ editSaveBtn.addEventListener('click', async (e) => {
   e.preventDefault();
   if (!editingId) { closeEditDialog(); return; }
   const newLabel = editLabelEl.value.trim();
-  const newUrl = editUrlEl.value.trim();
-  let { host, appId, viewIdOrName } = parseKintoneUrl(newUrl);
+  const newUrlRaw = editUrlEl.value.trim();
+  let { host, appId, viewIdOrName } = parseKintoneUrl(newUrlRaw);
   if (editAppIdEl.value.trim()) appId = editAppIdEl.value.trim();
   if (editViewEl.value.trim()) viewIdOrName = editViewEl.value.trim();
   const newQuery = editQueryEl.value.trim() || '';
   const newIcon = sanitizeIcon(editIconEl?.value);
   const newIconColor = sanitizeIconColor(editIconColorEl?.value);
   const newCategory = sanitizeCategory(editCategoryEl?.value);
-  if (!newUrl || !host) { alert(t('alert_invalid_kintone_url')); return; }
+  if (!newUrlRaw || !host || !String(appId || '').trim()) {
+    alert(t('alert_invalid_kintone_url'));
+    return;
+  }
   if (!(await ensureHostPermissionFor(host))) {
     alert(t('alert_host_permission_denied'));
     return;
   }
   const all = await loadFavorites();
-  const idx = all.findIndex(x => x.id === editingId);
+  const idx = all.findIndex((x) => x.id === editingId);
   if (idx === -1) { closeEditDialog(); return; }
-  if (all.some((x, i) => i !== idx && x.url === newUrl)) {
-    alert(t('alert_duplicate_url')); return;
+  const resolvedQuery = await resolveWatchlistSavedQuery({
+    host,
+    appId: appId || '',
+    viewIdOrName: viewIdOrName || '',
+    url: newUrlRaw,
+    query: newQuery
+  });
+  if (!resolvedQuery.ok) {
+    alert(t('alert_watch_add_query_resolve_failed'));
+    return;
   }
+  const canonicalUrl = buildWatchlistUrl(host, appId, resolvedQuery.viewId);
+  if (!canonicalUrl) {
+    alert(t('alert_watch_add_query_resolve_failed'));
+    return;
+  }
+  if (all.some((x, i) => i !== idx && x.url === canonicalUrl)) {
+    alert(t('alert_duplicate_url'));
+    return;
+  }
+  const resolvedTitle = newLabel || `${t('app_prefix')} ${String(appId || '').trim()}`;
   const old = all[idx];
   all[idx] = {
     ...old,
-    label: newLabel,
-    url: newUrl,
+    label: resolvedTitle,
+    title: resolvedTitle,
+    url: canonicalUrl,
     host,
-    appId: appId||'',
-    viewIdOrName: viewIdOrName||'',
-    query: newQuery,
+    appId: String(appId || '').trim(),
+    viewId: String(resolvedQuery.viewId || '').trim(),
+    viewIdOrName: String(resolvedQuery.viewId || '').trim(),
+    viewName: resolvedQuery.viewName || old.viewName || '',
+    query: String(resolvedQuery.query || ''),
+    queryRepairRequired: false,
     icon: newIcon,
     iconColor: newIconColor,
     category: newCategory
@@ -1989,7 +2595,9 @@ pinEditSaveBtn?.addEventListener('click', async (event) => {
     appId,
     recordId,
     titleField,
-    note
+    note,
+    pinnedAt: pinnedEntries[idx]?.pinnedAt,
+    modifiedAt: Date.now()
   });
   await savePinnedEntries();
   renderPinnedEntries();
@@ -1998,8 +2606,8 @@ pinEditSaveBtn?.addEventListener('click', async (event) => {
 
 addBtn.addEventListener('click', async () => {
   const label = labelEl.value.trim();
-  const url = urlEl.value.trim();
-  let { host, appId, viewIdOrName } = parseKintoneUrl(url);
+  const urlRaw = urlEl.value.trim();
+  let { host, appId, viewIdOrName } = parseKintoneUrl(urlRaw);
 
   if (appIdEl.value.trim()) appId = appIdEl.value.trim();
   if (viewEl.value.trim()) viewIdOrName = viewEl.value.trim();
@@ -2008,7 +2616,7 @@ addBtn.addEventListener('click', async () => {
   const iconColor = sanitizeIconColor(iconColorEl?.value);
   const category = sanitizeCategory(categoryEl?.value);
 
-  if (!url || !host) {
+  if (!urlRaw || !host || !String(appId || '').trim()) {
     alert(t('alert_invalid_kintone_url'));
     return;
   }
@@ -2018,19 +2626,46 @@ addBtn.addEventListener('click', async () => {
   }
 
   const list = await loadFavorites();
-  if (list.some(x => x.url === url)) {
-    alert(t('alert_duplicate_url'));
+  const limit = getWatchlistLimit();
+  if (list.length >= limit) {
+    alert(t('alert_watchlist_limit_reached', { limit }));
+    renderWatchlistLimitHint(list.length);
     return;
   }
-
-  const item = {
-    id: createId(),
-    label,
-    url,
+  const resolvedQuery = await resolveWatchlistSavedQuery({
     host,
     appId: appId || '',
     viewIdOrName: viewIdOrName || '',
-    query: query || '',
+    url: urlRaw,
+    query
+  });
+  if (!resolvedQuery.ok) {
+    alert(t('alert_watch_add_query_resolve_failed'));
+    return;
+  }
+  const canonicalUrl = buildWatchlistUrl(host, appId, resolvedQuery.viewId);
+  if (!canonicalUrl) {
+    alert(t('alert_watch_add_query_resolve_failed'));
+    return;
+  }
+  if (list.some((x) => x.url === canonicalUrl)) {
+    alert(t('alert_duplicate_url'));
+    return;
+  }
+  const resolvedTitle = label || `${t('app_prefix')} ${String(appId || '').trim()}`;
+
+  const item = {
+    id: createId(),
+    label: resolvedTitle,
+    title: resolvedTitle,
+    url: canonicalUrl,
+    host,
+    appId: String(appId || '').trim(),
+    viewId: String(resolvedQuery.viewId || '').trim(),
+    viewIdOrName: String(resolvedQuery.viewId || '').trim(),
+    viewName: resolvedQuery.viewName || '',
+    query: String(resolvedQuery.query || ''),
+    queryRepairRequired: false,
     icon,
     iconColor,
     category,
@@ -2062,7 +2697,10 @@ addBtn.addEventListener('click', async () => {
 // 初期表示
 (async () => {
   await initializeI18n();
-  const items = await loadFavorites();
+  await loadWatchlistLimitSetting();
+  const loadedItems = await loadFavorites();
+  const migrated = await migrateWatchlistQueriesIfNeeded(loadedItems);
+  const items = migrated.items;
   await warmHostPermissionStatus(items);
   await render(items);
 
@@ -2090,10 +2728,13 @@ addBtn.addEventListener('click', async () => {
   if (pinVisibleToggleEl) pinVisibleToggleEl.checked = pinVisible;
 
   await Promise.all([
-    loadExcelColumnPrefs(),
+    loadOverlayLayoutPresets(),
     loadExcelOverlayMode(),
     loadShortcutSearchOpenMode(),
-    loadDeveloperProOverride()
+    loadWatchlistRefreshPreset(),
+    loadDeveloperProOverride(),
+    loadApiUsageStats(),
+    loadWatchlistDebugState()
   ]);
   optionsDataReady = true;
   console.log('[options][state] loaded keys', ['kintoneFavorites', 'kfavPins', 'kfavShortcuts', UI_LANGUAGE_KEY]);
@@ -2116,6 +2757,35 @@ if (chrome?.storage?.onChanged) {
         developerProOverrideEl.checked = Boolean(changes[DEVELOPER_PRO_OVERRIDE_KEY].newValue);
       }
     }
+    if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, WATCHLIST_REFRESH_PRESET_KEY)) {
+      if (watchlistRefreshPresetEl) {
+        watchlistRefreshPresetEl.value = normalizeWatchlistRefreshPreset(changes[WATCHLIST_REFRESH_PRESET_KEY].newValue);
+      }
+    }
+    if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, WATCHLIST_LIMIT_KEY)) {
+      watchlistLimit = normalizeWatchlistLimit(changes[WATCHLIST_LIMIT_KEY].newValue);
+      loadFavorites()
+        .then((items) => renderWatchlistLimitHint(items.length))
+        .catch(() => renderWatchlistLimitHint(0));
+    }
+    if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, API_USAGE_DAILY_KEY)) {
+      apiUsageDaily = normalizeApiUsageDaily(changes[API_USAGE_DAILY_KEY].newValue);
+      renderApiUsageStats();
+    }
+    if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY)) {
+      apiUsageAdminBreakdownDaily = normalizeApiUsageAdminBreakdownDaily(changes[API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY].newValue);
+      renderApiUsageStats();
+    }
+    if ((area === 'session' || area === 'local') && Object.prototype.hasOwnProperty.call(changes, WATCHLIST_DEBUG_CONFIG_KEY)) {
+      watchlistDebugEnabled = normalizeWatchlistDebugConfig(changes[WATCHLIST_DEBUG_CONFIG_KEY].newValue).enabled;
+      watchlistDebugStorageArea = area;
+      renderWatchlistDebugSection();
+    }
+    if ((area === 'session' || area === 'local') && Object.prototype.hasOwnProperty.call(changes, WATCHLIST_DEBUG_LOG_KEY)) {
+      watchlistDebugLogs = normalizeWatchlistDebugLogs(changes[WATCHLIST_DEBUG_LOG_KEY].newValue);
+      watchlistDebugStorageArea = area;
+      renderWatchlistDebugSection();
+    }
     if (area === 'sync' && Object.prototype.hasOwnProperty.call(changes, 'kfavPins')) {
       const next = changes.kfavPins.newValue;
       const arr = Array.isArray(next) ? next : next ? [next] : [];
@@ -2128,9 +2798,14 @@ if (chrome?.storage?.onChanged) {
         : true;
       if (pinVisibleToggleEl) pinVisibleToggleEl.checked = flag;
     }
-    if (area === 'sync' && Object.prototype.hasOwnProperty.call(changes, EXCEL_COLUMN_PREF_KEY)) {
-      excelColumnPrefs = normalizeExcelColumnPrefs(changes[EXCEL_COLUMN_PREF_KEY].newValue);
-      renderExcelColumnPrefs();
+    if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, OVERLAY_LAYOUT_PRESETS_KEY)) {
+      overlayLayoutPresets = normalizeOverlayLayoutPresets(changes[OVERLAY_LAYOUT_PRESETS_KEY].newValue);
+      renderOverlayLayoutPresets();
+    }
+    if (area === 'local' && Object.keys(changes).some((key) => String(key || '').startsWith(PB_METADATA_CACHE_PREFIX))) {
+      loadOverlayAppNameLookup()
+        .then(() => renderOverlayLayoutPresets())
+        .catch(() => {});
     }
     if (area === 'sync' && Object.prototype.hasOwnProperty.call(changes, EXCEL_OVERLAY_MODE_KEY)) {
       const requestedMode = normalizeExcelOverlayMode(changes[EXCEL_OVERLAY_MODE_KEY].newValue);
@@ -2180,7 +2855,9 @@ async function rerenderLocalizedDynamicSections() {
   await render(items);
   renderShortcutEntries();
   renderPinnedEntries();
-  renderExcelColumnPrefs();
+  renderOverlayLayoutPresets();
+  renderApiUsageStats();
+  renderWatchlistDebugSection();
 }
 
 async function refreshLocalizedFormControls() {
@@ -2256,10 +2933,22 @@ function setExcelModeNotice(message) {
   excelModeNoticeEl.textContent = text;
 }
 
+function setMetadataCacheStatus(message) {
+  if (!metadataCacheStatusEl) return;
+  metadataCacheStatusEl.textContent = String(message || '').trim() || t('metadata_cache_clear_desc');
+}
+
 function normalizeShortcutSearchOpenMode(value) {
   return SHORTCUT_SEARCH_OPEN_MODE_VALUES.includes(value)
     ? value
     : DEFAULT_SHORTCUT_SEARCH_OPEN_MODE;
+}
+
+function normalizeWatchlistRefreshPreset(value) {
+  const preset = String(value || '').trim().toLowerCase();
+  return WATCHLIST_REFRESH_PRESET_VALUES.includes(preset)
+    ? preset
+    : DEFAULT_WATCHLIST_REFRESH_PRESET;
 }
 
 async function loadExcelOverlayMode() {
@@ -2285,6 +2974,22 @@ async function loadShortcutSearchOpenMode() {
   });
 }
 
+async function loadWatchlistRefreshPreset() {
+  if (!watchlistRefreshPresetEl) return;
+  try {
+    const stored = await chrome.storage.local.get(WATCHLIST_REFRESH_PRESET_KEY);
+    const rawPreset = stored?.[WATCHLIST_REFRESH_PRESET_KEY];
+    const normalizedPreset = normalizeWatchlistRefreshPreset(rawPreset);
+    watchlistRefreshPresetEl.value = normalizedPreset;
+    if (rawPreset !== normalizedPreset) {
+      await saveWatchlistRefreshPreset(normalizedPreset);
+    }
+  } catch (_err) {
+    watchlistRefreshPresetEl.value = DEFAULT_WATCHLIST_REFRESH_PRESET;
+    await saveWatchlistRefreshPreset(DEFAULT_WATCHLIST_REFRESH_PRESET);
+  }
+}
+
 async function saveExcelOverlayMode(modeValue) {
   const mode = getEffectiveExcelOverlayMode(modeValue);
   await chrome.storage.sync.set({ [EXCEL_OVERLAY_MODE_KEY]: mode });
@@ -2293,6 +2998,11 @@ async function saveExcelOverlayMode(modeValue) {
 async function saveShortcutSearchOpenMode(modeValue) {
   const mode = normalizeShortcutSearchOpenMode(modeValue);
   await chrome.storage.sync.set({ [SHORTCUT_SEARCH_OPEN_MODE_KEY]: mode });
+}
+
+async function saveWatchlistRefreshPreset(presetValue) {
+  const preset = normalizeWatchlistRefreshPreset(presetValue);
+  await chrome.storage.local.set({ [WATCHLIST_REFRESH_PRESET_KEY]: preset });
 }
 
 excelModeInputs.forEach((input) => {
@@ -2318,6 +3028,12 @@ shortcutSearchModeInputs.forEach((input) => {
   });
 });
 
+watchlistRefreshPresetEl?.addEventListener('change', async () => {
+  const preset = normalizeWatchlistRefreshPreset(watchlistRefreshPresetEl.value);
+  watchlistRefreshPresetEl.value = preset;
+  await saveWatchlistRefreshPreset(preset);
+});
+
 uiLanguageEl?.addEventListener('change', async () => {
   const setting = normalizeUiLanguageSetting(uiLanguageEl.value);
   await applyUiLanguageSetting(setting, { persist: true });
@@ -2330,23 +3046,150 @@ developerProOverrideEl?.addEventListener('change', async () => {
   });
 });
 
-// ---- Excel column prefs ----
-function normalizeExcelColumnPrefs(raw) {
+apiUsageResetBtn?.addEventListener('click', async () => {
+  if (!window.confirm(t('api_usage_reset_confirm'))) return;
+  await resetApiUsageStats();
+});
+
+metadataCacheClearBtn?.addEventListener('click', async () => {
+  if (!window.confirm(t('metadata_cache_clear_confirm'))) return;
+  setMetadataCacheStatus('...');
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'PB_CLEAR_METADATA_CACHE_ALL' });
+    if (response?.ok) {
+      setMetadataCacheStatus(t('metadata_cache_clear_done'));
+      return;
+    }
+    setMetadataCacheStatus(t('metadata_cache_clear_failed'));
+  } catch (_err) {
+    setMetadataCacheStatus(t('metadata_cache_clear_failed'));
+  }
+});
+
+watchlistDebugEnabledEl?.addEventListener('change', async () => {
+  const enabled = Boolean(watchlistDebugEnabledEl.checked);
+  await saveWatchlistDebugConfig(enabled);
+  watchlistDebugEnabled = enabled;
+  renderWatchlistDebugSection();
+});
+
+watchlistDebugClearBtn?.addEventListener('click', async () => {
+  if (!window.confirm(t('watchlist_debug_clear_confirm'))) return;
+  await clearWatchlistDebugLogs();
+});
+
+// ---- Overlay layout presets ----
+function normalizeOverlayLayoutPreset(rawPreset, index = 0) {
+  if (!rawPreset || typeof rawPreset !== 'object') return null;
+  const id = String(rawPreset.id || `preset_${index + 1}`).trim();
+  if (!id) return null;
+  const name = String(rawPreset.name || '').trim() || `Preset ${index + 1}`;
+  const visibleColumns = Array.isArray(rawPreset.visibleColumns)
+    ? Array.from(new Set(rawPreset.visibleColumns.map((code) => String(code || '').trim()).filter(Boolean)))
+    : [];
+  const allowed = new Set(visibleColumns);
+  const columnOrderRaw = Array.isArray(rawPreset.columnOrder) ? rawPreset.columnOrder : [];
+  const seen = new Set();
+  const columnOrder = [];
+  columnOrderRaw.forEach((codeRaw) => {
+    const code = String(codeRaw || '').trim();
+    if (!code || seen.has(code)) return;
+    if (allowed.size > 0 && !allowed.has(code)) return;
+    columnOrder.push(code);
+    seen.add(code);
+  });
+  visibleColumns.forEach((code) => {
+    if (seen.has(code)) return;
+    columnOrder.push(code);
+    seen.add(code);
+  });
+  const rawWidths = rawPreset.columnWidths && typeof rawPreset.columnWidths === 'object'
+    ? rawPreset.columnWidths
+    : {};
+  const columnWidths = {};
+  Object.entries(rawWidths).forEach(([codeRaw, widthRaw]) => {
+    const code = String(codeRaw || '').trim();
+    if (!code) return;
+    const numeric = Number(widthRaw);
+    if (!Number.isFinite(numeric) || numeric <= 0) return;
+    columnWidths[code] = Math.round(numeric);
+  });
+  return {
+    id,
+    name,
+    scope: String(rawPreset.scope || '').trim().toLowerCase() === 'detail' ? 'detail' : 'list',
+    visibleColumns,
+    columnOrder,
+    columnWidths,
+    pinnedColumns: Array.isArray(rawPreset.pinnedColumns)
+      ? Array.from(new Set(rawPreset.pinnedColumns.map((code) => String(code || '').trim()).filter(Boolean)))
+      : []
+  };
+}
+
+function normalizeOverlayLayoutPresets(raw) {
   if (!raw || typeof raw !== 'object') return {};
   const next = {};
-  Object.entries(raw).forEach(([key, value]) => {
-    if (!value || typeof value !== 'object') return;
+  Object.entries(raw).forEach(([keyRaw, value]) => {
+    const key = String(keyRaw || '').trim();
+    if (!key || !value || typeof value !== 'object') return;
+    const presetsRaw = Array.isArray(value.presets) ? value.presets : [];
+    const presets = presetsRaw
+      .map((preset, index) => normalizeOverlayLayoutPreset(preset, index))
+      .filter(Boolean);
+    if (!presets.length) return;
+    const activePresetIdRaw = String(value.activePresetId || '').trim();
+    const activePresetId = presets.some((preset) => preset.id === activePresetIdRaw)
+      ? activePresetIdRaw
+      : presets[0].id;
     next[key] = {
-      order: Array.isArray(value.order) ? value.order.filter(Boolean) : [],
-      appId: value.appId || '',
-      appName: value.appName || '',
-      viewName: value.viewName || '',
-      viewKey: value.viewKey || '',
-      savedAt: value.savedAt || 0,
-      widths: value.widths && typeof value.widths === 'object' ? { ...value.widths } : {}
+      host: String(value.host || key.split('::')[0] || '').trim(),
+      appId: String(value.appId || key.split('::')[1] || '').trim(),
+      appName: String(value.appName || '').trim(),
+      activePresetId,
+      presets,
+      updatedAt: Number(value.updatedAt || 0)
     };
   });
   return next;
+}
+
+function makeOverlayLayoutAppLookupKey(host, appId) {
+  const safeHost = String(host || '').trim().toLowerCase();
+  const safeAppId = String(appId || '').trim();
+  if (!safeHost || !safeAppId) return '';
+  return `${safeHost}::${safeAppId}`;
+}
+
+async function loadOverlayAppNameLookup() {
+  const lookup = {};
+  try {
+    const all = await chrome.storage.local.get(null);
+    Object.entries(all || {}).forEach(([key, value]) => {
+      if (!String(key || '').startsWith(PB_METADATA_CACHE_PREFIX)) return;
+      const suffix = String(key).slice(PB_METADATA_CACHE_PREFIX.length);
+      const splitAt = suffix.lastIndexOf(':');
+      if (splitAt <= 0) return;
+      const host = suffix.slice(0, splitAt).trim().toLowerCase();
+      const appId = suffix.slice(splitAt + 1).trim();
+      const appName = String(value?.app?.name || '').trim();
+      const appKey = makeOverlayLayoutAppLookupKey(host, appId);
+      if (!appKey || !appName) return;
+      lookup[appKey] = appName;
+    });
+  } catch (_err) {
+    // ignore
+  }
+  overlayAppNameLookup = lookup;
+}
+
+function getOverlayPresetDisplayName(preset) {
+  const safePreset = preset && typeof preset === 'object' ? preset : {};
+  if (String(safePreset.scope || '').trim().toLowerCase() === 'detail') {
+    return t('overlay_layout_detail_name');
+  }
+  const name = String(safePreset.name || '').trim();
+  return name || '-';
 }
 
 function formatPrefDate(ts) {
@@ -2361,31 +3204,446 @@ function formatPrefDate(ts) {
   return `${yyyy}/${mm}/${dd} ${hh}:${mi}`;
 }
 
-function inferExcelLayoutScope(entry) {
-  const viewKey = String(entry?.viewKey || '').trim().toLowerCase();
-  const viewName = String(entry?.viewName || '').trim();
-  if (!viewKey && !viewName) return 'list';
-  if (viewKey.startsWith('id:detail:')) return 'detail';
-  if (viewKey.startsWith('param:detail')) return 'detail';
-  if (viewKey.includes('detail:')) return 'detail';
-  if (!viewName && viewKey.includes('detail')) return 'detail';
-  return 'list';
+function toLocalDateKey(date = new Date()) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
-function renderExcelColumnPrefs() {
+function normalizeApiUsageDaily(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const daily = {};
+  Object.entries(raw).forEach(([dateKey, featureMap]) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) return;
+    if (!featureMap || typeof featureMap !== 'object') return;
+    const normalizedFeatureMap = {};
+    Object.entries(featureMap).forEach(([featureKey, bucket]) => {
+      const feature = normalizeApiUsageFeature(featureKey);
+      if (isApiUsageStatLike(bucket)) {
+        mergeApiUsageStat(normalizedFeatureMap, feature, createApiUsageStat(bucket));
+        return;
+      }
+      // Legacy format: { date: { menu: { purpose: { count/success/error } } } }
+      if (!bucket || typeof bucket !== 'object') return;
+      Object.values(bucket).forEach((legacyStat) => {
+        if (!isApiUsageStatLike(legacyStat)) return;
+        mergeApiUsageStat(normalizedFeatureMap, feature, createApiUsageStat(legacyStat));
+      });
+    });
+    if (Object.keys(normalizedFeatureMap).length) {
+      daily[dateKey] = normalizedFeatureMap;
+    }
+  });
+  return daily;
+}
+
+function normalizeAdminUsageCategory(rawCategory) {
+  const category = String(rawCategory || '').trim().toLowerCase();
+  if (API_USAGE_ADMIN_CATEGORY_VALUES.has(category)) return category;
+  return 'other';
+}
+
+function normalizeApiUsageAdminBreakdownDaily(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const daily = {};
+  Object.entries(raw).forEach(([dateKey, categoryMap]) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) return;
+    if (!categoryMap || typeof categoryMap !== 'object') return;
+    const normalizedCategoryMap = {};
+    Object.entries(categoryMap).forEach(([categoryKey, bucket]) => {
+      const category = normalizeAdminUsageCategory(categoryKey);
+      if (isApiUsageStatLike(bucket)) {
+        mergeAdminBreakdownStat(normalizedCategoryMap, category, createApiUsageStat(bucket));
+        return;
+      }
+      if (!bucket || typeof bucket !== 'object') return;
+      Object.values(bucket).forEach((legacyStat) => {
+        if (!isApiUsageStatLike(legacyStat)) return;
+        mergeAdminBreakdownStat(normalizedCategoryMap, category, createApiUsageStat(legacyStat));
+      });
+    });
+    if (Object.keys(normalizedCategoryMap).length) {
+      daily[dateKey] = normalizedCategoryMap;
+    }
+  });
+  return daily;
+}
+
+function normalizeApiUsageFeature(rawFeature) {
+  const feature = String(rawFeature || '').trim().toLowerCase();
+  if (API_USAGE_FEATURE_VALUES.has(feature)) return feature;
+  if (Object.prototype.hasOwnProperty.call(API_USAGE_LEGACY_FEATURE_MAP, feature)) {
+    return API_USAGE_LEGACY_FEATURE_MAP[feature];
+  }
+  return 'other';
+}
+
+function isApiUsageStatLike(raw) {
+  if (!raw || typeof raw !== 'object') return false;
+  return Object.prototype.hasOwnProperty.call(raw, 'count')
+    || Object.prototype.hasOwnProperty.call(raw, 'success')
+    || Object.prototype.hasOwnProperty.call(raw, 'error');
+}
+
+function createApiUsageStat(raw) {
+  const count = Number(raw?.count || 0);
+  const success = Number(raw?.success || 0);
+  const error = Number(raw?.error || 0);
+  return {
+    count: Number.isFinite(count) && count > 0 ? count : 0,
+    success: Number.isFinite(success) && success > 0 ? success : 0,
+    error: Number.isFinite(error) && error > 0 ? error : 0
+  };
+}
+
+function mergeApiUsageStat(featureMap, featureValue, stat) {
+  const feature = normalizeApiUsageFeature(featureValue);
+  const current = featureMap[feature] || { count: 0, success: 0, error: 0 };
+  current.count += Number(stat?.count || 0);
+  current.success += Number(stat?.success || 0);
+  current.error += Number(stat?.error || 0);
+  featureMap[feature] = current;
+}
+
+function mergeAdminBreakdownStat(categoryMap, categoryValue, stat) {
+  const category = normalizeAdminUsageCategory(categoryValue);
+  const current = categoryMap[category] || { count: 0, success: 0, error: 0 };
+  current.count += Number(stat?.count || 0);
+  current.success += Number(stat?.success || 0);
+  current.error += Number(stat?.error || 0);
+  categoryMap[category] = current;
+}
+
+function pruneApiUsageDaily(daily) {
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - (API_USAGE_RETENTION_DAYS - 1));
+  const cutoffKey = toLocalDateKey(cutoff);
+  let changed = false;
+  Object.keys(daily).forEach((dateKey) => {
+    if (dateKey < cutoffKey) {
+      delete daily[dateKey];
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+function buildRangeDateKeys(days) {
+  const keys = [];
+  const span = Math.max(1, Number(days) || 1);
+  const cursor = new Date();
+  cursor.setHours(0, 0, 0, 0);
+  for (let i = 0; i < span; i += 1) {
+    const d = new Date(cursor);
+    d.setDate(cursor.getDate() - i);
+    keys.push(toLocalDateKey(d));
+  }
+  return keys;
+}
+
+function aggregateApiUsage(days) {
+  const keys = new Set(buildRangeDateKeys(days));
+  const byFeature = {};
+  let total = 0;
+  let success = 0;
+  let error = 0;
+
+  Object.entries(apiUsageDaily).forEach(([dateKey, featureMap]) => {
+    if (!keys.has(dateKey)) return;
+    Object.entries(featureMap || {}).forEach(([feature, stat]) => {
+      const countValue = Number(stat?.count || 0);
+      const successValue = Number(stat?.success || 0);
+      const errorValue = Number(stat?.error || 0);
+      const resolvedCount = countValue > 0 ? countValue : successValue + errorValue;
+      if (!resolvedCount && !successValue && !errorValue) return;
+      const normalizedFeature = normalizeApiUsageFeature(feature);
+      total += resolvedCount;
+      success += successValue;
+      error += errorValue;
+      byFeature[normalizedFeature] = (byFeature[normalizedFeature] || 0) + resolvedCount;
+    });
+  });
+
+  return { total, success, error, byFeature };
+}
+
+function aggregateAdminBreakdown(days) {
+  const keys = new Set(buildRangeDateKeys(days));
+  const byCategory = {};
+  Object.entries(apiUsageAdminBreakdownDaily).forEach(([dateKey, categoryMap]) => {
+    if (!keys.has(dateKey)) return;
+    Object.entries(categoryMap || {}).forEach(([category, stat]) => {
+      const countValue = Number(stat?.count || 0);
+      const successValue = Number(stat?.success || 0);
+      const errorValue = Number(stat?.error || 0);
+      const resolvedCount = countValue > 0 ? countValue : successValue + errorValue;
+      if (!resolvedCount && !successValue && !errorValue) return;
+      const normalizedCategory = normalizeAdminUsageCategory(category);
+      byCategory[normalizedCategory] = (byCategory[normalizedCategory] || 0) + resolvedCount;
+    });
+  });
+  return { byCategory };
+}
+
+function setApiUsageMetric(el, value) {
+  if (!el) return;
+  const num = Number(value || 0);
+  el.textContent = String(Number.isFinite(num) && num >= 0 ? num : 0);
+}
+
+function renderApiUsageFeatureTable(today, week, month) {
+  if (!apiUsageFeatureTableBodyEl) return;
+  apiUsageFeatureTableBodyEl.innerHTML = '';
+  API_USAGE_FEATURE_ORDER.forEach((feature) => {
+    const row = document.createElement('tr');
+    const nameCell = document.createElement('td');
+    nameCell.textContent = t(`api_usage_feature_${feature}`);
+    const todayCell = document.createElement('td');
+    todayCell.textContent = String(Number(today.byFeature?.[feature] || 0));
+    const weekCell = document.createElement('td');
+    weekCell.textContent = String(Number(week.byFeature?.[feature] || 0));
+    const monthCell = document.createElement('td');
+    monthCell.textContent = String(Number(month.byFeature?.[feature] || 0));
+    row.appendChild(nameCell);
+    row.appendChild(todayCell);
+    row.appendChild(weekCell);
+    row.appendChild(monthCell);
+    apiUsageFeatureTableBodyEl.appendChild(row);
+  });
+}
+
+function renderApiUsageAdminBreakdown(today, week, month) {
+  if (!apiUsageAdminBreakdownTableBodyEl) return;
+  apiUsageAdminBreakdownTableBodyEl.innerHTML = '';
+  API_USAGE_ADMIN_CATEGORY_ORDER.forEach((category) => {
+    const row = document.createElement('tr');
+    const nameCell = document.createElement('td');
+    nameCell.textContent = t(`api_usage_admin_category_${category}`);
+    const todayCell = document.createElement('td');
+    todayCell.textContent = String(Number(today.byCategory?.[category] || 0));
+    const weekCell = document.createElement('td');
+    weekCell.textContent = String(Number(week.byCategory?.[category] || 0));
+    const monthCell = document.createElement('td');
+    monthCell.textContent = String(Number(month.byCategory?.[category] || 0));
+    row.appendChild(nameCell);
+    row.appendChild(todayCell);
+    row.appendChild(weekCell);
+    row.appendChild(monthCell);
+    apiUsageAdminBreakdownTableBodyEl.appendChild(row);
+  });
+}
+
+function renderApiUsageStats() {
+  if (!apiUsageFeatureTableBodyEl) return;
+  const today = aggregateApiUsage(1);
+  const week = aggregateApiUsage(7);
+  const month = aggregateApiUsage(30);
+  const adminToday = aggregateAdminBreakdown(1);
+  const adminWeek = aggregateAdminBreakdown(7);
+  const adminMonth = aggregateAdminBreakdown(30);
+
+  setApiUsageMetric(apiUsageTodayTotalEl, today.total);
+  setApiUsageMetric(apiUsageTodaySuccessEl, today.success);
+  setApiUsageMetric(apiUsageTodayErrorEl, today.error);
+  setApiUsageMetric(apiUsage7dTotalEl, week.total);
+  setApiUsageMetric(apiUsage7dSuccessEl, week.success);
+  setApiUsageMetric(apiUsage7dErrorEl, week.error);
+  setApiUsageMetric(apiUsage30dTotalEl, month.total);
+  setApiUsageMetric(apiUsage30dSuccessEl, month.success);
+  setApiUsageMetric(apiUsage30dErrorEl, month.error);
+  renderApiUsageFeatureTable(today, week, month);
+  renderApiUsageAdminBreakdown(adminToday, adminWeek, adminMonth);
+}
+
+async function loadApiUsageStats() {
+  const stored = await chrome.storage.local.get([API_USAGE_DAILY_KEY, API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY]);
+  const normalized = normalizeApiUsageDaily(stored?.[API_USAGE_DAILY_KEY]);
+  const normalizedAdmin = normalizeApiUsageAdminBreakdownDaily(stored?.[API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY]);
+  const pruned = pruneApiUsageDaily(normalized);
+  const prunedAdmin = pruneApiUsageDaily(normalizedAdmin);
+  apiUsageDaily = normalized;
+  apiUsageAdminBreakdownDaily = normalizedAdmin;
+  if (pruned || prunedAdmin) {
+    const payload = {};
+    const removeKeys = [];
+    if (Object.keys(normalized).length) {
+      payload[API_USAGE_DAILY_KEY] = normalized;
+    } else {
+      removeKeys.push(API_USAGE_DAILY_KEY);
+    }
+    if (Object.keys(normalizedAdmin).length) {
+      payload[API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY] = normalizedAdmin;
+    } else {
+      removeKeys.push(API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY);
+    }
+    if (Object.keys(payload).length) {
+      await chrome.storage.local.set(payload);
+    }
+    if (removeKeys.length) {
+      await chrome.storage.local.remove(removeKeys);
+    }
+  }
+  renderApiUsageStats();
+}
+
+async function resetApiUsageStats() {
+  apiUsageDaily = {};
+  apiUsageAdminBreakdownDaily = {};
+  await chrome.storage.local.remove([API_USAGE_DAILY_KEY, API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY]);
+  renderApiUsageStats();
+}
+
+function getWatchlistDebugStorageBackend() {
+  if (chrome?.storage?.session) {
+    return { area: chrome.storage.session, name: 'session' };
+  }
+  if (chrome?.storage?.local) {
+    return { area: chrome.storage.local, name: 'local' };
+  }
+  return { area: null, name: 'memory' };
+}
+
+function normalizeWatchlistDebugConfig(raw) {
+  if (raw && typeof raw === 'object') {
+    return { enabled: Boolean(raw.enabled) };
+  }
+  return { enabled: Boolean(raw) };
+}
+
+function normalizeWatchlistDebugLogEntry(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const tsRaw = Number(raw.ts);
+  const cacheAgeRaw = Number(raw.cacheAgeMs);
+  return {
+    ts: Number.isFinite(tsRaw) && tsRaw > 0 ? Math.floor(tsRaw) : Date.now(),
+    trigger: String(raw.trigger || 'unknown').trim() || 'unknown',
+    source: String(raw.source || 'unknown').trim() || 'unknown',
+    pageUrl: String(raw.pageUrl || '').trim(),
+    didRequest: Boolean(raw.didRequest),
+    reason: String(raw.reason || 'unknown').trim() || 'unknown',
+    cacheAgeMs: Number.isFinite(cacheAgeRaw) && cacheAgeRaw >= 0 ? Math.floor(cacheAgeRaw) : null,
+    host: String(raw.host || '').trim(),
+    appId: String(raw.appId || '').trim(),
+    viewId: String(raw.viewId || '').trim()
+  };
+}
+
+function normalizeWatchlistDebugLogs(raw) {
+  if (!Array.isArray(raw)) return [];
+  const normalized = raw
+    .map((entry) => normalizeWatchlistDebugLogEntry(entry))
+    .filter(Boolean);
+  if (normalized.length <= WATCHLIST_DEBUG_MAX_LOGS) return normalized;
+  return normalized.slice(normalized.length - WATCHLIST_DEBUG_MAX_LOGS);
+}
+
+function formatWatchlistDebugTimestamp(tsValue) {
+  const ts = Number(tsValue);
+  if (!Number.isFinite(ts) || ts <= 0) return '-';
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) return '-';
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mi = String(date.getMinutes()).padStart(2, '0');
+  const ss = String(date.getSeconds()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
+function formatWatchlistDebugLine(entry) {
+  const ageText = entry.cacheAgeMs == null ? '-' : String(entry.cacheAgeMs);
+  const host = entry.host || '-';
+  const appId = entry.appId || '-';
+  const viewId = entry.viewId || '-';
+  const url = entry.pageUrl || '-';
+  return `[${formatWatchlistDebugTimestamp(entry.ts)}] trigger=${entry.trigger} source=${entry.source} didRequest=${entry.didRequest ? 'true' : 'false'} reason=${entry.reason} cacheAgeMs=${ageText} host=${host} appId=${appId} viewId=${viewId} pageUrl=${url}`;
+}
+
+function renderWatchlistDebugStorageLabel() {
+  if (!watchlistDebugStorageEl) return;
+  const key = watchlistDebugStorageArea === 'local'
+    ? 'watchlist_debug_storage_local'
+    : 'watchlist_debug_storage_session';
+  watchlistDebugStorageEl.textContent = t(key);
+}
+
+function renderWatchlistDebugSection() {
+  if (watchlistDebugEnabledEl) {
+    watchlistDebugEnabledEl.checked = Boolean(watchlistDebugEnabled);
+  }
+  renderWatchlistDebugStorageLabel();
+  if (!watchlistDebugLogEl) return;
+  if (!watchlistDebugLogs.length) {
+    watchlistDebugLogEl.textContent = t('watchlist_debug_empty');
+    return;
+  }
+  watchlistDebugLogEl.textContent = watchlistDebugLogs
+    .slice()
+    .reverse()
+    .map((entry) => formatWatchlistDebugLine(entry))
+    .join('\n');
+}
+
+async function saveWatchlistDebugConfig(enabled) {
+  const backend = getWatchlistDebugStorageBackend();
+  watchlistDebugStorageArea = backend.name;
+  if (!backend.area) return;
+  try {
+    await backend.area.set({ [WATCHLIST_DEBUG_CONFIG_KEY]: { enabled: Boolean(enabled) } });
+  } catch (_err) {
+    // ignore
+  }
+}
+
+async function loadWatchlistDebugState() {
+  const backend = getWatchlistDebugStorageBackend();
+  watchlistDebugStorageArea = backend.name;
+  if (!backend.area) {
+    watchlistDebugEnabled = false;
+    watchlistDebugLogs = [];
+    renderWatchlistDebugSection();
+    return;
+  }
+  try {
+    const stored = await backend.area.get([WATCHLIST_DEBUG_CONFIG_KEY, WATCHLIST_DEBUG_LOG_KEY]);
+    watchlistDebugEnabled = normalizeWatchlistDebugConfig(stored?.[WATCHLIST_DEBUG_CONFIG_KEY]).enabled;
+    watchlistDebugLogs = normalizeWatchlistDebugLogs(stored?.[WATCHLIST_DEBUG_LOG_KEY]);
+  } catch (_err) {
+    watchlistDebugEnabled = false;
+    watchlistDebugLogs = [];
+  }
+  renderWatchlistDebugSection();
+}
+
+async function clearWatchlistDebugLogs() {
+  const backend = getWatchlistDebugStorageBackend();
+  watchlistDebugStorageArea = backend.name;
+  if (backend.area) {
+    try {
+      await backend.area.remove(WATCHLIST_DEBUG_LOG_KEY);
+    } catch (_err) {
+      // ignore
+    }
+  }
+  watchlistDebugLogs = [];
+  renderWatchlistDebugSection();
+}
+
+function getOverlayLayoutActivePreset(entry) {
+  if (!entry || !Array.isArray(entry.presets) || !entry.presets.length) return null;
+  const activeId = String(entry.activePresetId || '').trim();
+  return entry.presets.find((preset) => preset.id === activeId) || entry.presets[0];
+}
+
+function renderOverlayLayoutPresets() {
   if (!excelListEl) return;
   excelListEl.innerHTML = '';
-  const entries = Object.entries(excelColumnPrefs).map(([key, value]) => ({
-    key,
-    appId: value.appId || '',
-    appName: value.appName || '',
-    viewName: value.viewName || '',
-    viewKey: value.viewKey || '',
-    scope: inferExcelLayoutScope(value),
-    savedAt: value.savedAt || 0,
-    count: Array.isArray(value.order) ? value.order.length : 0,
-    widthCount: value.widths ? Object.keys(value.widths).length : 0
-  })).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+  const entries = Object.entries(overlayLayoutPresets)
+    .map(([key, state]) => ({ key, state }))
+    .sort((a, b) => (Number(b.state?.updatedAt || 0) - Number(a.state?.updatedAt || 0)));
 
   if (!entries.length) {
     const li = document.createElement('li');
@@ -2395,58 +3653,120 @@ function renderExcelColumnPrefs() {
     return;
   }
 
-  entries.forEach((entry) => {
+  entries.forEach((entryBundle) => {
+    const { key, state } = entryBundle;
+    const activePreset = getOverlayLayoutActivePreset(state);
+    const appLookupKey = makeOverlayLayoutAppLookupKey(state.host, state.appId);
+    const appName = String(state.appName || overlayAppNameLookup[appLookupKey] || '').trim();
     const li = document.createElement('li');
     li.className = 'excel-columns-item';
+    li.dataset.appKey = key;
 
     const info = document.createElement('div');
     info.className = 'excel-columns-info';
     const title = document.createElement('div');
     title.className = 'excel-columns-title';
-    const appLabel = entry.appName || (entry.appId ? `${t('app_prefix')} ${entry.appId}` : t('app_unspecified'));
-    const viewLabel = entry.viewName || t('view_unspecified');
-    const scopeLabel = entry.scope === 'detail' ? t('layout_scope_detail') : t('layout_scope_list');
-    title.textContent = entry.scope === 'detail'
-      ? `${appLabel} / ${scopeLabel}`
-      : `${appLabel} / ${viewLabel} (${scopeLabel})`;
-    const scopeBadge = document.createElement('span');
-    scopeBadge.className = `excel-layout-scope excel-layout-scope--${entry.scope}`;
-    scopeBadge.textContent = scopeLabel;
-    title.appendChild(scopeBadge);
+    const appLabel = appName || (state.appId ? `${t('app_prefix')} ${state.appId}` : t('app_unspecified'));
+    title.textContent = appLabel;
+
     const meta = document.createElement('div');
     meta.className = 'excel-columns-meta';
-    const scope = document.createElement('span');
-    scope.textContent = `${t('layout_meta_scope')}: ${scopeLabel}`;
-    const count = document.createElement('span');
-    count.textContent = `${t('layout_meta_order')}: ${entry.count}`;
-    const widthInfo = document.createElement('span');
-    widthInfo.textContent = `${t('layout_meta_width')}: ${entry.widthCount}`;
+    const appIdMeta = document.createElement('span');
+    appIdMeta.textContent = `${t('app_prefix')} ${state.appId || '-'}`;
+    const hostMeta = document.createElement('span');
+    hostMeta.textContent = state.host || '-';
+    const active = document.createElement('span');
+    active.textContent = `${t('overlay_layout_active')}: ${getOverlayPresetDisplayName(activePreset)}`;
+    const presetCount = document.createElement('span');
+    presetCount.textContent = `${t('overlay_layout_presets')}: ${Array.isArray(state.presets) ? state.presets.length : 0}`;
     const saved = document.createElement('span');
-    saved.textContent = `${t('layout_meta_saved')}: ${formatPrefDate(entry.savedAt)}`;
-    meta.appendChild(scope);
-    meta.appendChild(count);
-    meta.appendChild(widthInfo);
+    saved.textContent = `${t('layout_meta_saved')}: ${formatPrefDate(state.updatedAt)}`;
+    meta.appendChild(appIdMeta);
+    meta.appendChild(hostMeta);
+    meta.appendChild(active);
+    meta.appendChild(presetCount);
     meta.appendChild(saved);
+
+    const keyMeta = document.createElement('span');
+    keyMeta.textContent = `${t('overlay_layout_key')}: ${key}`;
+    meta.appendChild(keyMeta);
+
     info.appendChild(title);
     info.appendChild(meta);
 
+    const presetList = document.createElement('div');
+    presetList.className = 'overlay-preset-list';
+    (Array.isArray(state.presets) ? state.presets : []).forEach((preset) => {
+      const row = document.createElement('div');
+      row.className = 'overlay-preset-item';
+
+      const rowInfo = document.createElement('div');
+      rowInfo.className = 'overlay-preset-item-info';
+      const name = document.createElement('div');
+      name.className = 'overlay-preset-item-title';
+      name.textContent = getOverlayPresetDisplayName(preset);
+      if (preset.id === state.activePresetId) {
+        const activeBadge = document.createElement('span');
+        activeBadge.className = 'excel-layout-scope excel-layout-scope--detail';
+        activeBadge.textContent = t('overlay_layout_active_badge');
+        name.appendChild(activeBadge);
+      }
+      const rowMeta = document.createElement('div');
+      rowMeta.className = 'excel-columns-meta';
+      const visibleCount = Array.isArray(preset.visibleColumns) ? preset.visibleColumns.length : 0;
+      const orderPreview = Array.isArray(preset.columnOrder)
+        ? preset.columnOrder.slice(0, 4).join(', ')
+        : '';
+      const visible = document.createElement('span');
+      visible.textContent = `${t('overlay_layout_visible_columns')}: ${visibleCount}`;
+      const order = document.createElement('span');
+      order.textContent = `${t('overlay_layout_order_preview')}: ${orderPreview || '-'}`;
+      rowMeta.appendChild(visible);
+      rowMeta.appendChild(order);
+      rowInfo.appendChild(name);
+      rowInfo.appendChild(rowMeta);
+
+      const rowActions = document.createElement('div');
+      rowActions.className = 'excel-columns-actions';
+      if (preset.id !== state.activePresetId) {
+        const setActiveBtn = document.createElement('button');
+        setActiveBtn.type = 'button';
+        setActiveBtn.className = 'pb-layout-set-active';
+        setActiveBtn.dataset.appKey = key;
+        setActiveBtn.dataset.layoutId = String(preset.id || '');
+        setActiveBtn.textContent = t('overlay_layout_set_active');
+        rowActions.appendChild(setActiveBtn);
+      }
+      const renameBtn = document.createElement('button');
+      renameBtn.type = 'button';
+      renameBtn.className = 'pb-layout-rename';
+      renameBtn.dataset.appKey = key;
+      renameBtn.dataset.layoutId = String(preset.id || '');
+      renameBtn.textContent = t('overlay_layout_rename');
+      rowActions.appendChild(renameBtn);
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'btn-danger-subtle pb-layout-delete';
+      removeBtn.dataset.appKey = key;
+      removeBtn.dataset.layoutId = String(preset.id || '');
+      removeBtn.textContent = t('delete');
+      removeBtn.disabled = (state.presets?.length || 0) <= 1;
+      rowActions.appendChild(removeBtn);
+
+      row.appendChild(rowInfo);
+      row.appendChild(rowActions);
+      presetList.appendChild(row);
+    });
+    info.appendChild(presetList);
+
     const actions = document.createElement('div');
     actions.className = 'excel-columns-actions';
-    const clearOrderBtn = document.createElement('button');
-    clearOrderBtn.type = 'button';
-    clearOrderBtn.textContent = t('clear_sort');
-    clearOrderBtn.addEventListener('click', () => { clearExcelPrefOrder(entry.key); });
-    const clearWidthBtn = document.createElement('button');
-    clearWidthBtn.type = 'button';
-    clearWidthBtn.textContent = t('clear_width');
-    clearWidthBtn.addEventListener('click', () => { clearExcelPrefWidths(entry.key); });
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
-    removeBtn.textContent = t('delete');
-    removeBtn.className = 'btn-danger-subtle';
-    removeBtn.addEventListener('click', () => { removeExcelPref(entry.key); });
-    actions.appendChild(clearOrderBtn);
-    actions.appendChild(clearWidthBtn);
+    removeBtn.className = 'btn-danger-subtle pb-layout-delete-app';
+    removeBtn.dataset.appKey = key;
+    removeBtn.textContent = t('overlay_layout_delete_app');
     actions.appendChild(removeBtn);
 
     li.appendChild(info);
@@ -2455,62 +3775,174 @@ function renderExcelColumnPrefs() {
   });
 }
 
-async function loadExcelColumnPrefs() {
+async function loadOverlayLayoutPresets() {
   if (!excelListEl) return;
-  const stored = await chrome.storage.sync.get(EXCEL_COLUMN_PREF_KEY);
-  excelColumnPrefs = normalizeExcelColumnPrefs(stored[EXCEL_COLUMN_PREF_KEY]);
-  renderExcelColumnPrefs();
+  const [stored] = await Promise.all([
+    chrome.storage.local.get(OVERLAY_LAYOUT_PRESETS_KEY),
+    loadOverlayAppNameLookup()
+  ]);
+  overlayLayoutPresets = normalizeOverlayLayoutPresets(stored?.[OVERLAY_LAYOUT_PRESETS_KEY]);
+  renderOverlayLayoutPresets();
 }
 
-async function saveExcelColumnPrefsMap(next) {
+async function saveOverlayLayoutPresetsMap(next) {
   if (Object.keys(next).length) {
-    await chrome.storage.sync.set({ [EXCEL_COLUMN_PREF_KEY]: next });
+    await chrome.storage.local.set({ [OVERLAY_LAYOUT_PRESETS_KEY]: next });
   } else {
-    await chrome.storage.sync.remove(EXCEL_COLUMN_PREF_KEY);
+    await chrome.storage.local.remove(OVERLAY_LAYOUT_PRESETS_KEY);
   }
 }
 
-async function clearExcelPrefOrder(key) {
-  if (!key || !excelColumnPrefs[key]) return;
-  const current = excelColumnPrefs[key];
-  const nextEntry = { ...current, order: [], savedAt: Date.now() };
-  const shouldDelete = !nextEntry.order.length && !Object.keys(nextEntry.widths || {}).length;
-  const next = { ...excelColumnPrefs };
-  if (shouldDelete) delete next[key];
-  else next[key] = nextEntry;
-  excelColumnPrefs = next;
-  await saveExcelColumnPrefsMap(next);
-  renderExcelColumnPrefs();
+async function setOverlayLayoutActivePreset(key, presetId) {
+  const state = overlayLayoutPresets[key];
+  if (!state || !Array.isArray(state.presets)) return;
+  if (!state.presets.some((preset) => preset.id === presetId)) return;
+  const next = {
+    ...overlayLayoutPresets,
+    [key]: {
+      ...state,
+      activePresetId: presetId,
+      updatedAt: Date.now()
+    }
+  };
+  overlayLayoutPresets = next;
+  await saveOverlayLayoutPresetsMap(next);
+  renderOverlayLayoutPresets();
 }
 
-async function clearExcelPrefWidths(key) {
-  if (!key || !excelColumnPrefs[key]) return;
-  const current = excelColumnPrefs[key];
-  const nextEntry = { ...current, widths: {}, savedAt: Date.now() };
-  const shouldDelete = !nextEntry.order.length && !Object.keys(nextEntry.widths || {}).length;
-  const next = { ...excelColumnPrefs };
-  if (shouldDelete) delete next[key];
-  else next[key] = nextEntry;
-  excelColumnPrefs = next;
-  await saveExcelColumnPrefsMap(next);
-  renderExcelColumnPrefs();
+async function renameOverlayLayoutPreset(key, presetId) {
+  const state = overlayLayoutPresets[key];
+  if (!state || !Array.isArray(state.presets)) return;
+  const target = state.presets.find((preset) => preset.id === presetId);
+  if (!target) return;
+  const input = window.prompt(t('overlay_layout_prompt_name'), target.name || '');
+  if (input == null) return;
+  const nextName = String(input || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  if (!nextName) return;
+  const nextPresets = state.presets.map((preset) => (
+    preset.id === presetId ? { ...preset, name: nextName } : preset
+  ));
+  const next = {
+    ...overlayLayoutPresets,
+    [key]: {
+      ...state,
+      presets: nextPresets,
+      updatedAt: Date.now()
+    }
+  };
+  overlayLayoutPresets = next;
+  await saveOverlayLayoutPresetsMap(next);
+  renderOverlayLayoutPresets();
 }
 
-async function removeExcelPref(key) {
-  if (!key || !excelColumnPrefs[key]) return;
-  const next = { ...excelColumnPrefs };
+async function removeOverlayLayoutPreset(key, presetId) {
+  const state = overlayLayoutPresets[key];
+  if (!state || !Array.isArray(state.presets) || state.presets.length <= 1) return;
+  if (!window.confirm(t('overlay_layout_delete_preset_confirm'))) return;
+  await deleteLayoutById(presetId, key);
+}
+
+async function deleteLayoutById(layoutId, appKeyHint = '') {
+  const targetLayoutId = String(layoutId || '').trim();
+  if (!targetLayoutId) return false;
+  const hintKey = String(appKeyHint || '').trim();
+  const candidateKeys = hintKey && overlayLayoutPresets[hintKey]
+    ? [hintKey]
+    : Object.keys(overlayLayoutPresets || {});
+  const next = { ...overlayLayoutPresets };
+  let changed = false;
+  candidateKeys.some((key) => {
+    const state = next[key];
+    if (!state || !Array.isArray(state.presets)) return false;
+    const before = state.presets.length;
+    const nextPresets = state.presets.filter((preset) => String(preset?.id || '') !== targetLayoutId);
+    if (nextPresets.length === before) return false;
+    if (!nextPresets.length) {
+      delete next[key];
+    } else {
+      const activePresetId = nextPresets.some((preset) => String(preset?.id || '') === String(state.activePresetId || ''))
+        ? state.activePresetId
+        : nextPresets[0].id;
+      next[key] = {
+        ...state,
+        activePresetId,
+        presets: nextPresets,
+        updatedAt: Date.now()
+      };
+    }
+    changed = true;
+    return true;
+  });
+  if (!changed) return false;
+  overlayLayoutPresets = next;
+  await saveOverlayLayoutPresetsMap(next);
+  renderOverlayLayoutPresets();
+  return true;
+}
+
+async function removeOverlayLayoutApp(key) {
+  if (!key || !overlayLayoutPresets[key]) return;
+  if (!window.confirm(t('overlay_layout_delete_app_confirm'))) return;
+  const next = { ...overlayLayoutPresets };
   delete next[key];
-  excelColumnPrefs = next;
-  await saveExcelColumnPrefsMap(next);
-  renderExcelColumnPrefs();
+  overlayLayoutPresets = next;
+  await saveOverlayLayoutPresetsMap(next);
+  renderOverlayLayoutPresets();
 }
+
+async function handleOverlayLayoutListClick(event) {
+  if (!excelListEl) return;
+  const target = event?.target;
+  if (!(target instanceof Element)) return;
+
+  const setActiveBtn = target.closest('.pb-layout-set-active');
+  if (setActiveBtn && excelListEl.contains(setActiveBtn)) {
+    const appKey = String(setActiveBtn.dataset.appKey || '').trim();
+    const layoutId = String(setActiveBtn.dataset.layoutId || '').trim();
+    if (!appKey || !layoutId) return;
+    await setOverlayLayoutActivePreset(appKey, layoutId);
+    return;
+  }
+
+  const renameBtn = target.closest('.pb-layout-rename');
+  if (renameBtn && excelListEl.contains(renameBtn)) {
+    const appKey = String(renameBtn.dataset.appKey || '').trim();
+    const layoutId = String(renameBtn.dataset.layoutId || '').trim();
+    if (!appKey || !layoutId) return;
+    await renameOverlayLayoutPreset(appKey, layoutId);
+    return;
+  }
+
+  const deleteBtn = target.closest('.pb-layout-delete');
+  if (deleteBtn && excelListEl.contains(deleteBtn)) {
+    if (deleteBtn.disabled) return;
+    const appKey = String(deleteBtn.dataset.appKey || '').trim();
+    const layoutId = String(deleteBtn.dataset.layoutId || '').trim();
+    if (!layoutId) return;
+    console.debug('[SpreadsheetView] layout delete click', { layoutId, appKey: appKey || '-' });
+    if (!window.confirm(t('overlay_layout_delete_preset_confirm'))) return;
+    await deleteLayoutById(layoutId, appKey);
+    return;
+  }
+
+  const deleteAppBtn = target.closest('.pb-layout-delete-app');
+  if (deleteAppBtn && excelListEl.contains(deleteAppBtn)) {
+    const appKey = String(deleteAppBtn.dataset.appKey || '').trim();
+    if (!appKey) return;
+    await removeOverlayLayoutApp(appKey);
+  }
+}
+
+excelListEl?.addEventListener('click', (event) => {
+  void handleOverlayLayoutListClick(event);
+});
 
 excelClearBtn?.addEventListener('click', async () => {
-  if (!Object.keys(excelColumnPrefs).length) return;
+  if (!Object.keys(overlayLayoutPresets).length) return;
   if (!window.confirm(t('confirm_clear_layouts'))) return;
-  excelColumnPrefs = {};
-  await chrome.storage.sync.remove(EXCEL_COLUMN_PREF_KEY);
-  renderExcelColumnPrefs();
+  overlayLayoutPresets = {};
+  await chrome.storage.local.remove(OVERLAY_LAYOUT_PRESETS_KEY);
+  renderOverlayLayoutPresets();
 });
 
 // ---- Host permission helpers ----
@@ -2613,7 +4045,9 @@ pinSaveBtn?.addEventListener('click', async () => {
     appId,
     recordId,
     titleField,
-    note
+    note,
+    pinnedAt: Date.now(),
+    modifiedAt: Date.now()
   });
   pinnedEntries.push(entry);
 

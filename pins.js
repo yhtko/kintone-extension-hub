@@ -3,8 +3,6 @@
 import {
   loadPinnedRecords,
   savePinnedRecords,
-  ensureHostPermission,
-  sendRunInKintone,
   createId,
   getActiveTab,
   parseKintoneUrl,
@@ -44,12 +42,8 @@ export function initPins(options = {}) {
 
   const state = {
     entries: [],
-    detailMap: new Map(),
     storageListener: null,
-    fetchToken: 0,
-    isRefreshing: false,
-    skipStorageOnce: false,
-    lastUpdatedAt: 0
+    skipStorageOnce: false
   };
 
   let noticeTimer = null;
@@ -62,8 +56,15 @@ export function initPins(options = {}) {
     return String(value).replace(/[^\w-]/g, (ch) => `\\${ch}`);
   };
 
+  function normalizeTimestamp(value) {
+    const num = Number(value);
+    return Number.isFinite(num) && num > 0 ? Math.floor(num) : 0;
+  }
+
   function normalizePinnedEntry(entry) {
     if (!entry || typeof entry !== 'object') return null;
+    const pinnedAt = normalizeTimestamp(entry.pinnedAt || entry.createdAt);
+    const modifiedAt = normalizeTimestamp(entry.modifiedAt || entry.lastEditedAt || entry.updatedAt || pinnedAt);
     return {
       id: entry.id || createId(),
       label: entry.label || '',
@@ -71,20 +72,30 @@ export function initPins(options = {}) {
       appId: String(entry.appId || '').trim(),
       recordId: String(entry.recordId || '').trim(),
       titleField: entry.titleField || '',
-      note: entry.note || ''
+      note: entry.note || '',
+      pinnedAt: pinnedAt || modifiedAt || 0,
+      modifiedAt: modifiedAt || pinnedAt || 0
     };
+  }
+
+  function touchEntry(entry) {
+    const now = Date.now();
+    if (!normalizeTimestamp(entry.pinnedAt)) entry.pinnedAt = now;
+    entry.modifiedAt = now;
   }
 
   async function persistPins() {
     state.skipStorageOnce = true;
-    await savePinnedRecords(state.entries.map(({ id, label, host, appId, recordId, titleField, note }) => ({
+    await savePinnedRecords(state.entries.map(({ id, label, host, appId, recordId, titleField, note, pinnedAt, modifiedAt }) => ({
       id,
       label,
       host,
       appId,
       recordId,
       titleField,
-      note
+      note,
+      pinnedAt: normalizeTimestamp(pinnedAt),
+      modifiedAt: normalizeTimestamp(modifiedAt)
     })));
   }
 
@@ -123,33 +134,6 @@ export function initPins(options = {}) {
     }
   }
 
-  function normalizePinErrorMessage(message) {
-    const text = String(message || '').trim();
-    if (!text) return 'Failed to load record.';
-    if (/permission|required|forbidden|denied/i.test(text)) {
-      return 'Permission is required to access this app.';
-    }
-    if (/404|not found|record.*(not|missing)/i.test(text)) {
-      return 'Record not found or no longer accessible.';
-    }
-    if (/login|sign in|unauthorized|auth|session/i.test(text)) {
-      return 'Please sign in to kintone and retry.';
-    }
-    if (/host|app id|record id|required|invalid/i.test(text)) {
-      return 'Host / App ID / Record ID is not configured correctly.';
-    }
-    return text;
-  }
-
-  function deriveRecordTitle(entry, detail) {
-    const record = detail?.record;
-    if (record && entry.titleField && typeof record[entry.titleField]?.value === 'string') {
-      const val = record[entry.titleField].value.trim();
-      if (val) return val;
-    }
-    return '';
-  }
-
   function defaultLabel(entry) {
     const app = entry.appId ? `App ${entry.appId}` : 'App (unset)';
     const record = entry.recordId ? `Record ${entry.recordId}` : 'Record (unset)';
@@ -164,7 +148,7 @@ export function initPins(options = {}) {
     }
   }
 
-  function createCard(entry, detail) {
+  function createCard(entry) {
     const li = doc.createElement('li');
     li.className = 'pin-card record-pin-card';
     li.dataset.id = entry.id;
@@ -196,14 +180,16 @@ export function initPins(options = {}) {
     titleInput.type = 'text';
     titleInput.className = 'pin-title-input';
     titleInput.value = entry.label || '';
-    titleInput.placeholder = deriveRecordTitle(entry, detail) || defaultLabel(entry);
+    titleInput.placeholder = defaultLabel(entry);
     titleInput.addEventListener('input', () => {
       entry.label = titleInput.value;
+      touchEntry(entry);
       schedulePersist();
     });
     titleInput.addEventListener('blur', () => {
       entry.label = titleInput.value.trim();
       titleInput.value = entry.label;
+      touchEntry(entry);
       schedulePersist();
     });
     titleWrap.appendChild(dragHandle);
@@ -235,21 +221,13 @@ export function initPins(options = {}) {
     header.appendChild(actions);
     li.appendChild(header);
 
-    const recordTitle = deriveRecordTitle(entry, detail);
-    if (recordTitle) {
-      const recordTitleEl = doc.createElement('div');
-      recordTitleEl.className = 'pin-record-title record-pin-sub';
-      recordTitleEl.textContent = recordTitle;
-      li.appendChild(recordTitleEl);
-    }
-
     const meta = doc.createElement('div');
     meta.className = 'pin-meta record-pin-meta';
     const metaItems = [
       `App: ${entry.appId || '-'}`,
       `Record: ${entry.recordId || '-'}`
     ];
-    const updatedAtText = formatUpdatedAt(state.lastUpdatedAt);
+    const updatedAtText = formatUpdatedAt(entry.modifiedAt || entry.pinnedAt);
     if (updatedAtText) {
       metaItems.push(`Updated: ${updatedAtText}`);
     }
@@ -269,33 +247,22 @@ export function initPins(options = {}) {
     note.value = entry.note || '';
     note.addEventListener('input', () => {
       entry.note = note.value;
+      touchEntry(entry);
       schedulePersist();
     });
     note.addEventListener('blur', () => {
       entry.note = note.value;
+      touchEntry(entry);
       schedulePersist();
     });
     body.appendChild(note);
-
-    if (detail?.error) {
-      const err = doc.createElement('div');
-      err.className = 'pin-error';
-      err.textContent = `Error: ${normalizePinErrorMessage(detail.error)}`;
-      body.appendChild(err);
-    }
 
     li.appendChild(body);
 
     return li;
   }
 
-  function renderList(detailsMap) {
-    if (detailsMap instanceof Map) {
-      state.detailMap = detailsMap;
-    } else if (!(state.detailMap instanceof Map)) {
-      state.detailMap = new Map();
-    }
-
+  function renderList() {
     pinListEl.innerHTML = '';
     if (!state.entries.length) {
       const empty = doc.createElement('li');
@@ -315,29 +282,37 @@ export function initPins(options = {}) {
       empty.appendChild(msg);
       empty.appendChild(actions);
       pinListEl.appendChild(empty);
-      state.detailMap = new Map();
       return;
     }
 
-    const map = state.detailMap;
     state.entries.forEach((entry) => {
-      const card = createCard(entry, map.get(entry.id));
+      const card = createCard(entry);
       pinListEl.appendChild(card);
     });
   }
 
   async function reloadPins({ silent = true } = {}) {
-    state.entries = (await loadPinnedRecords()).map(normalizePinnedEntry).filter(Boolean);
-    const hosts = new Set(state.entries.map((entry) => entry.host).filter(Boolean));
-    for (const host of hosts) {
-      try {
-        await chrome.runtime.sendMessage({ type: 'WARMUP_CONNECTOR', host });
-      } catch (_warmErr) {
-        // ignore
-      }
+    const now = Date.now();
+    let migrated = false;
+    state.entries = (await loadPinnedRecords())
+      .map(normalizePinnedEntry)
+      .filter(Boolean)
+      .map((entry) => {
+        if (normalizeTimestamp(entry.pinnedAt) || normalizeTimestamp(entry.modifiedAt)) {
+          return entry;
+        }
+        migrated = true;
+        return {
+          ...entry,
+          pinnedAt: now,
+          modifiedAt: now
+        };
+      });
+    if (migrated) {
+      await persistPins();
     }
     renderList();
-    await refreshPins({ silent });
+    if (!silent) setNotice('');
   }
 
   function attachStorageListener() {
@@ -378,15 +353,14 @@ export function initPins(options = {}) {
         appId: parsed.appId,
         recordId: parsed.recordId,
         titleField: '',
-        note: ''
+        note: '',
+        pinnedAt: Date.now(),
+        modifiedAt: Date.now()
       });
       state.entries.push(entry);
-      if (!(state.detailMap instanceof Map)) state.detailMap = new Map();
-      state.detailMap.set(entry.id, state.detailMap.get(entry.id) || null);
       await persistPins();
       renderList();
       setNotice('Pinned.', 2000);
-      await refreshPins({ silent: true });
       return true;
     } catch (error) {
       setNotice(String(error?.message || error), 2000);
@@ -398,11 +372,9 @@ export function initPins(options = {}) {
     const idx = state.entries.findIndex((entry) => entry.id === id);
     if (idx === -1) return;
     state.entries.splice(idx, 1);
-    if (state.detailMap instanceof Map) state.detailMap.delete(id);
     await persistPins();
     renderList();
     setNotice('Pin removed.', 2000);
-    await refreshPins({ silent: true });
   }
 
   function handleDragStart(event) {
@@ -447,7 +419,7 @@ export function initPins(options = {}) {
     const [moved] = state.entries.splice(fromIdx, 1);
     state.entries.splice(toIdx, 0, moved);
     await persistPins();
-    renderList(state.detailMap);
+    renderList();
     dragSourceId = null;
     Array.from(pinListEl.querySelectorAll('.pin-card.dragging')).forEach((el) => el.classList.remove('dragging'));
   }
@@ -461,101 +433,8 @@ export function initPins(options = {}) {
   }
 
   async function refreshPins({ silent = false } = {}) {
-    if (!state.entries.length) {
-      if (!silent) setNotice('');
-      renderList();
-      return;
-    }
-
-    if (state.isRefreshing) return;
-    state.isRefreshing = true;
-    if (!silent) setNotice('Refreshing pinned records...');
-    const token = ++state.fetchToken;
-    const results = new Map();
-
-    try {
-      const byHost = new Map();
-      state.entries.forEach((entry) => {
-        if (!entry.host || !entry.appId || !entry.recordId) {
-          results.set(entry.id, { error: 'Host / App ID / Record ID is not configured.' });
-          return;
-        }
-        if (!byHost.has(entry.host)) byHost.set(entry.host, []);
-        byHost.get(entry.host).push(entry);
-      });
-
-      for (const [host, entries] of byHost.entries()) {
-        try {
-          const granted = await ensureHostPermission(host);
-          if (!granted) {
-            entries.forEach((entry) => {
-              results.set(entry.id, { error: 'Permission is required for this host.' });
-            });
-            continue;
-          }
-        } catch (error) {
-          entries.forEach((entry) => {
-            results.set(entry.id, { error: String(error?.message || error) });
-          });
-          continue;
-        }
-
-        const payloadItems = entries.map((entry) => ({
-          id: entry.id,
-          appId: entry.appId,
-          recordId: entry.recordId,
-          fields: entry.titleField ? [entry.titleField] : []
-        }));
-
-        try {
-          try {
-            await chrome.runtime.sendMessage({ type: 'WARMUP_CONNECTOR', host });
-          } catch (_warmErr) {
-            // ignore
-          }
-          const res = await sendRunInKintone(host, { type: 'PIN_FETCH', payload: { items: payloadItems } });
-          if (token !== state.fetchToken) return;
-          if (res?.ok && res.results) {
-            for (const entry of entries) {
-              const detail = res.results[entry.id];
-              if (detail?.ok) {
-                results.set(entry.id, { record: detail.record });
-              } else {
-                results.set(entry.id, { error: normalizePinErrorMessage(detail?.error || 'Failed to fetch record.') });
-              }
-            }
-          } else {
-            const errorText = normalizePinErrorMessage(res?.error || 'Failed to fetch records.');
-            entries.forEach((entry) => {
-              results.set(entry.id, { error: errorText });
-            });
-          }
-        } catch (error) {
-          const message = normalizePinErrorMessage(String(error?.message || error));
-          entries.forEach((entry) => {
-            results.set(entry.id, { error: message });
-          });
-        }
-      }
-
-      if (token !== state.fetchToken) return;
-
-      state.lastUpdatedAt = Date.now();
-      renderList(results);
-
-      const errors = Array.from(results.values()).filter((detail) => detail?.error);
-      if (!silent) {
-        if (errors.length && errors.length === state.entries.length) {
-          setNotice(normalizePinErrorMessage(errors[0].error));
-        } else if (errors.length) {
-          setNotice('Some pinned records could not be refreshed.');
-        } else {
-          setNotice('');
-        }
-      }
-    } finally {
-      state.isRefreshing = false;
-    }
+    await reloadPins({ silent: true });
+    if (!silent) setNotice('');
   }
 
   const handleRefreshClick = () => {
