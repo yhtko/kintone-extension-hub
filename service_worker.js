@@ -437,13 +437,15 @@ async function copyDevTextToActiveTab(tabId, text, label) {
   return { ok: false, reason: copied?.reason || fallback?.reason || 'copy_failed' };
 }
 
+const ENABLE_DEV_MENU = false; // 開発者向けメニューを有効化する場合は true に変更
+
 async function setupContextMenus() {
   if (!chrome.contextMenus?.create) return;
   const lang = await resolveUiLanguage();
   const patterns = [
     'https://*.kintone.com/*',
     'https://*.kintone-dev.com/*',
-    'https://*.cybozu.com/*'
+    'https://*.cybozu.com/k/*'
   ];
   try {
     await chrome.contextMenus.removeAll();
@@ -504,40 +506,43 @@ async function setupContextMenus() {
       contexts: ['page', 'frame'],
       documentUrlPatterns: patterns
     });
-    chrome.contextMenus.create({
-      id: DEV_PARENT_MENU_ID,
-      title: tMenu(lang, 'menu_dev_root'),
-      contexts: ['all'],
-      documentUrlPatterns: patterns
-    });
-    chrome.contextMenus.create({
-      id: DEV_COPY_QUERY_MENU_ID,
-      parentId: DEV_PARENT_MENU_ID,
-      title: tMenu(lang, 'menu_copy_query'),
-      contexts: ['all'],
-      documentUrlPatterns: patterns
-    });
-    chrome.contextMenus.create({
-      id: DEV_COPY_FIELDS_LIST_MENU_ID,
-      parentId: DEV_PARENT_MENU_ID,
-      title: tMenu(lang, 'menu_copy_fields'),
-      contexts: ['all'],
-      documentUrlPatterns: patterns
-    });
-    chrome.contextMenus.create({
-      id: DEV_COPY_APP_ID_MENU_ID,
-      parentId: DEV_PARENT_MENU_ID,
-      title: tMenu(lang, 'menu_copy_app_id'),
-      contexts: ['all'],
-      documentUrlPatterns: patterns
-    });
-    chrome.contextMenus.create({
-      id: DEV_COPY_VIEW_ID_MENU_ID,
-      parentId: DEV_PARENT_MENU_ID,
-      title: tMenu(lang, 'menu_copy_view_id'),
-      contexts: ['all'],
-      documentUrlPatterns: patterns
-    });
+
+    if (ENABLE_DEV_MENU) {
+      chrome.contextMenus.create({
+        id: DEV_PARENT_MENU_ID,
+        title: tMenu(lang, 'menu_dev_root'),
+        contexts: ['all'],
+        documentUrlPatterns: patterns
+      });
+      chrome.contextMenus.create({
+        id: DEV_COPY_QUERY_MENU_ID,
+        parentId: DEV_PARENT_MENU_ID,
+        title: tMenu(lang, 'menu_copy_query'),
+        contexts: ['all'],
+        documentUrlPatterns: patterns
+      });
+      chrome.contextMenus.create({
+        id: DEV_COPY_FIELDS_LIST_MENU_ID,
+        parentId: DEV_PARENT_MENU_ID,
+        title: tMenu(lang, 'menu_copy_fields'),
+        contexts: ['all'],
+        documentUrlPatterns: patterns
+      });
+      chrome.contextMenus.create({
+        id: DEV_COPY_APP_ID_MENU_ID,
+        parentId: DEV_PARENT_MENU_ID,
+        title: tMenu(lang, 'menu_copy_app_id'),
+        contexts: ['all'],
+        documentUrlPatterns: patterns
+      });
+      chrome.contextMenus.create({
+        id: DEV_COPY_VIEW_ID_MENU_ID,
+        parentId: DEV_PARENT_MENU_ID,
+        title: tMenu(lang, 'menu_copy_view_id'),
+        contexts: ['all'],
+        documentUrlPatterns: patterns
+      });
+    }
   } catch (_err) {
     // ignore
   }

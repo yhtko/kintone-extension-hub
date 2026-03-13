@@ -3751,7 +3751,7 @@ function renderOverlayLayoutPresets() {
       removeBtn.dataset.appKey = key;
       removeBtn.dataset.layoutId = String(preset.id || '');
       removeBtn.textContent = t('delete');
-      removeBtn.disabled = (state.presets?.length || 0) <= 1;
+      removeBtn.disabled = false;
       rowActions.appendChild(removeBtn);
 
       row.appendChild(rowInfo);
@@ -3837,7 +3837,7 @@ async function renameOverlayLayoutPreset(key, presetId) {
 
 async function removeOverlayLayoutPreset(key, presetId) {
   const state = overlayLayoutPresets[key];
-  if (!state || !Array.isArray(state.presets) || state.presets.length <= 1) return;
+  if (!state || !Array.isArray(state.presets)) return;
   if (!window.confirm(t('overlay_layout_delete_preset_confirm'))) return;
   await deleteLayoutById(presetId, key);
 }
@@ -3915,7 +3915,6 @@ async function handleOverlayLayoutListClick(event) {
 
   const deleteBtn = target.closest('.pb-layout-delete');
   if (deleteBtn && excelListEl.contains(deleteBtn)) {
-    if (deleteBtn.disabled) return;
     const appKey = String(deleteBtn.dataset.appKey || '').trim();
     const layoutId = String(deleteBtn.dataset.layoutId || '').trim();
     if (!layoutId) return;

@@ -90,3 +90,98 @@ service_worker 注入部のDOM参照（限定・安定）
 page-bridge の app名・列/ラベル取得を API/metadata主導へ統一
 content.js の gaia-* 補助判定を縮小
 DEV専用DOM依存は feature flag 前提で保守コストを切り分け
+
+
+PlugBits Launcher for kintone DOM耐性検査レポート
+1. 全体総評
+全体評価: 中程度に堅牢（Highは未検出、Mediumは限定的に存在）
+主要機能（Watchlist / Overlay本体の実データ取得 / Recent / Record Pin / Sidepanel UI）は、概ね URL・kintone API・REST API中心 で動作しており、kintone内部DOMへの強依存は多くありません。
+リスクは主に content.js と page-bridge.js の fallback系DOM参照 に集中しています。
+launcher.js / options.js / pins.js はほぼ拡張独自UI DOMで、kintoneアップデート影響は小さいです。
+2. 重要リスク一覧（優先）
+content.js:55 hasAppContextDomHint
+.gaia-* / .recordlist-gaia / .record-gaia に依存した app context 判定 fallback。
+URL/API判定後の最終fallbackだが、クラス変更時に誤判定の余地。
+page-bridge.js:298 pickAppNameFromDom
+.gaia-* と [data-test-id]、document.title 依存でアプリ名取得。
+fallback用途だが、UI変更・多言語タイトル変更に弱い。
+page-bridge.js:531 collectFieldLabelsFromDom
+th[data-field-code] / columnheader 依存。
+一覧DOM変更でフィールドラベル推定が壊れる可能性。
+page-bridge.js:554 collectViewColumnsFromDom
+ヘッダDOM＋parentElement.children に依存して列インデックス推定。
+DOM階層変更・仮想化テーブル変更に弱い。
+3. 機能別評価
+Watchlist: Low
+DOM依存ほぼなし。URL/保存query/API中心。
+Overlay / Spreadsheet: Low〜Medium
+Overlay自体のUIは独自DOMでSafe。kintone境界のfallback参照（上記4点）がMedium。
+Recent: Low
+kintone内部DOM依存は目立たず、拡張UI中心。
+Record Pin: Low
+拡張UI＋URL/保存データ中心。
+Metadata/Bootstrap/Admin: Low〜Medium
+metadata API優先。DOM fallbackが残る箇所のみMedium。
+Launcher（sidepanel）: Safe
+MutationObserverは拡張UI (pinList) のみ。
+Options/Settings: Safe
+拡張ページDOMのみ。
+Service Worker / 右クリックメニュー: Safe
+DOM依存ほぼなし（注入判定 #__kfav_bridge は拡張スクリプト管理用）。
+4. 画面種別ごとの耐性
+portal: Low〜Medium
+app-only起動は基本URL/APIで抑止。hasAppContextDomHint fallback依存が残る。
+app list view: Low
+URL＋kintone.app.getId()で成立。DOM fallbackは補助。
+detail/create/edit: Low
+API/URL中心。
+space: Low
+ホスト・パス判定で除外設計。
+side panel: Safe
+独自UI。
+options/settings: Safe
+独自UI。
+overlay/spreadsheet: Low〜Medium
+本体は独自UI。境界fallbackがMedium。
+5. 問題箇所一覧（詳細）
+ファイル	関数/近傍	DOM依存内容	危険理由	危険度	代替案	今すぐ修正
+content.js:55	hasAppContextDomHint	.gaia-*, .recordlist-gaia, .record-gaia	kintone内部class変更で誤判定	Medium	URL + kintone.app.getId() + JS APIのみで判定、DOMはdata-app-idのみ残す	推奨
+page-bridge.js:298	pickAppNameFromDom	.gaia-*, [data-test-id], document.title	内部class/テスト属性/タイトル形式変化に弱い	Medium	kintone.app.getName() + metadata cache + /k/v1/app.jsonのみで完結	推奨
+page-bridge.js:531	collectFieldLabelsFromDom	th[data-field-code], role依存	一覧ヘッダDOM変更で失敗	Medium	/k/v1/app/form/fields + metadata cacheを唯一の一次情報化	推奨
+page-bridge.js:554	collectViewColumnsFromDom	ヘッダDOM + sibling index	DOM階層・仮想化変更に弱い	Medium	/k/v1/app/views の列定義優先、fallback時は列不明として安全劣化	推奨
+content.js:642	createLastContextInfo	th/td/role=columnheader 解析	リストDOM変更で文脈抽出精度低下	Low	view metaとの照合を主、DOM抽出はデバッグ限定	監視
+content.js:765	resolveFieldCodeFromTarget	[data-field-code] 依存	属性変更時に失敗	Low	API由来列定義優先、失敗時はfield_code_not_resolvedで安全終了	監視
+6. DOMアクセス頻度集計（静的）
+querySelector: 42
+querySelectorAll: 38
+getElementById: 112
+closest: 13
+MutationObserver: 1
+addEventListener: 219
+textContent: 235
+gaia-* 依存: 4
+data-test-id 依存: 2
+data-field-code 依存: 11
+columnheader 依存: 5
+補足:
+
+gaia-* は実質 content.js と page-bridge.js のみ。
+MutationObserver は launcher.js:3811 の拡張UI観測のみ。
+Shadow DOM / iframe 利用は検出なし。
+7. 優先対応案
+今すぐ直すべき（優先）
+hasAppContextDomHint の .gaia-* 判定を縮小または削除。
+pickAppNameFromDom を原則無効化し、API/metadata失敗時は空文字返却に寄せる。
+collectFieldLabelsFromDom / collectViewColumnsFromDom を「デバッグ専用 fallback」に明示し、通常経路から外す。
+中長期で整理
+DEV_GET_VIEW_META 系のDOM fallbackをフラグ付き（開発モードのみ）に限定。
+fallback発火回数を軽量メトリクス化し、実運用で使われていないDOM fallbackを段階削除。
+kintone画面種別判定をURL/APIのみで完結できるように継続整理。
+監視でよい
+sidepanel/options/pins のDOM操作（独自UI内）。
+service worker の注入ガードDOM (#__kfav_bridge)。
+Overlay内部DOM操作（拡張独自コンポーネント）。
+8. 結論だけの短い要約
+今すぐ危ない箇所: content.js と page-bridge.js に残る kintone内部DOM fallback（特に .gaia-* と th[data-field-code]）。
+そこまで心配しなくてよい箇所: launcher/options/pins/service_worker の大半（拡張独自UI・非kintone DOM依存）。
+全体としては「一部Mediumリスクがあるが、構造的に広範囲に壊れやすい状態ではない」です。

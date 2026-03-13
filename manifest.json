@@ -2,43 +2,55 @@
   "manifest_version": 3,
   "name": "PlugBits Launcher for kintone",
   "version": "1.5.0",
-  "description": "kintoneのよく使うアプリ/ビューへショートカット。件数表示／編集／並び替え／ピン／バッジ／サイドバー対応。",
+  "description": "kintoneのよく使うアプリやビューへ素早くアクセス。件数表示、並び替え、ピン、バッジ、サイドパネル、スプレッドシートビューの閲覧に対応。",
   "action": {
-    "default_title": "PlugBits Launcher for kintone"
+    "default_title": "PlugBits Launcher for kintone",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
   },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  
   "background": {
     "service_worker": "service_worker.js",
     "type": "module"
   },
   "options_page": "options.html",
-  "permissions": ["storage", "scripting", "tabs", "alarms", "contextMenus", "sidePanel", "management"],
+  "permissions": ["storage", "scripting", "tabs", "alarms", "contextMenus", "sidePanel"],
   "host_permissions": [],
   "optional_host_permissions": [
-    "https://*.kintone.com/*",
-    "https://*.cybozu.com/*",
-    "https://*.kintone-dev.com/*"
-  ],
-  "content_scripts": [
-    {
-      "matches": [
-        "https://*.kintone.com/*",
-        "https://*.cybozu.com/*",
-        "https://*.kintone-dev.com/*"
-      ],
-      "js": ["permission-service.js", "pro-service.js", "content.js"],
-      "run_at": "document_end"
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": ["page-bridge.js", "overlay.css"],
-      "matches": [
-        "https://*.kintone.com/*",
-        "https://*.cybozu.com/*",
-        "https://*.kintone-dev.com/*"
-      ]
-    }
-  ],
+  "https://*.kintone.com/*",
+  "https://*.cybozu.com/*",
+  "https://*.kintone-dev.com/*"
+],
+"content_scripts": [
+  {
+    "matches": [
+      "https://*.kintone.com/*",
+      "https://*.cybozu.com/k/*",
+      "https://*.kintone-dev.com/*"
+    ],
+    "js": ["permission-service.js", "pro-service.js", "content.js"],
+    "run_at": "document_end"
+  }
+],
+"web_accessible_resources": [
+  {
+    "resources": ["page-bridge.js", "overlay.css"],
+    "matches": [
+      "https://*.kintone.com/*",
+      "https://*.cybozu.com/*",
+      "https://*.kintone-dev.com/*"
+    ]
+  }
+],
   "side_panel": {
     "default_path": "sidepanel.html"
   }
