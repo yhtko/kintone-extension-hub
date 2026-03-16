@@ -1616,3 +1616,601 @@
   padding: 12px 16px;
   border-top: 1px solid #e5e7eb;
 }
+@media (prefers-color-scheme: dark) {
+  #pb-excel-overlay.pb-overlay {
+    background: rgba(2, 6, 23, 0.62);
+    color: #e5edf8;
+  }
+
+  #pb-excel-overlay .pb-overlay__surface {
+    background: #111a2d;
+    color: #e5edf8;
+    box-shadow: 0 24px 56px rgba(0, 0, 0, 0.42);
+  }
+
+  #pb-excel-overlay .pb-overlay__title {
+    color: #f8fbff;
+  }
+
+  #pb-excel-overlay .pb-overlay__mode-badge {
+    border-color: #334155;
+    background: #162136;
+    color: #b7c6da;
+  }
+
+  #pb-excel-overlay .pb-overlay__dirty {
+    color: #9fb0c7;
+  }
+
+  #pb-excel-overlay .pb-overlay__dirty--active {
+    color: #fbbf24;
+  }
+
+  #pb-excel-overlay .pb-overlay__perm-warning {
+    border-color: rgba(250, 204, 21, 0.28);
+    background: rgba(250, 204, 21, 0.10);
+    color: #fde68a;
+  }
+
+  /* buttons */
+  #pb-excel-overlay .pb-overlay__btn {
+    color: #e5edf8;
+    background: #162136;
+    border-color: #334155;
+  }
+
+  #pb-excel-overlay .pb-overlay__btn:hover {
+    background: #1b2942;
+  }
+
+  #pb-excel-overlay .pb-overlay__btn--primary {
+    color: #ffffff;
+    background: #3b82f6;
+    border-color: #3b82f6;
+  }
+
+  #pb-excel-overlay .pb-overlay__btn--primary:hover {
+    background: #2563eb;
+    border-color: #2563eb;
+  }
+
+  #pb-excel-overlay .pb-overlay__spinner {
+    border-color: rgba(255, 255, 255, 0.16);
+    border-top-color: #60a5fa;
+  }
+
+  /* preset / select / menu */
+  #pb-excel-overlay .pb-overlay__preset-wrap {
+    background: #0f1726;
+    border-color: #334155;
+  }
+
+  #pb-excel-overlay .pb-overlay__preset-label {
+    color: #c6d3e3;
+  }
+
+  #pb-excel-overlay .pb-overlay__preset-select {
+    background: #0b1220;
+    color: #f8fbff;
+    border-color: #334155;
+  }
+
+  #pb-excel-overlay .pb-overlay__preset-menu {
+    background: #162136;
+    border-color: #334155;
+    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.42);
+  }
+
+  #pb-excel-overlay .pb-overlay__preset-menu-item {
+    color: #e5edf8;
+  }
+
+  #pb-excel-overlay .pb-overlay__preset-menu-item:hover {
+    background: rgba(96, 165, 250, 0.12);
+  }
+
+  #pb-excel-overlay .pb-overlay__preset-menu-item--danger {
+    color: #fda4af;
+  }
+
+  #pb-excel-overlay .pb-overlay__preset-menu-item--danger:hover {
+    background: rgba(244, 63, 94, 0.16);
+  }
+
+  /* layout toggle */
+  #pb-excel-overlay .pb-overlay__layout-toggle {
+    border-color: #334155;
+    background: #0f1726;
+  }
+
+  #pb-excel-overlay .pb-overlay__layout-btn {
+    color: #9fb0c7;
+  }
+
+  #pb-excel-overlay .pb-overlay__layout-btn:hover {
+    color: #e5edf8;
+    background: #1b2942;
+  }
+
+  #pb-excel-overlay .pb-overlay__layout-btn.is-active {
+    color: #ffffff;
+    background: #22324d;
+    box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.30);
+  }
+
+  #pb-excel-overlay .pb-overlay__pager-label,
+  #pb-excel-overlay .pb-overlay__status,
+  #pb-excel-overlay .pb-overlay__status-item,
+  #pb-excel-overlay .pb-overlay__message {
+    color: #9fb0c7;
+  }
+
+  /* grid shell */
+  #pb-excel-overlay .pb-overlay__grid {
+    border-color: #243248;
+    background: #111a2d;
+  }
+
+  #pb-excel-overlay .pb-overlay__grid-head {
+    background: #182338;
+    border-bottom-color: #243248;
+  }
+
+  #pb-excel-overlay .pb-overlay__corner {
+    background: #162136;
+    border-right-color: #243248;
+  }
+
+  #pb-excel-overlay .pb-overlay__col-header {
+    border-right-color: #243248;
+    color: #b7c6da;
+  }
+
+  #pb-excel-overlay .pb-overlay__col-code {
+    color: #f8fbff;
+  }
+
+  #pb-excel-overlay .pb-overlay__col-sort-indicator {
+    color: #9fb0c7;
+  }
+
+  #pb-excel-overlay .pb-overlay__filter-btn {
+    color: #9fb0c7;
+  }
+
+  #pb-excel-overlay .pb-overlay__filter-btn:hover,
+  #pb-excel-overlay .pb-overlay__filter-btn--active {
+    color: #dbeafe;
+  }
+
+  /* filter panel */
+  #pb-excel-overlay .pb-overlay__filter-panel {
+    background: #162136;
+    border-color: #334155;
+    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.42);
+  }
+
+  #pb-excel-overlay .pb-overlay__filter-title {
+    color: #f8fbff;
+  }
+
+  #pb-excel-overlay .pb-overlay__filter-input,
+  #pb-excel-overlay .pb-overlay__filter-select {
+    background: #0f1726;
+    color: #e5edf8;
+    border-color: #334155;
+  }
+
+  #pb-excel-overlay .pb-overlay__filter-choices {
+    border-color: #334155;
+    background: #0f1726;
+  }
+
+  #pb-excel-overlay .pb-overlay__filter-choice {
+    color: #c6d3e3;
+  }
+
+  /* row header area */
+  #pb-excel-overlay .pb-overlay__row-scroll {
+    background: #162136;
+    border-right-color: #243248;
+  }
+
+  #pb-excel-overlay .pb-overlay__row-header {
+    background: #162136;
+    border-bottom-color: #243248;
+    color: #b7c6da;
+  }
+
+  #pb-excel-overlay .pb-overlay__row-header--readonly {
+    background: #182338;
+  }
+
+  #pb-excel-overlay .pb-overlay__row-header--pending-delete {
+    background: rgba(127, 29, 29, 0.28);
+    color: #fca5a5;
+  }
+
+  #pb-excel-overlay .pb-overlay__row-index,
+  #pb-excel-overlay .pb-overlay__row-perm {
+    color: #b7c6da;
+  }
+
+  #pb-excel-overlay .pb-overlay__row-sep {
+    background: #334155;
+  }
+
+  #pb-excel-overlay .pb-overlay__row-delete {
+    color: #94a3b8;
+  }
+
+  #pb-excel-overlay .pb-overlay__row-delete:hover:not(:disabled),
+  #pb-excel-overlay .pb-overlay__row-delete:focus-visible:not(:disabled),
+  #pb-excel-overlay .pb-overlay__row-delete.is-pending {
+    color: #f87171;
+  }
+
+  /* table body */
+  #pb-excel-overlay .pb-overlay__cell-scroll {
+    background: #111a2d;
+  }
+
+  #pb-excel-overlay .pb-overlay__row {
+    border-bottom-color: #1d2a40;
+  }
+
+  #pb-excel-overlay .pb-overlay__row--readonly {
+    opacity: 0.9;
+  }
+
+  #pb-excel-overlay .pb-overlay__row--pending-delete,
+  #pb-excel-overlay .pb-overlay__row--pending-delete .pb-overlay__cell {
+    background: rgba(127, 29, 29, 0.18);
+  }
+
+  #pb-excel-overlay .pb-overlay__cell {
+    background: #111a2d;
+    border-right-color: #1d2a40;
+    color: #e5edf8;
+  }
+
+  #pb-excel-overlay .pb-overlay__cell--readonly {
+    background: #182338;
+  }
+
+  #pb-excel-overlay .pb-overlay__cell--dirty {
+    background: rgba(245, 158, 11, 0.16);
+  }
+
+  #pb-excel-overlay .pb-overlay__cell--error {
+    background: rgba(127, 29, 29, 0.28);
+  }
+
+  #pb-excel-overlay .pb-overlay__cell--error[data-error-reason="required"] {
+    box-shadow: inset 0 0 0 1px #f87171;
+  }
+
+  #pb-excel-overlay .pb-overlay__cell--link .pb-overlay__input {
+    color: #93c5fd;
+  }
+
+  #pb-excel-overlay .pb-overlay__cell--multiline .pb-overlay__input,
+  #pb-excel-overlay .pb-overlay__cell--richtext .pb-overlay__input {
+    color: #c6d3e3;
+  }
+
+  #pb-excel-overlay .pb-overlay__cell--calc .pb-overlay__input {
+    color: #9fb0c7;
+  }
+
+  #pb-excel-overlay .pb-overlay__cell--dropdown::after,
+  #pb-excel-overlay .pb-overlay__cell--radio::after,
+  #pb-excel-overlay .pb-overlay__cell--multichoice::after,
+  #pb-excel-overlay .pb-overlay__cell--lookup::after {
+    color: #9fb0c7;
+  }
+
+  /* selected / active / editing */
+  #pb-excel-overlay .pb-overlay__cell--selected {
+    background: rgba(59, 130, 246, 0.14);
+  }
+
+  #pb-excel-overlay .pb-overlay__cell--armed {
+    background: rgba(96, 165, 250, 0.10);
+  }
+
+  #pb-excel-overlay .pb-overlay__cell--active {
+    background: rgba(30, 64, 175, 0.18);
+    box-shadow: inset 0 0 0 2px #60a5fa;
+  }
+
+  #pb-excel-overlay .pb-overlay__cell--editing {
+    background: #0d223d;
+    box-shadow: inset 0 0 0 2px #60a5fa;
+  }
+
+  /* inputs */
+  #pb-excel-overlay .pb-overlay__input {
+    color: #f8fbff;
+    background: transparent;
+  }
+
+  #pb-excel-overlay .pb-overlay__input:focus {
+    border-color: #60a5fa;
+    background: #0f1726;
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.18);
+  }
+
+  #pb-excel-overlay .pb-overlay__input--editing {
+    border-color: #60a5fa;
+    background: #0f1726;
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.24);
+  }
+
+  #pb-excel-overlay .pb-overlay__input--readonly {
+    color: #b7c6da;
+  }
+
+  #pb-excel-overlay .pb-overlay__input--subtable {
+    background: #182338;
+  }
+
+  #pb-excel-overlay .pb-overlay__cell--error .pb-overlay__input {
+    border-color: #f87171;
+    background: rgba(127, 29, 29, 0.28);
+    color: #fecaca;
+  }
+
+  /* loading */
+  #pb-excel-overlay .pb-overlay__loading {
+    background: rgba(15, 23, 42, 0.84);
+    color: #f8fbff;
+  }
+
+  /* toast */
+  #pb-excel-overlay .pb-overlay__toast {
+    background: rgba(15, 23, 42, 0.96);
+    color: #f8fbff;
+    border: 1px solid rgba(96, 165, 250, 0.22);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+  }
+
+  /* column settings */
+  #pb-excel-overlay .pb-overlay__column-layer,
+  #pb-excel-overlay .pb-overlay__subtable-layer,
+  #pb-excel-overlay .pb-overlay__multiline-layer {
+    background: rgba(2, 6, 23, 0.62);
+  }
+
+  #pb-excel-overlay .pb-overlay__column-panel,
+  #pb-excel-overlay .pb-overlay__subtable-panel,
+  #pb-excel-overlay .pb-overlay__multiline-panel {
+    background: #111a2d;
+    color: #e5edf8;
+    box-shadow: 0 24px 56px rgba(0, 0, 0, 0.46);
+  }
+
+  #pb-excel-overlay .pb-overlay__column-panel-title,
+  #pb-excel-overlay .pb-overlay__subtable-title,
+  #pb-excel-overlay .pb-overlay__multiline-title {
+    color: #f8fbff;
+  }
+
+  #pb-excel-overlay .pb-overlay__column-panel-hint,
+  #pb-excel-overlay .pb-overlay__column-empty {
+    color: #9fb0c7;
+  }
+
+  #pb-excel-overlay .pb-overlay__column-preview,
+  #pb-excel-overlay .pb-overlay__column-visibility {
+    border-color: #243248;
+    background: #162136;
+  }
+
+  #pb-excel-overlay .pb-overlay__column-chip {
+    border-color: #334155;
+    background: #0f1726;
+    color: #e5edf8;
+  }
+
+  #pb-excel-overlay .pb-overlay__column-chip-letter,
+  #pb-excel-overlay .pb-overlay__column-chip-width,
+  #pb-excel-overlay .pb-overlay__column-visibility-title,
+  #pb-excel-overlay .pb-overlay__column-visibility-item {
+    color: #b7c6da;
+  }
+
+  #pb-excel-overlay .pb-overlay__column-chip-label {
+    color: #f8fbff;
+  }
+
+  #pb-excel-overlay .pb-overlay__column-chip.is-drop-target {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.18);
+  }
+
+  #pb-excel-overlay .pb-overlay__column-chip-resizer::after {
+    background: #475569;
+  }
+
+  /* subtable */
+  #pb-excel-overlay .pb-overlay__subtable-head,
+  #pb-excel-overlay .pb-overlay__subtable-foot,
+  #pb-excel-overlay .pb-overlay__multiline-head,
+  #pb-excel-overlay .pb-overlay__multiline-foot {
+    border-color: #243248;
+  }
+
+  #pb-excel-overlay .pb-overlay__subtable-close,
+  #pb-excel-overlay .pb-overlay__multiline-close {
+    border-color: #334155;
+    background: #162136;
+    color: #e5edf8;
+  }
+
+  #pb-excel-overlay .pb-subtable-wrap {
+    border-color: #243248;
+    background: #111a2d;
+  }
+
+  #pb-excel-overlay .pb-subtable__head {
+    background: #182338;
+    color: #c6d3e3;
+    border-bottom-color: #243248;
+  }
+
+  #pb-excel-overlay .pb-subtable__cell {
+    border-bottom-color: #1d2a40;
+    color: #e5edf8;
+  }
+
+  #pb-excel-overlay .pb-subtable__empty {
+    color: #9fb0c7;
+  }
+
+  #pb-excel-overlay .pb-overlay__subtable-input,
+  #pb-excel-overlay .pb-overlay__multiline-input {
+    background: #0f1726;
+    color: #f8fbff;
+    border-color: #334155;
+  }
+
+  /* choice panel */
+  #pb-excel-overlay .pb-overlay__choice-panel {
+    background: #162136;
+    border-color: rgba(148, 163, 184, 0.35);
+    box-shadow: 0 20px 44px rgba(0, 0, 0, 0.46);
+  }
+
+  #pb-excel-overlay .pb-overlay__choice-panel-title,
+  #pb-excel-overlay .pb-overlay__choice-check {
+    color: #c6d3e3;
+  }
+
+  #pb-excel-overlay .pb-overlay__choice-item {
+    color: #e5edf8;
+  }
+
+  #pb-excel-overlay .pb-overlay__choice-item:hover {
+    background: rgba(148, 163, 184, 0.12);
+  }
+
+  #pb-excel-overlay .pb-overlay__choice-item:focus-visible {
+    background: rgba(59, 130, 246, 0.24);
+  }
+
+  #pb-excel-overlay .pb-overlay__choice-item::before {
+    border-color: #94a3b8;
+  }
+
+  #pb-excel-overlay .pb-overlay__choice-item.is-selected {
+    color: #dbeafe;
+    background: rgba(37, 99, 235, 0.18);
+  }
+
+  #pb-excel-overlay .pb-overlay__choice-item.is-selected::before {
+    border-color: #60a5fa;
+    box-shadow: inset 0 0 0 3px #60a5fa;
+  }
+
+  /* multiline */
+  #pb-excel-overlay .pb-overlay__multiline-input {
+    color: #f8fbff;
+  }
+
+  /* scrollbars */
+  #pb-excel-overlay *,
+  #pb-excel-overlay .pb-overlay__cell-scroll,
+  #pb-excel-overlay .pb-overlay__detail-form,
+  #pb-excel-overlay .pb-subtable-wrap {
+    scrollbar-color: #40526d #0f1726;
+  }
+
+  #pb-excel-overlay *::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  #pb-excel-overlay *::-webkit-scrollbar-track {
+    background: #0f1726;
+  }
+
+  #pb-excel-overlay *::-webkit-scrollbar-thumb {
+    background: #40526d;
+    border-radius: 999px;
+    border: 2px solid #0f1726;
+  }
+
+  #pb-excel-overlay *::-webkit-scrollbar-thumb:hover {
+    background: #536987;
+  }
+  #pb-excel-overlay .pb-overlay__detail-form {
+    background: #111a2d;
+    color: #e5edf8;
+  }
+
+  #pb-excel-overlay .pb-overlay__detail-form-table {
+    background: #111a2d;
+  }
+
+  #pb-excel-overlay .pb-overlay__detail-form-head {
+    background: #182338;
+    border-bottom: 1px solid #243248;
+  }
+
+  #pb-excel-overlay .pb-overlay__detail-form-head-cell {
+    color: #c6d3e3;
+    background: #182338;
+  }
+
+  #pb-excel-overlay .pb-overlay__detail-form-head-cell:first-child {
+    border-right: 1px solid #243248;
+  }
+
+  #pb-excel-overlay .pb-overlay__detail-form-row {
+    border-bottom: 1px solid #1d2a40;
+    background: #111a2d;
+  }
+
+  #pb-excel-overlay .pb-overlay__detail-form-row:last-child {
+    border-bottom: none;
+  }
+
+  #pb-excel-overlay .pb-overlay__detail-form-field {
+    background: #162136;
+    border-right: 1px solid #243248;
+    color: #c6d3e3;
+  }
+
+  #pb-excel-overlay .pb-overlay__detail-form-value {
+    background: #111a2d;
+    color: #e5edf8;
+  }
+
+  #pb-excel-overlay .pb-overlay__detail-form-data-cell {
+    background: #111a2d;
+    color: #e5edf8;
+  }
+
+  #pb-excel-overlay .pb-overlay__detail-form-data-cell--subtable {
+    background: #111a2d;
+  }
+
+  #pb-excel-overlay .pb-overlay__detail-form-value--subtable:hover .pb-overlay__detail-form-data-cell {
+    background: #182338;
+  }
+
+  #pb-excel-overlay .pb-overlay__detail-form--pending-delete .pb-overlay__detail-form-row {
+    background: rgba(127, 29, 29, 0.18);
+  }
+
+  #pb-excel-overlay .pb-overlay__detail-form--pending-delete .pb-overlay__detail-form-field {
+    background: rgba(127, 29, 29, 0.22);
+    color: #fecaca;
+  }
+
+  #pb-excel-overlay .pb-overlay__detail-form--pending-delete .pb-overlay__detail-form-value,
+  #pb-excel-overlay .pb-overlay__detail-form--pending-delete .pb-overlay__detail-form-data-cell {
+    background: rgba(127, 29, 29, 0.18);
+  }
+}

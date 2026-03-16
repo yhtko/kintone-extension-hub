@@ -1427,3 +1427,12 @@ ul {
     justify-content: flex-start;
   }
 }
+.api-usage-kv strong{
+  font-size:20px;
+  font-weight:600;
+  letter-spacing:0.5px;
+  color:#2b2b2b;
+}
+@media (prefers-color-scheme: dark){
+  .api-usage-kv strong{color:#f1f1f1;}
+}

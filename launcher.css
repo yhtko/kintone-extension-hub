@@ -23,18 +23,252 @@
   :root {
     --launcher-bg: #0b1220;
     --launcher-surface: #111a2d;
-    --launcher-text: #e2e8f0;
-    --launcher-muted: #94a3b8;
-    --launcher-line: rgba(148, 163, 184, 0.18);
+    --launcher-surface-2: #162136;
+    --launcher-surface-3: #1b2942;
+    --launcher-text: #e5edf8;
+    --launcher-muted: #9fb0c7;
+    --launcher-line: rgba(148, 163, 184, 0.22);
+    --launcher-line-strong: rgba(148, 163, 184, 0.34);
     --launcher-accent: #60a5fa;
-    --launcher-accent-muted: rgba(96, 165, 250, 0.18);
-    --launcher-danger: #f87171;
-    --badge-bg: rgba(96, 165, 250, 0.2);
-    --badge-text: #cfe0ff;
+    --launcher-accent-2: #93c5fd;
+    --badge-bg: rgba(96, 165, 250, 0.22);
+    --badge-text: #dbeafe;
     --menu-bg: #1a2235;
-    --menu-border: rgba(148, 163, 184, 0.3);
+    --menu-border: rgba(148, 163, 184, 0.30);
+
+    color-scheme: dark;
+  }
+
+  .pb-launcher,
+  .plugbits-launcher,
+  .launcher-root,
+  .launcher-panel {
+    background: var(--launcher-bg);
+    color: var(--launcher-text);
+    border-color: var(--launcher-line);
+  }
+
+  .pb-launcher .surface,
+  .plugbits-launcher .surface,
+  .launcher-card,
+  .launcher-section,
+  .launcher-block,
+  .launcher-menu,
+  .launcher-popover,
+  .launcher-dropdown {
+    background: var(--launcher-surface);
+    color: var(--launcher-text);
+    border: 1px solid var(--launcher-line);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  }
+
+  .launcher-section-title,
+  .launcher-label,
+  .launcher-card-title,
+  .launcher-title {
+    color: var(--launcher-text);
+  }
+
+  .launcher-subtitle,
+  .launcher-meta,
+  .launcher-time,
+  .launcher-empty,
+  .launcher-hint,
+  .launcher-muted {
+    color: var(--launcher-muted);
+  }
+
+  .launcher-icon-button,
+  .launcher-toolbar button,
+  .launcher-header button,
+  .pb-launcher button.icon-button,
+  .pb-launcher .icon-btn,
+  .plugbits-launcher .icon-btn {
+    background: var(--launcher-surface-2);
+    color: var(--launcher-text);
+    border: 1px solid var(--launcher-line-strong);
+  }
+
+  .launcher-icon-button:hover,
+  .launcher-toolbar button:hover,
+  .launcher-header button:hover,
+  .pb-launcher button.icon-button:hover,
+  .pb-launcher .icon-btn:hover,
+  .plugbits-launcher .icon-btn:hover {
+    background: var(--launcher-surface-3);
+    border-color: var(--launcher-accent);
+    color: var(--launcher-accent-2);
+  }
+
+  .launcher-icon-button:focus-visible,
+  .launcher-toolbar button:focus-visible,
+  .launcher-header button:focus-visible,
+  .pb-launcher button.icon-button:focus-visible,
+  .pb-launcher .icon-btn:focus-visible,
+  .plugbits-launcher .icon-btn:focus-visible {
+    outline: 2px solid var(--launcher-accent);
+    outline-offset: 2px;
+  }
+
+  .pb-launcher svg,
+  .plugbits-launcher svg,
+  .launcher-root svg,
+  .launcher-panel svg,
+  .pb-launcher .icon,
+  .plugbits-launcher .icon,
+  .launcher-icon {
+    color: currentColor;
+    fill: none;
+    stroke: currentColor;
+    opacity: 0.96;
+  }
+
+  .launcher-shortcut,
+  .shortcut-item,
+  .shortcut-tile {
+    background: var(--launcher-surface-2);
+    color: var(--launcher-text);
+    border: 1px solid var(--launcher-line);
+  }
+
+  .launcher-shortcut:hover,
+  .shortcut-item:hover,
+  .shortcut-tile:hover {
+    background: var(--launcher-surface-3);
+    border-color: var(--launcher-accent);
+  }
+
+  .launcher-list-item,
+  .watchlist-item,
+  .recent-item,
+  .record-item {
+    background: rgba(17, 26, 45, 0.86);
+    color: var(--launcher-text);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+  }
+
+  .launcher-list-item:hover,
+  .watchlist-item:hover,
+  .recent-item:hover,
+  .record-item:hover {
+    background: rgba(27, 41, 66, 0.96);
+    border-color: var(--launcher-line-strong);
+  }
+
+  .launcher-badge,
+  .watchlist-badge,
+  .count-badge {
+    background: var(--badge-bg);
+    color: var(--badge-text);
+    border: 1px solid rgba(147, 197, 253, 0.26);
+  }
+
+  .launcher-search input,
+  .launcher-search-box input,
+  .pb-launcher input[type="search"],
+  .pb-launcher input[type="text"] {
+    background: var(--launcher-surface-2);
+    color: var(--launcher-text);
+    border: 1px solid var(--launcher-line-strong);
+  }
+
+  .launcher-search input::placeholder,
+  .launcher-search-box input::placeholder,
+  .pb-launcher input[type="search"]::placeholder,
+  .pb-launcher input[type="text"]::placeholder {
+    color: var(--launcher-muted);
+  }
+
+  .launcher-search input:focus,
+  .launcher-search-box input:focus,
+  .pb-launcher input[type="search"]:focus,
+  .pb-launcher input[type="text"]:focus {
+    border-color: var(--launcher-accent);
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18);
+    outline: none;
+  }
+
+  .launcher-menu,
+  .launcher-popover,
+  .launcher-dropdown,
+  .launcher-context-menu {
+    background: var(--menu-bg);
+    color: var(--launcher-text);
+    border: 1px solid var(--menu-border);
+  }
+
+  .launcher-menu button,
+  .launcher-dropdown button,
+  .launcher-context-menu button,
+  .launcher-menu a,
+  .launcher-dropdown a {
+    color: var(--launcher-text);
+  }
+
+  .launcher-menu button:hover,
+  .launcher-dropdown button:hover,
+  .launcher-context-menu button:hover,
+  .launcher-menu a:hover,
+  .launcher-dropdown a:hover {
+    background: rgba(96, 165, 250, 0.12);
+  }
+
+  .toast,
+  .pb-toast,
+  .launcher-toast {
+    z-index: 99999;
+  }
+
+  .shortcut-button {
+    background: #162136 !important;
+    color: #fff !important;
+    border: 1px solid rgba(148, 163, 184, 0.28) !important;
+  }
+
+  .shortcut-button .shortcut-icon,
+  .shortcut-button .shortcut-icon svg,
+  .shortcut-button .shortcut-icon svg * {
+    color: #fff !important;
+    stroke: #fff !important;
+    fill: none !important;
+    opacity: 1 !important;
+  }
+
+  .shortcut-button.shortcut-appTop {
+    background: rgba(245, 158, 11, 0.10) !important;
+    border-color: rgba(245, 158, 11, 0.42) !important;
+  }
+
+  .shortcut-button.shortcut-viewTop {
+    background: rgba(59, 130, 246, 0.10) !important;
+    border-color: rgba(59, 130, 246, 0.42) !important;
+  }
+
+  .shortcut-button.shortcut-create {
+    background: rgba(34, 197, 94, 0.10) !important;
+    border-color: rgba(34, 197, 94, 0.42) !important;
+  }
+
+  .pb-launcher .lc,
+  .pb-launcher [data-icon] {
+    color: #cbd5e1 !important;
+    opacity: 1 !important;
+    filter: none !important;
+  }
+
+  .pb-launcher .lc svg,
+  .pb-launcher .lc svg *,
+  .pb-launcher [data-icon] svg,
+  .pb-launcher [data-icon] svg * {
+    stroke: currentColor !important;
+    fill: none !important;
+    opacity: 1 !important;
+  }
+  .pb-launcher .watchlist-item .lc {
+    color: #dbeafe;
   }
 }
+
 
 * {
   box-sizing: border-box;
