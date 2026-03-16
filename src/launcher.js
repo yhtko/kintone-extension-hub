@@ -1709,6 +1709,14 @@ function getLatestWatchlistCacheTimestamp() {
   });
   return latest;
 }
+function getWatchlistCacheSnapshot(now = Date.now()) {
+  const latest = getLatestWatchlistCacheTimestamp();
+  return {
+    updatedAt: latest,
+    hasAnyCache: latest > 0,
+    cacheAgeMs: latest > 0 ? Math.max(0, now - latest) : null
+  };
+}
 
 function renderWatchlistUpdatedLabel() {
   if (!els.watchlistUpdatedAt) return;

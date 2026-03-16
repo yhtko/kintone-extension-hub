@@ -3848,13 +3848,9 @@ pinEditUrlEl?.addEventListener('change', () => {
 function loadDevToolsIfNeeded() {
   try {
     const manifest = chrome.runtime.getManifest();
+    const isDevToolsEnabled = manifest?.plugbits_dev_tools === true;
 
-    // Web Store build has update_url
-    const isDevBuild =
-      !Object.prototype.hasOwnProperty.call(manifest, 'update_url');
-
-    if (!isDevBuild) {
-      console.log('[PlugBits] dev-tools disabled (store build)');
+    if (!isDevToolsEnabled) {
       return;
     }
 
@@ -3870,7 +3866,6 @@ function loadDevToolsIfNeeded() {
     };
 
     document.head.appendChild(script);
-
   } catch (err) {
     console.warn('[PlugBits] dev-tools init failed', err);
   }
