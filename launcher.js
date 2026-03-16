@@ -56,10 +56,6 @@ const WATCHLIST_REFRESH_PRESET_CONFIGS = {
 };
 const WATCHLIST_SOFT_TTL_MS = 5 * 60 * 1000;
 const WATCHLIST_HARD_TTL_MS = 30 * 60 * 1000;
-const WATCHLIST_DEBUG_CONFIG_KEY = 'kfavWatchlistDebugConfig';
-const WATCHLIST_DEBUG_LOG_KEY = 'kfavWatchlistDebugLogs';
-const WATCHLIST_DEBUG_MAX_LOGS = 80;
-const WATCHLIST_DEBUG_DEFAULT = false;
 const UI_LANGUAGE_KEY = 'uiLanguage';
 const UI_LANGUAGE_VALUES = ['auto', 'ja', 'en'];
 const DEFAULT_UI_LANGUAGE = 'auto';
@@ -287,9 +283,6 @@ const state = {
   watchlistPointerEnterHandler: null,
   watchlistClickHandler: null,
   watchlistLastResumeEventAt: 0,
-  watchlistDebugEnabled: false,
-  watchlistDebugLogs: [],
-  watchlistDebugStorageArea: 'memory',
   watchlistSectionSync: {
     inFlight: false,
     queued: false,
@@ -1180,180 +1173,6 @@ async function persistCollapsedSectionsState() {
   }
 }
 
-function getWatchlistDebugStorageBackend() {
-  if (chrome?.storage?.session) {
-    return { area: chrome.storage.session, name: 'session' };
-  }
-  if (chrome?.storage?.local) {
-    return { area: chrome.storage.local, name: 'local' };
-  }
-  return { area: null, name: 'memory' };
-}
-
-function normalizeWatchlistDebugConfig(raw) {
-  if (raw && typeof raw === 'object') {
-    return { enabled: Boolean(raw.enabled) };
-  }
-  return { enabled: Boolean(raw) };
-}
-
-function normalizeWatchlistDebugLogEntry(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const trigger = String(raw.trigger || 'unknown').trim() || 'unknown';
-  const source = String(raw.source || 'unknown').trim() || 'unknown';
-  const reason = String(raw.reason || 'unknown').trim() || 'unknown';
-  const pageUrl = String(raw.pageUrl || '').trim();
-  const host = String(raw.host || '').trim();
-  const appId = String(raw.appId || '').trim();
-  const viewId = String(raw.viewId || '').trim();
-  const tsRaw = Number(raw.ts);
-  const cacheAgeRaw = Number(raw.cacheAgeMs);
-  return {
-    ts: Number.isFinite(tsRaw) && tsRaw > 0 ? Math.floor(tsRaw) : Date.now(),
-    trigger,
-    source,
-    pageUrl,
-    didRequest: Boolean(raw.didRequest),
-    reason,
-    cacheAgeMs: Number.isFinite(cacheAgeRaw) && cacheAgeRaw >= 0 ? Math.floor(cacheAgeRaw) : null,
-    host,
-    appId,
-    viewId
-  };
-}
-
-function normalizeWatchlistDebugLogs(raw) {
-  if (!Array.isArray(raw)) return [];
-  const normalized = raw
-    .map((entry) => normalizeWatchlistDebugLogEntry(entry))
-    .filter(Boolean);
-  if (normalized.length <= WATCHLIST_DEBUG_MAX_LOGS) return normalized;
-  return normalized.slice(normalized.length - WATCHLIST_DEBUG_MAX_LOGS);
-}
-
-function buildWatchlistDebugContextFromUrl(urlValue) {
-  const pageUrl = String(urlValue || '').trim();
-  const context = {
-    pageUrl,
-    host: '',
-    appId: '',
-    viewId: ''
-  };
-  if (!pageUrl || !isKintoneUrl(pageUrl)) return context;
-  const parsed = parseKintoneUrl(pageUrl);
-  context.host = String(parsed?.host || '').trim();
-  context.appId = String(parsed?.appId || '').trim();
-  context.viewId = String(parsed?.viewIdOrName || '').trim();
-  return context;
-}
-
-async function resolveWatchlistDebugContext(base = {}) {
-  const basePageUrl = String(base.pageUrl || '').trim();
-  const normalizedBase = {
-    trigger: String(base.trigger || 'unknown').trim() || 'unknown',
-    source: String(base.source || 'unknown').trim() || 'unknown',
-    didRequest: Boolean(base.didRequest),
-    reason: String(base.reason || 'unknown').trim() || 'unknown',
-    cacheAgeMs: Number.isFinite(Number(base.cacheAgeMs)) && Number(base.cacheAgeMs) >= 0
-      ? Math.floor(Number(base.cacheAgeMs))
-      : null,
-    ...buildWatchlistDebugContextFromUrl(basePageUrl),
-    host: String(base.host || '').trim(),
-    appId: String(base.appId || '').trim(),
-    viewId: String(base.viewId || '').trim()
-  };
-  if (normalizedBase.pageUrl && normalizedBase.host) return normalizedBase;
-  try {
-    const tab = await getActiveTab();
-    const tabUrl = String(tab?.url || '').trim();
-    if (!tabUrl) return normalizedBase;
-    const tabContext = buildWatchlistDebugContextFromUrl(tabUrl);
-    return {
-      ...normalizedBase,
-      pageUrl: normalizedBase.pageUrl || tabContext.pageUrl,
-      host: normalizedBase.host || tabContext.host,
-      appId: normalizedBase.appId || tabContext.appId,
-      viewId: normalizedBase.viewId || tabContext.viewId
-    };
-  } catch (_err) {
-    return normalizedBase;
-  }
-}
-
-async function loadWatchlistDebugState() {
-  const backend = getWatchlistDebugStorageBackend();
-  state.watchlistDebugStorageArea = backend.name;
-  if (!backend.area) {
-    state.watchlistDebugEnabled = false;
-    state.watchlistDebugLogs = [];
-    return;
-  }
-  try {
-    const stored = await backend.area.get([WATCHLIST_DEBUG_CONFIG_KEY, WATCHLIST_DEBUG_LOG_KEY]);
-    state.watchlistDebugEnabled = normalizeWatchlistDebugConfig(stored?.[WATCHLIST_DEBUG_CONFIG_KEY]).enabled;
-    const normalizedLogs = normalizeWatchlistDebugLogs(stored?.[WATCHLIST_DEBUG_LOG_KEY]);
-    state.watchlistDebugLogs = normalizedLogs;
-    if (Array.isArray(stored?.[WATCHLIST_DEBUG_LOG_KEY]) && stored[WATCHLIST_DEBUG_LOG_KEY].length !== normalizedLogs.length) {
-      await backend.area.set({ [WATCHLIST_DEBUG_LOG_KEY]: normalizedLogs });
-    }
-  } catch (_err) {
-    state.watchlistDebugEnabled = false;
-    state.watchlistDebugLogs = [];
-  }
-}
-
-async function saveWatchlistDebugLogs() {
-  const backend = getWatchlistDebugStorageBackend();
-  state.watchlistDebugStorageArea = backend.name;
-  if (!backend.area) return;
-  try {
-    await backend.area.set({ [WATCHLIST_DEBUG_LOG_KEY]: state.watchlistDebugLogs });
-  } catch (_err) {
-    // ignore persistence errors
-  }
-}
-
-async function recordWatchlistDebugEvent(payload = {}) {
-  if (!state.watchlistDebugEnabled) return;
-  const resolved = await resolveWatchlistDebugContext(payload);
-  const entry = normalizeWatchlistDebugLogEntry({
-    ...resolved,
-    ts: Date.now()
-  });
-  if (!entry) return;
-  state.watchlistDebugLogs.push(entry);
-  if (state.watchlistDebugLogs.length > WATCHLIST_DEBUG_MAX_LOGS) {
-    state.watchlistDebugLogs = state.watchlistDebugLogs.slice(
-      state.watchlistDebugLogs.length - WATCHLIST_DEBUG_MAX_LOGS
-    );
-  }
-  await saveWatchlistDebugLogs();
-}
-
-function getWatchlistCacheAgeMs() {
-  const latest = getLatestWatchlistCacheTimestamp();
-  if (!latest) return null;
-  const age = Date.now() - latest;
-  if (!Number.isFinite(age) || age < 0) return 0;
-  return Math.floor(age);
-}
-
-function getWatchlistCacheSnapshot(now = Date.now()) {
-  const latest = getLatestWatchlistCacheTimestamp();
-  const cacheAgeMs = latest > 0
-    ? Math.max(0, Math.floor(now - latest))
-    : null;
-  const hasAnyCache = state.favorites.some((item) => state.watchlistCountCache.has(item.id));
-  const hasCompleteCache = state.favorites.length > 0
-    && state.favorites.every((item) => state.watchlistCountCache.has(item.id));
-  return {
-    updatedAt: latest > 0 ? latest : 0,
-    cacheAgeMs,
-    hasAnyCache,
-    hasCompleteCache
-  };
-}
-
 function isSoftFresh(updatedAt, now = Date.now()) {
   const ts = Number(updatedAt);
   if (!Number.isFinite(ts) || ts <= 0) return false;
@@ -1610,13 +1429,7 @@ async function syncWatchlistAutoRefreshTimer(source = 'unknown') {
 async function requestWatchListResumeCatchup(source = 'resume_event') {
   const now = Date.now();
   if (shouldThrottleResumeBySource(source, now)) {
-    await recordWatchlistDebugEvent({
-      trigger: 'resume_catchup',
-      source,
-      didRequest: false,
-      reason: 'resume_source_throttled',
-      cacheAgeMs: getWatchlistCacheAgeMs()
-    });
+    
     logWatchlistApiDebug('skip resume source throttle', `source=${source}`);
     return { queued: false, reason: 'resume_source_throttled' };
   }
@@ -1624,35 +1437,17 @@ async function requestWatchListResumeCatchup(source = 'resume_event') {
   const resumeThrottleMs = Number(refresh.resumeThrottleMs || 0);
   const lastResumeEventAt = Number(state.watchlistLastResumeEventAt || 0);
   if (lastResumeEventAt > 0 && (now - lastResumeEventAt) < resumeThrottleMs) {
-    await recordWatchlistDebugEvent({
-      trigger: 'resume_catchup',
-      source,
-      didRequest: false,
-      reason: 'resume_event_throttled',
-      cacheAgeMs: getWatchlistCacheAgeMs()
-    });
+    
     return { queued: false, reason: 'resume_event_throttled' };
   }
   const context = await getWatchlistRefreshContext();
   const snapshot = getWatchlistCacheSnapshot(now);
   if (!context.isPanelVisible) {
-    await recordWatchlistDebugEvent({
-      trigger: 'resume_catchup',
-      source,
-      didRequest: false,
-      reason: 'skip_panel_hidden',
-      cacheAgeMs: snapshot.cacheAgeMs
-    });
+    
     return { queued: false, reason: 'panel_hidden' };
   }
   if (!context.isWatchListExpanded) {
-    await recordWatchlistDebugEvent({
-      trigger: 'resume_catchup',
-      source,
-      didRequest: false,
-      reason: 'skip_collapsed',
-      cacheAgeMs: snapshot.cacheAgeMs
-    });
+
     return { queued: false, reason: 'collapsed' };
   }
   state.watchlistLastResumeEventAt = now;
@@ -1665,17 +1460,10 @@ async function requestWatchListReconcile(reason, options = {}) {
   const ignoreCooldown = Boolean(options?.ignoreCooldown);
   const delayMsRaw = Number(options?.delayMs);
   const delayMs = Number.isFinite(delayMsRaw) && delayMsRaw > 0 ? Math.floor(delayMsRaw) : 0;
-  const cacheAgeMs = getWatchlistCacheAgeMs();
   const syncState = state.watchlistSectionSync;
 
   if (!state.favorites.length) {
-    await recordWatchlistDebugEvent({
-      trigger: normalizedReason,
-      source,
-      didRequest: false,
-      reason: 'no_entries',
-      cacheAgeMs
-    });
+    
     return { queued: false, reason: 'no_entries' };
   }
 
@@ -1683,23 +1471,11 @@ async function requestWatchListReconcile(reason, options = {}) {
   if (ignoreCooldown) {
     syncState.pendingIgnoreCooldown = true;
   }
-  await recordWatchlistDebugEvent({
-    trigger: normalizedReason,
-    source,
-    didRequest: false,
-    reason: 'queued',
-    cacheAgeMs
-  });
+  
 
   if (syncState.inFlight) {
     logWatchlistApiDebug('join in-flight', `feature=watchlist trigger=${normalizedReason}`);
-    await recordWatchlistDebugEvent({
-      trigger: normalizedReason,
-      source,
-      didRequest: false,
-      reason: 'join_inflight',
-      cacheAgeMs
-    });
+    
     return { queued: true, reason: 'join_inflight' };
   }
   if (syncState.queued) {
@@ -1736,13 +1512,7 @@ async function runWatchListReconcileJob() {
     });
     if (skip.skip) {
       logWatchlistApiDebug('skip reconcile', `feature=watchlist trigger=${primaryReason} reason=${skip.reason}`);
-      await recordWatchlistDebugEvent({
-        trigger: primaryReason,
-        source,
-        didRequest: false,
-        reason: `skip_${skip.reason}`,
-        cacheAgeMs: snapshot.cacheAgeMs
-      });
+      
       continue;
     }
 
@@ -1750,13 +1520,7 @@ async function runWatchListReconcileJob() {
     const targets = buildWatchListReconcileTargets();
     const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
     const lifecycleToken = state.watchlistLifecycleToken;
-    await recordWatchlistDebugEvent({
-      trigger: primaryReason,
-      source,
-      didRequest: true,
-      reason: 'reconcile_start',
-      cacheAgeMs: snapshot.cacheAgeMs
-    });
+    
 
     syncState.inFlight = true;
     syncState.activeRequestId = requestId;
@@ -1788,22 +1552,10 @@ async function runWatchListReconcileJob() {
       }
       const updatedCount = Number(results?.updatedCount || 0);
       const unchangedCount = Number(results?.unchangedCount || 0);
-      await recordWatchlistDebugEvent({
-        trigger: primaryReason,
-        source,
-        didRequest: true,
-        reason: `reconcile_done_u${updatedCount}_n${unchangedCount}`,
-        cacheAgeMs: getWatchlistCacheAgeMs()
-      });
+      
     } catch (_err) {
       syncState.lastCompletedAt = Date.now();
-      await recordWatchlistDebugEvent({
-        trigger: primaryReason,
-        source,
-        didRequest: true,
-        reason: 'reconcile_error',
-        cacheAgeMs: getWatchlistCacheAgeMs()
-      });
+      
     } finally {
       syncState.inFlight = false;
       if (normalizeRequestId(syncState.activeRequestId) === requestId) {
@@ -2856,7 +2608,6 @@ function buildFavoritesSignature(list) {
 }
 
 function logWatchlistApiDebug(message, detail = '') {
-  if (!state.watchlistDebugEnabled) return;
   const suffix = detail ? ` ${detail}` : '';
   console.debug(`[PB API] ${message}${suffix}`);
 }
@@ -3317,15 +3068,7 @@ async function refreshCounts({
     logWatchlistApiDebug('skip stale before request', `feature=watchlist trigger=${trigger} requestId=${normalizedRequestId}`);
     return { ok: false, skipped: 'stale_request' };
   }
-  if (!state.watchlistRefreshInFlight) {
-    recordWatchlistDebugEvent({
-      trigger: 'unknown',
-      source: 'refreshCounts_direct',
-      didRequest: true,
-      reason: 'unknown',
-      cacheAgeMs: getWatchlistCacheAgeMs()
-    }).catch(() => {});
-  }
+  
   setNotice('');
   targetItems.forEach((item) => setBadgeLoading(item.id, true));
   const grouped = groupByHost(targetItems);
@@ -3422,12 +3165,6 @@ async function refreshCounts({
 function attachStorageListener() {
   if (!chrome?.storage?.onChanged) return;
   const listener = (changes, area) => {
-    if ((area === 'session' || area === 'local') && Object.prototype.hasOwnProperty.call(changes, WATCHLIST_DEBUG_CONFIG_KEY)) {
-      state.watchlistDebugEnabled = normalizeWatchlistDebugConfig(changes[WATCHLIST_DEBUG_CONFIG_KEY]?.newValue).enabled;
-    }
-    if ((area === 'session' || area === 'local') && Object.prototype.hasOwnProperty.call(changes, WATCHLIST_DEBUG_LOG_KEY)) {
-      state.watchlistDebugLogs = normalizeWatchlistDebugLogs(changes[WATCHLIST_DEBUG_LOG_KEY]?.newValue);
-    }
     if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, WATCHLIST_COUNT_CACHE_KEY)) {
       const incoming = normalizeWatchlistCountCache(changes[WATCHLIST_COUNT_CACHE_KEY]?.newValue);
       const changed = mergeWatchlistCountCacheMap(incoming, { preferIncomingWhenEqual: true });
@@ -3456,6 +3193,7 @@ function attachStorageListener() {
       state.watchlistLimit = normalizeWatchlistLimit(changes[WATCHLIST_LIMIT_KEY]?.newValue);
       return;
     }
+    // Dev Pro activation override (temporary until Cloudflare auth)
     if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, 'pbDeveloperProOverride')) {
       refreshOverlayLaunchState().catch(() => {});
       return;
@@ -3742,16 +3480,6 @@ async function quickAddFromActiveTab() {
     state.badgeStatus.set(entry.id, { text: '-', title: t('panel_badge_not_fetched'), loading: false });
     renderLists();
     setNoticeKey('panel_notice_added');
-    recordWatchlistDebugEvent({
-      trigger: 'quick_add',
-      source: 'quickAddFromActiveTab',
-      didRequest: false,
-      reason: 'manual',
-      pageUrl: canonicalUrl,
-      host: parsed.host,
-      appId: parsed.appId,
-      viewId: String(queryResolved.viewId || '').trim()
-    }).catch(() => {});
   } catch (error) {
     console.error('Failed to add favorite', error);
     setNoticeKey('panel_notice_add_failed');
@@ -4199,16 +3927,8 @@ async function init() {
   await loadShortcutSearchOpenMode();
   await loadCollapsedSectionsState();
   await loadWatchlistRefreshPreset();
-  await loadWatchlistDebugState();
   await loadWatchlistCountCache();
   wireEvents();
-  recordWatchlistDebugEvent({
-    trigger: 'panel_open_cache_only',
-    source: 'init',
-    didRequest: false,
-    reason: 'cache_only',
-    pageUrl: String(location?.href || '')
-  }).catch(() => {});
   attachStorageListener();
   await initializeRecordPins();
   await refreshShortcutEntries();

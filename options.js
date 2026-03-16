@@ -56,6 +56,7 @@ const I18N_MESSAGES = {
     nav_watchlist: 'ウォッチリスト',
     nav_pins: 'ピン止め',
     nav_excel_overlay: 'スプレッドシート',
+    nav_api_usage: 'API使用状況',
     general_section_title: '全般',
     general_intro_1: 'PlugBits Launcher は、kintone を横断的に閲覧・操作するための Chrome 拡張機能です。各機能は左メニューから切り替えて設定できます。',
     general_intro_2: '設定は自動で保存され、同期が有効になっている場合は同じ Google アカウントで Chrome を使用する他端末にも共有されます。',
@@ -68,8 +69,6 @@ const I18N_MESSAGES = {
     general_language_ja: '日本語',
     general_language_en: 'English',
     general_language_help: 'Auto はPCまたはブラウザの表示言語に合わせます。',
-    developer_pro_override_label: 'Developer Pro override',
-    developer_pro_override_hint: '開発用の一時スイッチです。一般ユーザー向け公開ではオフのままにしてください。',
     shortcuts_section_title: 'ショートカット',
     watchlist_section_title: 'ウォッチリスト',
     watchlist_refresh_preset_label: 'WatchList 更新頻度',
@@ -259,7 +258,7 @@ const I18N_MESSAGES = {
     layout_scope_list: '一覧',
     layout_scope_detail: '詳細',
     api_usage_title: 'API使用状況',
-    api_usage_desc: 'この拡張機能が発行したAPI呼び出しの簡易統計です。',
+    api_usage_desc:  'この拡張機能が発行したすべてのAPI呼び出しを、主要機能別に集約して表示します。',
     api_usage_scope_note: 'kintone全体のAPI使用量ではありません。',
     api_usage_period_today: 'Today',
     api_usage_period_7d: '7日',
@@ -290,23 +289,12 @@ const I18N_MESSAGES = {
     metadata_cache_clear_confirm: 'Metadata cache を削除します。よろしいですか？',
     metadata_cache_clear_done: 'Metadata cache を削除しました。',
     metadata_cache_clear_failed: 'Metadata cache の削除に失敗しました。',
-    api_usage_admin_breakdown_title: 'Admin 内訳 (temporary)',
-    api_usage_admin_category: '分類',
-    api_usage_admin_category_settings: 'settings',
-    api_usage_admin_category_app_cache: 'app_cache',
-    api_usage_admin_category_permission: 'permission',
-    api_usage_admin_category_bootstrap: 'bootstrap',
-    api_usage_admin_category_usage_stats: 'usage_stats',
-    api_usage_admin_category_debug: 'debug',
-    api_usage_admin_category_other: 'other',
-    watchlist_debug_title: 'WatchList Debug (temporary)',
-    watchlist_debug_desc: '調査用の一時ログです。Debug ON のときのみ記録します。',
-    watchlist_debug_toggle: 'Debug ON',
-    watchlist_debug_clear: 'ログをクリア',
-    watchlist_debug_clear_confirm: 'WatchList Debugログをクリアします。よろしいですか？',
-    watchlist_debug_empty: 'Debugログはまだありません。',
-    watchlist_debug_storage_session: '保存先: session (一時)',
-    watchlist_debug_storage_local: '保存先: local (fallback)'
+    api_usage_group_shortcuts: 'ショートカット',
+    api_usage_group_watchlist: 'ウォッチリスト',
+    api_usage_group_record_pin: 'ピン止め',
+    api_usage_group_recent: '最近のレコード',
+    api_usage_group_spreadsheet: 'スプレッドシート',
+    api_usage_group_admin: '管理',
   },
   en: {
     settings_title: 'PlugBits Launcher Settings',
@@ -316,6 +304,7 @@ const I18N_MESSAGES = {
     nav_watchlist: 'Watchlist',
     nav_pins: 'Pins',
     nav_excel_overlay: 'Spreadsheet',
+    nav_api_usage: 'API Usage',
     general_section_title: 'General',
     general_intro_1: 'PlugBits Launcher is a Chrome extension for browsing and operating kintone more efficiently across apps.',
     general_intro_2: 'Settings are saved automatically and synced across devices signed in with the same Google account when sync is enabled.',
@@ -328,8 +317,6 @@ const I18N_MESSAGES = {
     general_language_ja: 'Japanese',
     general_language_en: 'English',
     general_language_help: 'Auto follows your PC or browser language.',
-    developer_pro_override_label: 'Developer Pro override',
-    developer_pro_override_hint: 'Temporary switch for developer testing. Keep this OFF in public releases.',
     shortcuts_section_title: 'Shortcuts',
     watchlist_section_title: 'Watchlist',
     watchlist_refresh_preset_label: 'WatchList refresh frequency',
@@ -519,7 +506,7 @@ const I18N_MESSAGES = {
     layout_scope_list: 'List',
     layout_scope_detail: 'Detail',
     api_usage_title: 'API Usage',
-    api_usage_desc: 'Simple statistics for API calls issued by this extension.',
+    api_usage_desc: 'Shows all API calls issued by this extension, aggregated by major feature.',
     api_usage_scope_note: 'This is not the total API usage of your kintone environment.',
     api_usage_period_today: 'Today',
     api_usage_period_7d: '7 days',
@@ -550,23 +537,12 @@ const I18N_MESSAGES = {
     metadata_cache_clear_confirm: 'Clear metadata cache?',
     metadata_cache_clear_done: 'Metadata cache was cleared.',
     metadata_cache_clear_failed: 'Failed to clear metadata cache.',
-    api_usage_admin_breakdown_title: 'Admin Breakdown (temporary)',
-    api_usage_admin_category: 'Category',
-    api_usage_admin_category_settings: 'settings',
-    api_usage_admin_category_app_cache: 'app_cache',
-    api_usage_admin_category_permission: 'permission',
-    api_usage_admin_category_bootstrap: 'bootstrap',
-    api_usage_admin_category_usage_stats: 'usage_stats',
-    api_usage_admin_category_debug: 'debug',
-    api_usage_admin_category_other: 'other',
-    watchlist_debug_title: 'WatchList Debug (temporary)',
-    watchlist_debug_desc: 'Temporary diagnostics log. Records only while Debug is ON.',
-    watchlist_debug_toggle: 'Debug ON',
-    watchlist_debug_clear: 'Clear logs',
-    watchlist_debug_clear_confirm: 'Clear WatchList debug logs?',
-    watchlist_debug_empty: 'No debug logs yet.',
-    watchlist_debug_storage_session: 'Storage: session (temporary)',
-    watchlist_debug_storage_local: 'Storage: local (fallback)'
+    api_usage_group_shortcuts: 'Shortcuts',
+    api_usage_group_watchlist: 'Watchlist',
+    api_usage_group_record_pin: 'Pinned Records',
+    api_usage_group_recent: 'Recent Records',
+    api_usage_group_spreadsheet: 'Spreadsheet',
+    api_usage_group_admin: 'System / Admin',
   }
 };
 
@@ -703,7 +679,6 @@ const shortcutSearchModeInputs = Array.from(document.querySelectorAll('input[nam
 const excelListEl = document.getElementById('excel_columns_list');
 const excelClearBtn = document.getElementById('excel_columns_clear');
 const apiUsageFeatureTableBodyEl = document.getElementById('api_usage_feature_table_body');
-const apiUsageAdminBreakdownTableBodyEl = document.getElementById('api_usage_admin_breakdown_table_body');
 const apiUsageResetBtn = document.getElementById('api_usage_reset');
 const metadataCacheClearBtn = document.getElementById('metadata_cache_clear');
 const metadataCacheStatusEl = document.getElementById('metadata_cache_status');
@@ -716,10 +691,6 @@ const apiUsage7dErrorEl = document.getElementById('api_usage_7d_error');
 const apiUsage30dTotalEl = document.getElementById('api_usage_30d_total');
 const apiUsage30dSuccessEl = document.getElementById('api_usage_30d_success');
 const apiUsage30dErrorEl = document.getElementById('api_usage_30d_error');
-const watchlistDebugEnabledEl = document.getElementById('watchlist_debug_enabled');
-const watchlistDebugStorageEl = document.getElementById('watchlist_debug_storage');
-const watchlistDebugLogEl = document.getElementById('watchlist_debug_log');
-const watchlistDebugClearBtn = document.getElementById('watchlist_debug_clear');
 const uiLanguageEl = document.getElementById('ui_language');
 const developerProOverrideRowEl = document.getElementById('developer_pro_override_row');
 const developerProOverrideEl = document.getElementById('developer_pro_override');
@@ -745,10 +716,11 @@ const MAX_WATCHLIST_LIMIT = 5;
 const WATCHLIST_LIMIT_VALUES = [DEFAULT_WATCHLIST_LIMIT, MAX_WATCHLIST_LIMIT];
 const PIN_VISIBLE_KEY = 'kfavRecordPinsVisible';
 const API_USAGE_DAILY_KEY = 'apiUsageDaily';
-const API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY = 'apiUsageAdminBreakdownDaily';
 const PB_METADATA_CACHE_PREFIX = 'pb:meta:v1:';
 const API_USAGE_RETENTION_DAYS = 31;
 const API_USAGE_FEATURE_ORDER = [
+  'shortcut',
+  'shortcuts',
   'watchlist_bulk',
   'record_pin',
   'recent',
@@ -762,8 +734,6 @@ const API_USAGE_FEATURE_ORDER = [
   'admin'
 ];
 const API_USAGE_FEATURE_VALUES = new Set([...API_USAGE_FEATURE_ORDER, 'other']);
-const API_USAGE_ADMIN_CATEGORY_ORDER = ['settings', 'app_cache', 'permission', 'bootstrap', 'usage_stats', 'debug', 'other'];
-const API_USAGE_ADMIN_CATEGORY_VALUES = new Set(API_USAGE_ADMIN_CATEGORY_ORDER);
 const API_USAGE_LEGACY_FEATURE_MAP = {
   watchlist: 'watchlist_bulk',
   watchlist_manual: 'watchlist_bulk',
@@ -778,9 +748,39 @@ const API_USAGE_LEGACY_FEATURE_MAP = {
   options: 'admin',
   auth: 'admin'
 };
-const WATCHLIST_DEBUG_CONFIG_KEY = 'kfavWatchlistDebugConfig';
-const WATCHLIST_DEBUG_LOG_KEY = 'kfavWatchlistDebugLogs';
-const WATCHLIST_DEBUG_MAX_LOGS = 80;
+const API_USAGE_DISPLAY_GROUP_ORDER = [
+  'shortcuts',
+  'watchlist',
+  'record_pin',
+  'recent',
+  'spreadsheet',
+  'admin'
+];
+
+const API_USAGE_DISPLAY_GROUP_LABEL_KEYS = {
+  shortcuts: 'api_usage_group_shortcuts',
+  watchlist: 'api_usage_group_watchlist',
+  record_pin: 'api_usage_group_record_pin',
+  recent: 'api_usage_group_recent',
+  spreadsheet: 'api_usage_group_spreadsheet',
+  admin: 'api_usage_group_admin'
+};
+
+const API_USAGE_DISPLAY_GROUP_MAP = {
+  shortcuts: ['shortcut', 'shortcuts'],
+  watchlist: ['watchlist_bulk', 'watchlist'],
+  record_pin: ['record_pin', 'pins'],
+  recent: ['recent'],
+  spreadsheet: ['overlay', 'overlay_records', 'overlay_acl'],
+  admin: [
+    'metadata_app',
+    'metadata_views',
+    'metadata_fields',
+    'bootstrap',
+    'admin',
+    'other'
+  ]
+};
 // ---- pinned record elements ----
 const pinLabelEl = document.getElementById('pin_label');
 const pinUrlEl = document.getElementById('pin_url');
@@ -831,10 +831,6 @@ let shortcutDraggingId = null;
 let overlayLayoutPresets = {};
 let overlayAppNameLookup = {};
 let apiUsageDaily = {};
-let apiUsageAdminBreakdownDaily = {};
-let watchlistDebugEnabled = false;
-let watchlistDebugLogs = [];
-let watchlistDebugStorageArea = 'session';
 let watchlistLimit = DEFAULT_WATCHLIST_LIMIT;
 const ensuredOrigins = new Set();
 const ICON_CHOICES = [
@@ -2734,7 +2730,6 @@ addBtn.addEventListener('click', async () => {
     loadWatchlistRefreshPreset(),
     loadDeveloperProOverride(),
     loadApiUsageStats(),
-    loadWatchlistDebugState()
   ]);
   optionsDataReady = true;
   console.log('[options][state] loaded keys', ['kintoneFavorites', 'kfavPins', 'kfavShortcuts', UI_LANGUAGE_KEY]);
@@ -2772,20 +2767,7 @@ if (chrome?.storage?.onChanged) {
       apiUsageDaily = normalizeApiUsageDaily(changes[API_USAGE_DAILY_KEY].newValue);
       renderApiUsageStats();
     }
-    if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY)) {
-      apiUsageAdminBreakdownDaily = normalizeApiUsageAdminBreakdownDaily(changes[API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY].newValue);
-      renderApiUsageStats();
-    }
-    if ((area === 'session' || area === 'local') && Object.prototype.hasOwnProperty.call(changes, WATCHLIST_DEBUG_CONFIG_KEY)) {
-      watchlistDebugEnabled = normalizeWatchlistDebugConfig(changes[WATCHLIST_DEBUG_CONFIG_KEY].newValue).enabled;
-      watchlistDebugStorageArea = area;
-      renderWatchlistDebugSection();
-    }
-    if ((area === 'session' || area === 'local') && Object.prototype.hasOwnProperty.call(changes, WATCHLIST_DEBUG_LOG_KEY)) {
-      watchlistDebugLogs = normalizeWatchlistDebugLogs(changes[WATCHLIST_DEBUG_LOG_KEY].newValue);
-      watchlistDebugStorageArea = area;
-      renderWatchlistDebugSection();
-    }
+
     if (area === 'sync' && Object.prototype.hasOwnProperty.call(changes, 'kfavPins')) {
       const next = changes.kfavPins.newValue;
       const arr = Array.isArray(next) ? next : next ? [next] : [];
@@ -2856,8 +2838,7 @@ async function rerenderLocalizedDynamicSections() {
   renderShortcutEntries();
   renderPinnedEntries();
   renderOverlayLayoutPresets();
-  renderApiUsageStats();
-  renderWatchlistDebugSection();
+  renderApiUsageStats(); 
 }
 
 async function refreshLocalizedFormControls() {
@@ -3066,18 +3047,6 @@ metadataCacheClearBtn?.addEventListener('click', async () => {
   }
 });
 
-watchlistDebugEnabledEl?.addEventListener('change', async () => {
-  const enabled = Boolean(watchlistDebugEnabledEl.checked);
-  await saveWatchlistDebugConfig(enabled);
-  watchlistDebugEnabled = enabled;
-  renderWatchlistDebugSection();
-});
-
-watchlistDebugClearBtn?.addEventListener('click', async () => {
-  if (!window.confirm(t('watchlist_debug_clear_confirm'))) return;
-  await clearWatchlistDebugLogs();
-});
-
 // ---- Overlay layout presets ----
 function normalizeOverlayLayoutPreset(rawPreset, index = 0) {
   if (!rawPreset || typeof rawPreset !== 'object') return null;
@@ -3238,37 +3207,6 @@ function normalizeApiUsageDaily(raw) {
   return daily;
 }
 
-function normalizeAdminUsageCategory(rawCategory) {
-  const category = String(rawCategory || '').trim().toLowerCase();
-  if (API_USAGE_ADMIN_CATEGORY_VALUES.has(category)) return category;
-  return 'other';
-}
-
-function normalizeApiUsageAdminBreakdownDaily(raw) {
-  if (!raw || typeof raw !== 'object') return {};
-  const daily = {};
-  Object.entries(raw).forEach(([dateKey, categoryMap]) => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) return;
-    if (!categoryMap || typeof categoryMap !== 'object') return;
-    const normalizedCategoryMap = {};
-    Object.entries(categoryMap).forEach(([categoryKey, bucket]) => {
-      const category = normalizeAdminUsageCategory(categoryKey);
-      if (isApiUsageStatLike(bucket)) {
-        mergeAdminBreakdownStat(normalizedCategoryMap, category, createApiUsageStat(bucket));
-        return;
-      }
-      if (!bucket || typeof bucket !== 'object') return;
-      Object.values(bucket).forEach((legacyStat) => {
-        if (!isApiUsageStatLike(legacyStat)) return;
-        mergeAdminBreakdownStat(normalizedCategoryMap, category, createApiUsageStat(legacyStat));
-      });
-    });
-    if (Object.keys(normalizedCategoryMap).length) {
-      daily[dateKey] = normalizedCategoryMap;
-    }
-  });
-  return daily;
-}
 
 function normalizeApiUsageFeature(rawFeature) {
   const feature = String(rawFeature || '').trim().toLowerCase();
@@ -3304,15 +3242,6 @@ function mergeApiUsageStat(featureMap, featureValue, stat) {
   current.success += Number(stat?.success || 0);
   current.error += Number(stat?.error || 0);
   featureMap[feature] = current;
-}
-
-function mergeAdminBreakdownStat(categoryMap, categoryValue, stat) {
-  const category = normalizeAdminUsageCategory(categoryValue);
-  const current = categoryMap[category] || { count: 0, success: 0, error: 0 };
-  current.count += Number(stat?.count || 0);
-  current.success += Number(stat?.success || 0);
-  current.error += Number(stat?.error || 0);
-  categoryMap[category] = current;
 }
 
 function pruneApiUsageDaily(daily) {
@@ -3368,24 +3297,27 @@ function aggregateApiUsage(days) {
 
   return { total, success, error, byFeature };
 }
+function aggregateApiUsageDisplay(days) {
+  const base = aggregateApiUsage(days);
+  const grouped = {};
 
-function aggregateAdminBreakdown(days) {
-  const keys = new Set(buildRangeDateKeys(days));
-  const byCategory = {};
-  Object.entries(apiUsageAdminBreakdownDaily).forEach(([dateKey, categoryMap]) => {
-    if (!keys.has(dateKey)) return;
-    Object.entries(categoryMap || {}).forEach(([category, stat]) => {
-      const countValue = Number(stat?.count || 0);
-      const successValue = Number(stat?.success || 0);
-      const errorValue = Number(stat?.error || 0);
-      const resolvedCount = countValue > 0 ? countValue : successValue + errorValue;
-      if (!resolvedCount && !successValue && !errorValue) return;
-      const normalizedCategory = normalizeAdminUsageCategory(category);
-      byCategory[normalizedCategory] = (byCategory[normalizedCategory] || 0) + resolvedCount;
-    });
+  API_USAGE_DISPLAY_GROUP_ORDER.forEach((group) => {
+    grouped[group] = 0;
   });
-  return { byCategory };
+
+  Object.entries(base.byFeature || {}).forEach(([feature, count]) => {
+    const group = resolveApiUsageDisplayGroup(feature);
+    grouped[group] = (grouped[group] || 0) + Number(count || 0);
+  });
+
+  return {
+    total: base.total,
+    success: base.success,
+    error: base.error,
+    byGroup: grouped
+  };
 }
+
 
 function setApiUsageMetric(el, value) {
   if (!el) return;
@@ -3396,241 +3328,84 @@ function setApiUsageMetric(el, value) {
 function renderApiUsageFeatureTable(today, week, month) {
   if (!apiUsageFeatureTableBodyEl) return;
   apiUsageFeatureTableBodyEl.innerHTML = '';
-  API_USAGE_FEATURE_ORDER.forEach((feature) => {
+
+  API_USAGE_DISPLAY_GROUP_ORDER.forEach((group) => {
     const row = document.createElement('tr');
+
     const nameCell = document.createElement('td');
-    nameCell.textContent = t(`api_usage_feature_${feature}`);
+    nameCell.textContent = t(API_USAGE_DISPLAY_GROUP_LABEL_KEYS[group] || group);
+
     const todayCell = document.createElement('td');
-    todayCell.textContent = String(Number(today.byFeature?.[feature] || 0));
+    todayCell.textContent = String(Number(today.byGroup?.[group] || 0));
+
     const weekCell = document.createElement('td');
-    weekCell.textContent = String(Number(week.byFeature?.[feature] || 0));
+    weekCell.textContent = String(Number(week.byGroup?.[group] || 0));
+
     const monthCell = document.createElement('td');
-    monthCell.textContent = String(Number(month.byFeature?.[feature] || 0));
+    monthCell.textContent = String(Number(month.byGroup?.[group] || 0));
+
     row.appendChild(nameCell);
     row.appendChild(todayCell);
     row.appendChild(weekCell);
     row.appendChild(monthCell);
+
     apiUsageFeatureTableBodyEl.appendChild(row);
   });
 }
+function resolveApiUsageDisplayGroup(feature) {
+  const normalized = normalizeApiUsageFeature(feature);
 
-function renderApiUsageAdminBreakdown(today, week, month) {
-  if (!apiUsageAdminBreakdownTableBodyEl) return;
-  apiUsageAdminBreakdownTableBodyEl.innerHTML = '';
-  API_USAGE_ADMIN_CATEGORY_ORDER.forEach((category) => {
-    const row = document.createElement('tr');
-    const nameCell = document.createElement('td');
-    nameCell.textContent = t(`api_usage_admin_category_${category}`);
-    const todayCell = document.createElement('td');
-    todayCell.textContent = String(Number(today.byCategory?.[category] || 0));
-    const weekCell = document.createElement('td');
-    weekCell.textContent = String(Number(week.byCategory?.[category] || 0));
-    const monthCell = document.createElement('td');
-    monthCell.textContent = String(Number(month.byCategory?.[category] || 0));
-    row.appendChild(nameCell);
-    row.appendChild(todayCell);
-    row.appendChild(weekCell);
-    row.appendChild(monthCell);
-    apiUsageAdminBreakdownTableBodyEl.appendChild(row);
-  });
+  for (const [group, features] of Object.entries(API_USAGE_DISPLAY_GROUP_MAP)) {
+    if (features.includes(normalized)) return group;
+  }
+
+  return 'admin';
 }
 
 function renderApiUsageStats() {
   if (!apiUsageFeatureTableBodyEl) return;
-  const today = aggregateApiUsage(1);
-  const week = aggregateApiUsage(7);
-  const month = aggregateApiUsage(30);
-  const adminToday = aggregateAdminBreakdown(1);
-  const adminWeek = aggregateAdminBreakdown(7);
-  const adminMonth = aggregateAdminBreakdown(30);
+  const todayRaw = aggregateApiUsage(1);
+  const weekRaw = aggregateApiUsage(7);
+  const monthRaw = aggregateApiUsage(30);
 
-  setApiUsageMetric(apiUsageTodayTotalEl, today.total);
-  setApiUsageMetric(apiUsageTodaySuccessEl, today.success);
-  setApiUsageMetric(apiUsageTodayErrorEl, today.error);
-  setApiUsageMetric(apiUsage7dTotalEl, week.total);
-  setApiUsageMetric(apiUsage7dSuccessEl, week.success);
-  setApiUsageMetric(apiUsage7dErrorEl, week.error);
-  setApiUsageMetric(apiUsage30dTotalEl, month.total);
-  setApiUsageMetric(apiUsage30dSuccessEl, month.success);
-  setApiUsageMetric(apiUsage30dErrorEl, month.error);
+  const today = aggregateApiUsageDisplay(1);
+  const week = aggregateApiUsageDisplay(7);
+  const month = aggregateApiUsageDisplay(30);
+
+  setApiUsageMetric(apiUsageTodayTotalEl, todayRaw.total);
+  setApiUsageMetric(apiUsageTodaySuccessEl, todayRaw.success);
+  setApiUsageMetric(apiUsageTodayErrorEl, todayRaw.error);
+
+  setApiUsageMetric(apiUsage7dTotalEl, weekRaw.total);
+  setApiUsageMetric(apiUsage7dSuccessEl, weekRaw.success);
+  setApiUsageMetric(apiUsage7dErrorEl, weekRaw.error);
+
+  setApiUsageMetric(apiUsage30dTotalEl, monthRaw.total);
+  setApiUsageMetric(apiUsage30dSuccessEl, monthRaw.success);
+  setApiUsageMetric(apiUsage30dErrorEl, monthRaw.error);
+
   renderApiUsageFeatureTable(today, week, month);
-  renderApiUsageAdminBreakdown(adminToday, adminWeek, adminMonth);
+
 }
+
 
 async function loadApiUsageStats() {
-  const stored = await chrome.storage.local.get([API_USAGE_DAILY_KEY, API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY]);
+  const stored = await chrome.storage.local.get([API_USAGE_DAILY_KEY]);
   const normalized = normalizeApiUsageDaily(stored?.[API_USAGE_DAILY_KEY]);
-  const normalizedAdmin = normalizeApiUsageAdminBreakdownDaily(stored?.[API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY]);
   const pruned = pruneApiUsageDaily(normalized);
-  const prunedAdmin = pruneApiUsageDaily(normalizedAdmin);
   apiUsageDaily = normalized;
-  apiUsageAdminBreakdownDaily = normalizedAdmin;
-  if (pruned || prunedAdmin) {
-    const payload = {};
-    const removeKeys = [];
+
+  if (pruned) {
     if (Object.keys(normalized).length) {
-      payload[API_USAGE_DAILY_KEY] = normalized;
+      await chrome.storage.local.set({ [API_USAGE_DAILY_KEY]: normalized });
     } else {
-      removeKeys.push(API_USAGE_DAILY_KEY);
-    }
-    if (Object.keys(normalizedAdmin).length) {
-      payload[API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY] = normalizedAdmin;
-    } else {
-      removeKeys.push(API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY);
-    }
-    if (Object.keys(payload).length) {
-      await chrome.storage.local.set(payload);
-    }
-    if (removeKeys.length) {
-      await chrome.storage.local.remove(removeKeys);
+      await chrome.storage.local.remove(API_USAGE_DAILY_KEY);
     }
   }
+
   renderApiUsageStats();
 }
 
-async function resetApiUsageStats() {
-  apiUsageDaily = {};
-  apiUsageAdminBreakdownDaily = {};
-  await chrome.storage.local.remove([API_USAGE_DAILY_KEY, API_USAGE_ADMIN_BREAKDOWN_DAILY_KEY]);
-  renderApiUsageStats();
-}
-
-function getWatchlistDebugStorageBackend() {
-  if (chrome?.storage?.session) {
-    return { area: chrome.storage.session, name: 'session' };
-  }
-  if (chrome?.storage?.local) {
-    return { area: chrome.storage.local, name: 'local' };
-  }
-  return { area: null, name: 'memory' };
-}
-
-function normalizeWatchlistDebugConfig(raw) {
-  if (raw && typeof raw === 'object') {
-    return { enabled: Boolean(raw.enabled) };
-  }
-  return { enabled: Boolean(raw) };
-}
-
-function normalizeWatchlistDebugLogEntry(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const tsRaw = Number(raw.ts);
-  const cacheAgeRaw = Number(raw.cacheAgeMs);
-  return {
-    ts: Number.isFinite(tsRaw) && tsRaw > 0 ? Math.floor(tsRaw) : Date.now(),
-    trigger: String(raw.trigger || 'unknown').trim() || 'unknown',
-    source: String(raw.source || 'unknown').trim() || 'unknown',
-    pageUrl: String(raw.pageUrl || '').trim(),
-    didRequest: Boolean(raw.didRequest),
-    reason: String(raw.reason || 'unknown').trim() || 'unknown',
-    cacheAgeMs: Number.isFinite(cacheAgeRaw) && cacheAgeRaw >= 0 ? Math.floor(cacheAgeRaw) : null,
-    host: String(raw.host || '').trim(),
-    appId: String(raw.appId || '').trim(),
-    viewId: String(raw.viewId || '').trim()
-  };
-}
-
-function normalizeWatchlistDebugLogs(raw) {
-  if (!Array.isArray(raw)) return [];
-  const normalized = raw
-    .map((entry) => normalizeWatchlistDebugLogEntry(entry))
-    .filter(Boolean);
-  if (normalized.length <= WATCHLIST_DEBUG_MAX_LOGS) return normalized;
-  return normalized.slice(normalized.length - WATCHLIST_DEBUG_MAX_LOGS);
-}
-
-function formatWatchlistDebugTimestamp(tsValue) {
-  const ts = Number(tsValue);
-  if (!Number.isFinite(ts) || ts <= 0) return '-';
-  const date = new Date(ts);
-  if (Number.isNaN(date.getTime())) return '-';
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  const hh = String(date.getHours()).padStart(2, '0');
-  const mi = String(date.getMinutes()).padStart(2, '0');
-  const ss = String(date.getSeconds()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
-}
-
-function formatWatchlistDebugLine(entry) {
-  const ageText = entry.cacheAgeMs == null ? '-' : String(entry.cacheAgeMs);
-  const host = entry.host || '-';
-  const appId = entry.appId || '-';
-  const viewId = entry.viewId || '-';
-  const url = entry.pageUrl || '-';
-  return `[${formatWatchlistDebugTimestamp(entry.ts)}] trigger=${entry.trigger} source=${entry.source} didRequest=${entry.didRequest ? 'true' : 'false'} reason=${entry.reason} cacheAgeMs=${ageText} host=${host} appId=${appId} viewId=${viewId} pageUrl=${url}`;
-}
-
-function renderWatchlistDebugStorageLabel() {
-  if (!watchlistDebugStorageEl) return;
-  const key = watchlistDebugStorageArea === 'local'
-    ? 'watchlist_debug_storage_local'
-    : 'watchlist_debug_storage_session';
-  watchlistDebugStorageEl.textContent = t(key);
-}
-
-function renderWatchlistDebugSection() {
-  if (watchlistDebugEnabledEl) {
-    watchlistDebugEnabledEl.checked = Boolean(watchlistDebugEnabled);
-  }
-  renderWatchlistDebugStorageLabel();
-  if (!watchlistDebugLogEl) return;
-  if (!watchlistDebugLogs.length) {
-    watchlistDebugLogEl.textContent = t('watchlist_debug_empty');
-    return;
-  }
-  watchlistDebugLogEl.textContent = watchlistDebugLogs
-    .slice()
-    .reverse()
-    .map((entry) => formatWatchlistDebugLine(entry))
-    .join('\n');
-}
-
-async function saveWatchlistDebugConfig(enabled) {
-  const backend = getWatchlistDebugStorageBackend();
-  watchlistDebugStorageArea = backend.name;
-  if (!backend.area) return;
-  try {
-    await backend.area.set({ [WATCHLIST_DEBUG_CONFIG_KEY]: { enabled: Boolean(enabled) } });
-  } catch (_err) {
-    // ignore
-  }
-}
-
-async function loadWatchlistDebugState() {
-  const backend = getWatchlistDebugStorageBackend();
-  watchlistDebugStorageArea = backend.name;
-  if (!backend.area) {
-    watchlistDebugEnabled = false;
-    watchlistDebugLogs = [];
-    renderWatchlistDebugSection();
-    return;
-  }
-  try {
-    const stored = await backend.area.get([WATCHLIST_DEBUG_CONFIG_KEY, WATCHLIST_DEBUG_LOG_KEY]);
-    watchlistDebugEnabled = normalizeWatchlistDebugConfig(stored?.[WATCHLIST_DEBUG_CONFIG_KEY]).enabled;
-    watchlistDebugLogs = normalizeWatchlistDebugLogs(stored?.[WATCHLIST_DEBUG_LOG_KEY]);
-  } catch (_err) {
-    watchlistDebugEnabled = false;
-    watchlistDebugLogs = [];
-  }
-  renderWatchlistDebugSection();
-}
-
-async function clearWatchlistDebugLogs() {
-  const backend = getWatchlistDebugStorageBackend();
-  watchlistDebugStorageArea = backend.name;
-  if (backend.area) {
-    try {
-      await backend.area.remove(WATCHLIST_DEBUG_LOG_KEY);
-    } catch (_err) {
-      // ignore
-    }
-  }
-  watchlistDebugLogs = [];
-  renderWatchlistDebugSection();
-}
 
 function getOverlayLayoutActivePreset(entry) {
   if (!entry || !Array.isArray(entry.presets) || !entry.presets.length) return null;
@@ -4066,3 +3841,39 @@ pinEditUrlEl?.addEventListener('change', () => {
   if (parsed.appId && pinEditAppIdEl && !pinEditAppIdEl.value) pinEditAppIdEl.value = parsed.appId;
   if (parsed.recordId && pinEditRecordIdEl && !pinEditRecordIdEl.value) pinEditRecordIdEl.value = parsed.recordId;
 });
+// ------------------------------------------------------------
+// Developer tools loader (DEV build only)
+// Store build では読み込まない
+// 
+function loadDevToolsIfNeeded() {
+  try {
+    const manifest = chrome.runtime.getManifest();
+
+    // Web Store build has update_url
+    const isDevBuild =
+      !Object.prototype.hasOwnProperty.call(manifest, 'update_url');
+
+    if (!isDevBuild) {
+      console.log('[PlugBits] dev-tools disabled (store build)');
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('dev-tools.js');
+
+    script.onload = () => {
+      console.log('[PlugBits] Developer tools loaded');
+    };
+
+    script.onerror = () => {
+      console.warn('[PlugBits] Failed to load dev-tools.js');
+    };
+
+    document.head.appendChild(script);
+
+  } catch (err) {
+    console.warn('[PlugBits] dev-tools init failed', err);
+  }
+}
+
+loadDevToolsIfNeeded();

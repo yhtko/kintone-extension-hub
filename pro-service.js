@@ -5,6 +5,8 @@
 
   const DEVELOPER_OVERRIDE_KEY = 'pbDeveloperProOverride';
   const INSTALL_TYPE_CACHE_TTL_MS = 30 * 1000;
+  const DEVELOPER_OVERRIDE_AT_KEY = 'pbDeveloperProOverrideAt';
+  const DEVELOPER_OVERRIDE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
   function toBoolean(value, fallback = false) {
     if (typeof value === 'boolean') return value;
@@ -45,15 +47,51 @@
 
     async function getDeveloperOverride() {
       try {
-        const stored = await chrome.storage.local.get(DEVELOPER_OVERRIDE_KEY);
-        return toBoolean(stored?.[DEVELOPER_OVERRIDE_KEY], false);
+        const stored = await chrome.storage.local.get([
+          DEVELOPER_OVERRIDE_KEY,
+          DEVELOPER_OVERRIDE_AT_KEY
+        ]);
+
+        const enabled = toBoolean(stored?.[DEVELOPER_OVERRIDE_KEY], false);
+        const enabledAt = Number(stored?.[DEVELOPER_OVERRIDE_AT_KEY] || 0);
+
+        if (!enabled) return false;
+        if (!enabledAt) {
+          await chrome.storage.local.remove([
+            DEVELOPER_OVERRIDE_KEY,
+            DEVELOPER_OVERRIDE_AT_KEY
+          ]);
+          return false;
+        }
+
+        const alive = (Date.now() - enabledAt) < DEVELOPER_OVERRIDE_TTL_MS;
+        if (!alive) {
+          await chrome.storage.local.remove([
+            DEVELOPER_OVERRIDE_KEY,
+            DEVELOPER_OVERRIDE_AT_KEY
+          ]);
+          return false;
+        }
+
+        return true;
       } catch (_err) {
         return false;
       }
     }
 
     async function setDeveloperOverride(value) {
-      await chrome.storage.local.set({ [DEVELOPER_OVERRIDE_KEY]: Boolean(value) });
+      if (Boolean(value)) {
+        await chrome.storage.local.set({
+          [DEVELOPER_OVERRIDE_KEY]: true,
+          [DEVELOPER_OVERRIDE_AT_KEY]: Date.now()
+        });
+        return;
+      }
+
+      await chrome.storage.local.remove([
+        DEVELOPER_OVERRIDE_KEY,
+        DEVELOPER_OVERRIDE_AT_KEY
+      ]);
     }
 
     function getFallbackDevelopmentGuess() {

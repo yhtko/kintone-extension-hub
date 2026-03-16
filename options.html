@@ -16,6 +16,7 @@
         <button type="button" class="menu-item" data-pane-target="watchlist" data-i18n="nav_watchlist">ウォッチリスト</button>
         <button type="button" class="menu-item" data-pane-target="pins" data-i18n="nav_pins">ピン止め</button>
         <button type="button" class="menu-item" data-pane-target="excel-overlay" data-i18n="nav_excel_overlay">スプレッドシート</button>
+        <button type="button" class="menu-item" data-pane-target="api-usage" data-i18n="nav_api_usage">API使用状況</button>
       </nav>
     </aside>
     <main class="content" id="content">
@@ -35,13 +36,6 @@
             </select>
           </div>
           <p class="hint" data-i18n="general_language_help">Auto はPCまたはブラウザの表示言語に合わせます。</p>
-          <div id="developer_pro_override_row" class="kp-setting-row developer-pro-override-row" hidden>
-            <label class="developer-pro-override-label">
-              <input id="developer_pro_override" type="checkbox" />
-              <span data-i18n="developer_pro_override_label">Developer Pro override</span>
-            </label>
-            <p class="hint" data-i18n="developer_pro_override_hint">開発用の一時スイッチです。一般ユーザー向け公開ではオフのままにしてください。</p>
-          </div>
         </section>
         <section class="card">
           <h2 data-i18n="general_tips_title">使い方のヒント</h2>
@@ -66,80 +60,6 @@
           <p class="hint" data-i18n="host_perm_hint">InPrivate で利用する場合は拡張機能の「InPrivate で許可」をオンにしてから実行してください。</p>
         </section>
 
-        <section class="card">
-          <h2 data-i18n="api_usage_title">API使用状況</h2>
-          <p class="hint" data-i18n="api_usage_desc">この拡張機能が発行したAPI呼び出しの簡易統計です。</p>
-          <p class="hint api-usage-note" data-i18n="api_usage_scope_note">kintone全体のAPI使用量ではありません。</p>
-          <div class="api-usage-summary">
-            <section class="api-usage-period">
-              <h3 data-i18n="api_usage_period_today">Today</h3>
-              <div class="api-usage-kv"><span data-i18n="api_usage_total">Total</span><strong id="api_usage_today_total">0</strong></div>
-              <div class="api-usage-kv"><span data-i18n="api_usage_success">Success</span><strong id="api_usage_today_success">0</strong></div>
-              <div class="api-usage-kv"><span data-i18n="api_usage_error">Error</span><strong id="api_usage_today_error">0</strong></div>
-            </section>
-            <section class="api-usage-period">
-              <h3 data-i18n="api_usage_period_7d">7日</h3>
-              <div class="api-usage-kv"><span data-i18n="api_usage_total">Total</span><strong id="api_usage_7d_total">0</strong></div>
-              <div class="api-usage-kv"><span data-i18n="api_usage_success">Success</span><strong id="api_usage_7d_success">0</strong></div>
-              <div class="api-usage-kv"><span data-i18n="api_usage_error">Error</span><strong id="api_usage_7d_error">0</strong></div>
-            </section>
-            <section class="api-usage-period">
-              <h3 data-i18n="api_usage_period_30d">30日</h3>
-              <div class="api-usage-kv"><span data-i18n="api_usage_total">Total</span><strong id="api_usage_30d_total">0</strong></div>
-              <div class="api-usage-kv"><span data-i18n="api_usage_success">Success</span><strong id="api_usage_30d_success">0</strong></div>
-              <div class="api-usage-kv"><span data-i18n="api_usage_error">Error</span><strong id="api_usage_30d_error">0</strong></div>
-            </section>
-          </div>
-          <div class="api-usage-breakdowns">
-            <section class="api-usage-breakdown">
-              <h3 data-i18n="api_usage_by_feature_title">機能別内訳</h3>
-              <table class="api-usage-feature-table">
-                <thead>
-                  <tr>
-                    <th data-i18n="api_usage_feature">機能</th>
-                    <th data-i18n="api_usage_period_today">Today</th>
-                    <th data-i18n="api_usage_period_7d">7日</th>
-                    <th data-i18n="api_usage_period_30d">30日</th>
-                  </tr>
-                </thead>
-                <tbody id="api_usage_feature_table_body"></tbody>
-              </table>
-            </section>
-            <section class="api-usage-breakdown">
-              <h3 data-i18n="api_usage_admin_breakdown_title">Admin 内訳</h3>
-              <table class="api-usage-feature-table">
-                <thead>
-                  <tr>
-                    <th data-i18n="api_usage_admin_category">分類</th>
-                    <th data-i18n="api_usage_period_today">Today</th>
-                    <th data-i18n="api_usage_period_7d">7日</th>
-                    <th data-i18n="api_usage_period_30d">30日</th>
-                  </tr>
-                </thead>
-                <tbody id="api_usage_admin_breakdown_table_body"></tbody>
-              </table>
-            </section>
-          </div>
-          <div class="actions actions--end">
-            <button id="metadata_cache_clear" type="button" data-i18n="metadata_cache_clear_btn">Metadata cache を削除</button>
-            <button id="api_usage_reset" type="button" class="btn-danger-subtle" data-i18n="api_usage_reset">統計をリセット</button>
-          </div>
-          <p id="metadata_cache_status" class="hint" data-i18n="metadata_cache_clear_desc">app / views / fields の24h cacheをクリアします。</p>
-        </section>
-
-        <section class="card watchlist-debug-card">
-          <h2 data-i18n="watchlist_debug_title">WatchList Debug (temporary)</h2>
-          <p class="hint" data-i18n="watchlist_debug_desc">調査用の一時ログです。Debug ON のときのみ記録します。</p>
-          <label class="shortcut-toggle">
-            <input id="watchlist_debug_enabled" type="checkbox" />
-            <span data-i18n="watchlist_debug_toggle">Debug ON</span>
-          </label>
-          <p id="watchlist_debug_storage" class="hint" data-i18n="watchlist_debug_storage_session">保存先: session (一時)</p>
-          <div class="actions actions--end">
-            <button id="watchlist_debug_clear" type="button" class="btn-danger-subtle" data-i18n="watchlist_debug_clear">ログをクリア</button>
-          </div>
-          <pre id="watchlist_debug_log" class="watchlist-debug-log" aria-live="polite"></pre>
-        </section>
       </section>
 
       <section class="pane" data-pane="excel-overlay" aria-labelledby="pane-excel-overlay-title">
@@ -312,6 +232,58 @@
           </div>
           <ul id="shortcut_list" class="shortcut-list"></ul>
           <p class="hint" data-i18n="shortcuts_list_hint">並び順はドラッグで変更できます。削除は各行の削除ボタンから行えます。</p>
+        </section>
+      </section>
+      <section class="pane" data-pane="api-usage" aria-labelledby="pane-api-usage-title">
+        <section class="card">
+          <h2 id="pane-api-usage-title" data-i18n="api_usage_title">API使用状況</h2>
+          <p class="hint" data-i18n="api_usage_desc">この拡張機能が発行したAPI呼び出しの簡易統計です。</p>
+          <p class="hint api-usage-note" data-i18n="api_usage_scope_note">kintone全体のAPI使用量ではありません。</p>
+
+          <div class="api-usage-summary">
+            <section class="api-usage-period">
+              <h3 data-i18n="api_usage_period_today">Today</h3>
+              <div class="api-usage-kv"><span data-i18n="api_usage_total">Total</span><strong id="api_usage_today_total">0</strong></div>
+              <div class="api-usage-kv"><span data-i18n="api_usage_success">Success</span><strong id="api_usage_today_success">0</strong></div>
+              <div class="api-usage-kv"><span data-i18n="api_usage_error">Error</span><strong id="api_usage_today_error">0</strong></div>
+            </section>
+            <section class="api-usage-period">
+              <h3 data-i18n="api_usage_period_7d">7日</h3>
+              <div class="api-usage-kv"><span data-i18n="api_usage_total">Total</span><strong id="api_usage_7d_total">0</strong></div>
+              <div class="api-usage-kv"><span data-i18n="api_usage_success">Success</span><strong id="api_usage_7d_success">0</strong></div>
+              <div class="api-usage-kv"><span data-i18n="api_usage_error">Error</span><strong id="api_usage_7d_error">0</strong></div>
+            </section>
+            <section class="api-usage-period">
+              <h3 data-i18n="api_usage_period_30d">30日</h3>
+              <div class="api-usage-kv"><span data-i18n="api_usage_total">Total</span><strong id="api_usage_30d_total">0</strong></div>
+              <div class="api-usage-kv"><span data-i18n="api_usage_success">Success</span><strong id="api_usage_30d_success">0</strong></div>
+              <div class="api-usage-kv"><span data-i18n="api_usage_error">Error</span><strong id="api_usage_30d_error">0</strong></div>
+            </section>
+          </div>
+
+          <div class="api-usage-breakdowns">
+            <section class="api-usage-breakdown">
+              <h3 data-i18n="api_usage_by_feature_title">機能別内訳</h3>
+              <table class="api-usage-feature-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="api_usage_feature">機能</th>
+                    <th data-i18n="api_usage_period_today">Today</th>
+                    <th data-i18n="api_usage_period_7d">7日</th>
+                    <th data-i18n="api_usage_period_30d">30日</th>
+                  </tr>
+                </thead>
+                <tbody id="api_usage_feature_table_body"></tbody>
+              </table>
+            </section>
+          </div>
+
+          <div class="actions actions--end">
+            <button id="metadata_cache_clear" type="button" data-i18n="metadata_cache_clear_btn">Metadata cache を削除</button>
+            <button id="api_usage_reset" type="button" class="btn-danger-subtle" data-i18n="api_usage_reset">統計をリセット</button>
+          </div>
+
+          <p id="metadata_cache_status" class="hint" data-i18n="metadata_cache_clear_desc">app / views / fields の24h cacheをクリアします。</p>
         </section>
       </section>
     </main>

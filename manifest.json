@@ -43,7 +43,7 @@
 ],
 "web_accessible_resources": [
   {
-    "resources": ["page-bridge.js", "overlay.css"],
+    "resources": ["page-bridge.js", "overlay.css", "dev-tools.js"],
     "matches": [
       "https://*.kintone.com/*",
       "https://*.cybozu.com/*",
