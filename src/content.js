@@ -6052,11 +6052,13 @@
       if (!row || !field || !this.isMultiLineField(field)) return;
       const recordId = String(row.id || '').trim();
       if (!recordId) return;
+      const viewOnlyMode = this.isOverlayViewOnly();
       const editable = this.isOverlayEditable() && this.permissionService.canEditCell(recordId, field.code);
-      if (!editable) {
+      if (!editable && !viewOnlyMode) {
         this.notifyViewOnlyBlocked();
         return;
       }
+      const readOnly = !editable;
 
       this.closeMultilineEditor();
       this.closeRadioPicker();
@@ -6089,6 +6091,7 @@
       const textarea = document.createElement('textarea');
       textarea.className = 'pb-overlay__multiline-input';
       textarea.value = String(row.values[field.code] ?? '');
+      textarea.readOnly = readOnly;
       body.appendChild(textarea);
 
       const footer = document.createElement('div');
@@ -6102,7 +6105,9 @@
       saveBtn.type = 'button';
       saveBtn.className = 'pb-overlay__btn pb-overlay__btn--primary';
       saveBtn.textContent = resolveText(this.language, 'multilineSave');
+      saveBtn.disabled = readOnly;
       saveBtn.addEventListener('click', () => {
+        if (readOnly) return;
         this.applyEditorValueChange(recordId, field, textarea.value ?? '', {
           historyType: 'cell-edit',
           pushHistory: true,
@@ -6123,12 +6128,15 @@
         layer,
         panel,
         textarea,
+        readOnly,
         anchorInput: anchorInput || this.getInput(rowIndex, colIndex)
       };
       requestAnimationFrame(() => {
         try {
           textarea.focus();
-          textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+          if (!readOnly) {
+            textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+          }
         } catch (_e) { /* noop */ }
       });
     }
@@ -6608,6 +6616,17 @@
           event?.preventDefault?.();
           event?.stopPropagation?.();
         }
+        return;
+      }
+      if (this.isMultiLineField(field)) {
+        const canOpen = this.isOverlayViewOnly() || (this.isOverlayEditable() && this.permissionService.canEditCell(recordId, fieldCode));
+        if (!canOpen) return;
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        if (typeof event?.stopImmediatePropagation === 'function') {
+          event.stopImmediatePropagation();
+        }
+        this.openMultilineEditor(rowIndex, colIndex, input);
         return;
       }
       if (this.isSubtableField(field)) {
@@ -7198,6 +7217,8 @@
           if (targetRecordId) {
             this.openSubtableEditor(r, c, input || this.getInput(r, c));
           }
+        } else if (this.isOverlayViewOnly() && this.isMultiLineField(field)) {
+          this.openMultilineEditor(r, c, input || this.getInput(r, c));
         }
         return;
       }
