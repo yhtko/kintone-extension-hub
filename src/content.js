@@ -4198,6 +4198,52 @@
       }
     }
 
+    extractReadableTextFromRichText(value) {
+      const html = String(value ?? '');
+      if (!html) return '';
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const parts = [];
+        const blockTags = new Set(['ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'DL', 'FIELDSET', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEADER', 'HR', 'LI', 'MAIN', 'NAV', 'OL', 'P', 'PRE', 'SECTION', 'TABLE', 'TD', 'TH', 'TR', 'UL']);
+        const pushNewline = () => {
+          if (!parts.length) return;
+          const last = parts[parts.length - 1];
+          if (last !== '\n') parts.push('\n');
+        };
+        const walk = (node) => {
+          if (!node) return;
+          if (node.nodeType === Node.TEXT_NODE) {
+            const text = String(node.textContent || '').replace(/\u00a0/g, ' ');
+            if (text) parts.push(text);
+            return;
+          }
+          if (node.nodeType !== Node.ELEMENT_NODE) return;
+          const tag = String(node.tagName || '').toUpperCase();
+          if (tag === 'BR') {
+            pushNewline();
+            return;
+          }
+          const isBlock = blockTags.has(tag);
+          if (isBlock) pushNewline();
+          if (tag === 'LI') parts.push('• ');
+          Array.from(node.childNodes || []).forEach((child) => walk(child));
+          if (isBlock) pushNewline();
+        };
+        Array.from(doc.body?.childNodes || []).forEach((child) => walk(child));
+        return parts.join('')
+          .replace(/\r\n/g, '\n')
+          .replace(/\r/g, '\n')
+          .split('\n')
+          .map((line) => line.replace(/[ \t\f\v]+/g, ' ').trim())
+          .join('\n')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+      } catch (_err) {
+        return this.extractPlainTextFromRichText(html);
+      }
+    }
+
     formatMultiLinePreview(value) {
       const text = String(value ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       const preview = text.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 2).join(' / ');
@@ -6141,6 +6187,73 @@
       });
     }
 
+    openRichTextViewer(rowIndex, colIndex, anchorInput = null) {
+      if (!this.root) return;
+      const row = this.getVisibleRowAt(rowIndex);
+      const field = this.fields[colIndex];
+      if (!row || !field || !this.isRichTextField(field)) return;
+
+      this.closeMultilineEditor();
+      this.closeRadioPicker();
+      this.closeMultiChoicePicker();
+      this.exitEditMode();
+
+      const layer = document.createElement('div');
+      layer.className = 'pb-overlay__multiline-layer';
+      const panel = document.createElement('div');
+      panel.className = 'pb-overlay__multiline-panel';
+      panel.addEventListener('click', (event) => event.stopPropagation());
+
+      const head = document.createElement('div');
+      head.className = 'pb-overlay__multiline-head';
+      const title = document.createElement('div');
+      title.className = 'pb-overlay__multiline-title';
+      title.textContent = field.label || field.code;
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'pb-overlay__multiline-close';
+      closeBtn.textContent = '×';
+      closeBtn.title = resolveText(this.language, 'multilineCancel');
+      closeBtn.setAttribute('aria-label', resolveText(this.language, 'multilineCancel'));
+      closeBtn.addEventListener('click', () => this.closeMultilineEditor(true));
+      head.appendChild(title);
+      head.appendChild(closeBtn);
+
+      const body = document.createElement('div');
+      body.className = 'pb-overlay__multiline-body';
+      const viewer = document.createElement('div');
+      viewer.className = 'pb-overlay__multiline-viewer';
+      viewer.textContent = this.extractReadableTextFromRichText(row.values[field.code] ?? '');
+      body.appendChild(viewer);
+
+      const footer = document.createElement('div');
+      footer.className = 'pb-overlay__multiline-foot';
+      const closeFooterBtn = document.createElement('button');
+      closeFooterBtn.type = 'button';
+      closeFooterBtn.className = 'pb-overlay__btn';
+      closeFooterBtn.textContent = resolveText(this.language, 'multilineCancel');
+      closeFooterBtn.addEventListener('click', () => this.closeMultilineEditor(true));
+      footer.appendChild(closeFooterBtn);
+
+      layer.addEventListener('click', () => this.closeMultilineEditor(true));
+      panel.appendChild(head);
+      panel.appendChild(body);
+      panel.appendChild(footer);
+      layer.appendChild(panel);
+      this.root.appendChild(layer);
+      this.multilineEditor = {
+        layer,
+        panel,
+        readOnly: true,
+        anchorInput: anchorInput || this.getInput(rowIndex, colIndex)
+      };
+      requestAnimationFrame(() => {
+        try {
+          closeBtn.focus();
+        } catch (_e) { /* noop */ }
+      });
+    }
+
     closeMultilineEditor(focusInput = false) {
       if (!this.multilineEditor) return;
       const { layer, anchorInput } = this.multilineEditor;
@@ -6616,6 +6729,15 @@
           event?.preventDefault?.();
           event?.stopPropagation?.();
         }
+        return;
+      }
+      if (this.isRichTextField(field)) {
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        if (typeof event?.stopImmediatePropagation === 'function') {
+          event.stopImmediatePropagation();
+        }
+        this.openRichTextViewer(rowIndex, colIndex, input);
         return;
       }
       if (this.isMultiLineField(field)) {

@@ -1609,6 +1609,20 @@
   color: #111827;
 }
 
+.pb-overlay__multiline-viewer {
+  min-height: 260px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #111827;
+  background: #ffffff;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
 .pb-overlay__multiline-foot {
   display: flex;
   justify-content: flex-end;
@@ -2069,7 +2083,8 @@
   }
 
   #pb-excel-overlay .pb-overlay__subtable-input,
-  #pb-excel-overlay .pb-overlay__multiline-input {
+  #pb-excel-overlay .pb-overlay__multiline-input,
+  #pb-excel-overlay .pb-overlay__multiline-viewer {
     background: #0f1726;
     color: #f8fbff;
     border-color: #334155;
